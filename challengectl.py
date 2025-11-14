@@ -25,94 +25,97 @@ logging.basicConfig(filename='challengectl.log',
                     format='%(asctime)s %(message)s',
                     datefmt='%d %b %Y %H:%M:%S')
 
-modulation_parameters = {
-    'ask': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    },
-    'cw': {
-       'mandatory': [
-            'flag',
-            'frequency',
-            'speed'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'nbfm': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'ssb': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'mode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'pocsag': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'capcode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'lrs': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'freedv':{
-        'mandatory': [
-            'flag',
-            'frequency',
-            'mode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'fhss': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'seed',
-            'hop_rate',
-            'hop_time',
-            'channel_spacing'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }
-}
+# modulation_parameters dictionary has been replaced by modulation_parameters.yml
+# Kept here for reference only - not used by code
+# See load_modulation_parameters() function for YAML-based parameter loading
+# modulation_parameters = {
+#     'ask': {
+#         'mandatory': [
+#             'flag',
+#             'frequency'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay'
+#         ]
+#     },
+#     'cw': {
+#        'mandatory': [
+#             'flag',
+#             'frequency',
+#             'speed'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay'
+#         ]
+#     }, 'nbfm': {
+#         'mandatory': [
+#             'flag',
+#             'frequency'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay',
+#             'wav_samplerate'
+#         ]
+#     }, 'ssb': {
+#         'mandatory': [
+#             'flag',
+#             'frequency',
+#             'mode'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay',
+#             'wav_samplerate'
+#         ]
+#     }, 'pocsag': {
+#         'mandatory': [
+#             'flag',
+#             'frequency',
+#             'capcode'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay'
+#         ]
+#     }, 'lrs': {
+#         'mandatory': [
+#             'flag',
+#             'frequency'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay'
+#         ]
+#     }, 'freedv':{
+#         'mandatory': [
+#             'flag',
+#             'frequency',
+#             'mode'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay',
+#             'wav_samplerate'
+#         ]
+#     }, 'fhss': {
+#         'mandatory': [
+#             'flag',
+#             'frequency',
+#             'seed',
+#             'hop_rate',
+#             'hop_time',
+#             'channel_spacing'
+#         ],
+#         'optional': [
+#             'min_delay',
+#             'max_delay',
+#             'wav_samplerate'
+#         ]
+#     }
+# }
 
 # def build_database(flagfile, devicefile):
 #     """Create sqlite database based on flags file and devices file.
@@ -177,9 +180,16 @@ class Challenge:
         '''
         Checks if the modulation type is valid. Disables challenge if it's not.
         '''
-        # Move this to another file
-        # valid_modulation_types = ['ask', 'cw', 'nbfm', 'ssb', 'pocsag', 'lrs', 'freedv', 'fhss']
-        valid_modulation_types = modulation_parameters.keys()
+        # Load modulation parameters to get valid types
+        params_def = load_modulation_parameters()
+        if not params_def:
+            logging.error("Cannot validate modulation type: modulation_parameters.yml not loaded")
+            self.enabled = False
+            return False
+
+        # Get valid modulation types (exclude 'all' which is for global parameters)
+        valid_modulation_types = [k for k in params_def.keys() if k != 'all']
+
         if requested_modulation in valid_modulation_types:
             passed = True
             logging.info("Modulation check for %s passed.", self.name)
@@ -189,18 +199,60 @@ class Challenge:
             passed = False
         return passed
 
-    # TODO: Finish this
-    def check_parameters(self) -> None:
+    def check_parameters(self) -> bool:
         '''
-        Checks for manatory parameters
-        Sets defaults for optional parameters
+        Checks for mandatory parameters based on modulation type
+        Validates optional parameters
+        Returns True if all mandatory parameters present, False otherwise
         '''
-        if self.properties.get('flag') is not None:
-            # Check if file exists
-            self.flag = self.properties.get('flag')
-            if not os.path.exists(self.flag):
-                logging.error("File not found: %s", self.flag)
-                self.enabled = False
+        # Load modulation parameter definitions
+        params_def = load_modulation_parameters()
+        if not params_def:
+            logging.error("Cannot validate parameters: modulation_parameters.yml not loaded")
+            return False
+
+        modulation = self.properties.get('modulation')
+        if not modulation:
+            logging.error(f"Challenge '{self.name}' missing 'modulation' parameter")
+            self.enabled = False
+            return False
+
+        # Get parameter requirements for this modulation type
+        mod_params = params_def.get(modulation, {})
+        global_params = params_def.get('all', {})
+
+        # Combine mandatory parameters (global + modulation-specific)
+        mandatory = set(global_params.get('mandatory', [])) | set(mod_params.get('mandatory', []))
+        optional = set(global_params.get('optional', [])) | set(mod_params.get('optional', []))
+
+        # Check all mandatory parameters are present
+        missing_params = []
+        for param in mandatory:
+            if param not in self.properties or self.properties[param] is None:
+                missing_params.append(param)
+
+        if missing_params:
+            logging.error(f"Challenge '{self.name}' missing mandatory parameters: {', '.join(missing_params)}")
+            self.enabled = False
+            return False
+
+        # Validate flag file exists if it's a file path
+        flag = self.properties.get('flag')
+        if flag and isinstance(flag, str):
+            # Only check if it looks like a file path (contains / or ends with common extensions)
+            if '/' in flag or flag.endswith(('.wav', '.bin', '.txt')):
+                if not os.path.exists(flag):
+                    logging.error(f"Challenge '{self.name}': Flag file not found: {flag}")
+                    self.enabled = False
+                    return False
+
+        # Log info about optional parameters
+        present_optional = [p for p in optional if p in self.properties and self.properties[p] is not None]
+        if present_optional:
+            logging.debug(f"Challenge '{self.name}' has optional parameters: {', '.join(present_optional)}")
+
+        logging.info(f"Challenge '{self.name}' parameter validation passed")
+        return True
 
 
 
@@ -529,6 +581,26 @@ def select_freq(band):
 # Global device registry for YAML-based configuration
 device_registry = {}
 
+# Global modulation parameters loaded from modulation_parameters.yml
+modulation_params = None
+
+
+def load_modulation_parameters():
+    """Load modulation parameter definitions from YAML file."""
+    global modulation_params
+    if modulation_params is None:
+        try:
+            with open('modulation_parameters.yml', 'r', encoding='utf-8') as f:
+                modulation_params = yaml.safe_load(f)
+                logging.info("Loaded modulation parameter definitions")
+        except FileNotFoundError:
+            logging.error("modulation_parameters.yml not found")
+            modulation_params = {}
+        except yaml.YAMLError as e:
+            logging.error(f"Error parsing modulation_parameters.yml: {e}")
+            modulation_params = {}
+    return modulation_params
+
 
 def fetch_device(dev_id):
     """Get device string for a given device id from global registry."""
@@ -653,8 +725,8 @@ def parse_radios_from_yaml(config: dict) -> list:
 
 def parse_challenges_from_yaml(config: dict) -> list:
     '''
-    Parse challenges configuration from YAML and return list of enabled challenges
-    Returns: List of challenge dictionaries
+    Parse challenges configuration from YAML and return list of enabled, validated challenges
+    Returns: List of challenge dictionaries that passed validation
     '''
     challenges_raw = config.get('challenges', [])
 
@@ -677,12 +749,29 @@ def parse_challenges_from_yaml(config: dict) -> list:
             if default_max_delay is not None and 'max_delay' not in item:
                 item['max_delay'] = default_max_delay
 
-            # Only include enabled challenges (default to True if not specified)
-            if item.get('enabled', True):
-                challenges.append(item)
-                logging.info(f"Loaded challenge: {item.get('name')}")
-            else:
+            # Check if challenge is explicitly disabled
+            if not item.get('enabled', True):
                 logging.info(f"Skipping disabled challenge: {item.get('name')}")
+                continue
+
+            # Create Challenge object and validate
+            challenge = Challenge(item)
+
+            # Check modulation type
+            modulation = item.get('modulation')
+            if modulation and challenge.check_modulation(modulation):
+                # Validate parameters
+                if challenge.check_parameters():
+                    # Only add if still enabled after validation
+                    if challenge.enabled:
+                        challenges.append(item)
+                        logging.info(f"Loaded and validated challenge: {item.get('name')}")
+                    else:
+                        logging.warning(f"Challenge '{item.get('name')}' failed validation and was disabled")
+                else:
+                    logging.warning(f"Challenge '{item.get('name')}' failed parameter validation")
+            else:
+                logging.warning(f"Challenge '{item.get('name')}' has invalid modulation type or failed modulation check")
 
     if not challenges:
         logging.warning("No enabled challenges found in YAML")
