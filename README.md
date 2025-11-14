@@ -1,3 +1,5 @@
+[![WAV format check](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml/badge.svg)](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml)
+
 # challengectl v2
 
 Everthing is gonna be broken in this branch for a few weeks while I work on stuff. Don't even try to use it til this message is gone.
