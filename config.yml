@@ -61,8 +61,10 @@ radios:
 
 # Define the flags to be transmitted for each conference
 challenges:
-  default_min_delay: 60 # Seconds
-  default_max_delay: 90 # Seconds
+  # Default delays that apply to all challenges unless overridden
+  - default_min_delay: 60 # Seconds
+    default_max_delay: 90 # Seconds
+
 # Single Sideband Example
   - name: SSB_FLAG_1
     # Frequency is now in Hertz, or can be a named range
@@ -71,7 +73,7 @@ challenges:
     modulation: ssb
     # For SSB, mode can be lsb or usb. Flowgraph defaults to usb
     mode: lsb
-    flag: challenges/examples/example.wav
+    flag: challenges/examples/example_voice.wav
     wav_samplerate: 48000
     min_delay: 60
     max_delay: 90
@@ -82,7 +84,7 @@ challenges:
     frequency: 146550000
     # Modulation can be ssb, nbfm, freedv, etc
     modulation: nbfm
-    flag: challenges/examples/example.wav
+    flag: challenges/examples/example_voice.wav
     wav_samplerate: 48000
     min_delay: 60
     max_delay: 90
@@ -96,7 +98,7 @@ challenges:
     # FreeDV uses SSB, mode can be lsb or usb. Flowgraph defaults to usb
     mode: usb
     # FreeDV is a voice codec. I don't recommend sending digital modes through this, it will get mangled.
-    flag: challenges/examples/example.wav
+    flag: challenges/examples/example_voice.wav
     # FreeDV Can transmit audio and text at the same time
     text: 'Text message flag'
     wav_samplerate: 48000
@@ -145,7 +147,7 @@ challenges:
     # Frequency is now in Hertz, or can be a named range
     frequency: 146550000
     modulation: fhss
-    flag: challenges/examples/example.wav
+    flag: challenges/examples/example_voice.wav
     channel_spacing: 10000 # Hz
     hop_rate: 10 # hops per second
     # Seconds of non-repeating hop data
