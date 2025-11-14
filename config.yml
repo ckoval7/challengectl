@@ -53,11 +53,23 @@ radios:
     rf_gain: 43
     # if_gain would do nothing for the bladerf
     bias_t: True
+    # Specify antenna port (e.g., TX1, TX2). Leave blank for default.
+    antenna: ""
     # use named ranges or custom range for device frequency limits
     frequency_limits:
       - ham_144
       - ham_440
       - 800000000-850000000
+
+  # Example: bladeRF with broken TX1 port - force TX2
+  # - name: 1c4842b8d80e43438c042dbd752c6640
+  #   model: bladerf
+  #   rf_gain: 43
+  #   bias_t: True
+  #   antenna: TX2  # Use TX2 port because TX1 is broken
+  #   frequency_limits:
+  #     - ham_144
+  #     - ham_440
 
 # Define the flags to be transmitted for each conference
 challenges:

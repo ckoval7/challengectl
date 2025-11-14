@@ -218,12 +218,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         mintime = flag_args[4]
         maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
         # print("I ran fire_ask with flag=" + str(flag) + " and freq=" + str(freq))
         ask.main(flag.encode("utf-8").hex(), freq, device, antenna)
         sleep(3)
@@ -250,12 +247,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         mintime = flag_args[4]
         maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
         # print("I ran fire_cw with flag=" + str(flag) + " and freq=" +
         # str(freq) + " and speed=" + str(speed))
         p = Process(target=cw.main, args=(flag, speed, freq, device, antenna))
@@ -320,12 +314,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         mintime = flag_args[4]
         maxtime = flag_args[5]
-        antenna = ""
-        if device and device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1:
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
 
         # Configure options for ssb_tx flowgraph
         ssb_opts = ssb_tx.argument_parser().parse_args('')
@@ -368,12 +359,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         mintime = flag_args[4]
         maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
         # print("I ran fire_nbfm with flag=" + str(wav_src) + " and freq=" +
         # str(freq) + " and wav_rate=" + str(wav_rate))
         nbfm.main(wav_src, wav_rate, freq, device, antenna)
@@ -408,12 +396,9 @@ class transmitter:
         pocsagopts.pagerfreq = freq
         pocsagopts.capcode = int(modopt1)
         pocsagopts.message = flag
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
         pocsagopts.antenna = antenna
         # Call main in pocsagtx_osmocom, passing in pocsagopts options array
         pocsagtx_osmocom.main(options=pocsagopts)
@@ -464,12 +449,9 @@ class transmitter:
         lrsopts.deviceargs = device
         lrsopts.freq = freq
         lrsopts.binfile = outfile
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
         lrsopts.antenna = antenna
         # Gains below are defaults, added in case they need to be changed
         # lrsopts.bbgain = 20.0
@@ -556,6 +538,19 @@ def fetch_device(dev_id):
     else:
         logging.error(f"Device ID {dev_id} not found in registry")
         return None
+
+
+def get_device_antenna(dev_id):
+    """Get the preferred antenna for a device from the registry."""
+    global device_registry
+    if dev_id in device_registry:
+        # Check device-specific antenna setting first
+        antenna = device_registry[dev_id]['config'].get('antenna', '')
+        # If not set at device level, check model defaults
+        if not antenna:
+            antenna = device_registry[dev_id]['model_defaults'].get('antenna', '')
+        return antenna if antenna else ""
+    return ""
 
 
 # def fetch_device_old(dev_id):
@@ -817,14 +812,10 @@ def main(options=None):
             # Paint waterfall every time during the CTF, or only once when testing
             if(test != True or challenges_transmitted == 0):
                 print(f"\nPainting Waterfall on {txfreq_khz} kHz\n")
-                antenna = ""
                 device = fetch_device(dev_available)
-                # bladerf with serial 1c4842b8d80e43438c042dbd752c6640 has a broken TX1 port
-                if device and device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1:
-                    antenna = "TX2"
-                    print("Set antenna to TX2")
-                else:
-                    print("Antenna set to default empty string. device: {}".format(device))
+                antenna = get_device_antenna(dev_available)
+                if antenna:
+                    print(f"Using antenna: {antenna}")
 
                 p = Process(target=spectrum_paint.main, args=(txfreq, device, antenna))
                 p.start()
