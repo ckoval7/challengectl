@@ -18,6 +18,8 @@ __pycache__/
 *.py[cod]
 *.log
 challengectl.*.log
+challengectl.server.*.log
+challengectl.runner.*.log
 
 # Configuration (may contain secrets)
 server-config.yml

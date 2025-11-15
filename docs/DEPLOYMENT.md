@@ -597,6 +597,98 @@ sudo -u challengectl hackrf_info
 - [ ] Unused ports closed
 - [ ] Strong passwords for system accounts
 
+## Logging and Monitoring
+
+### Log Files
+
+Both server and runner write logs to files with automatic rotation:
+
+**Server:**
+- File: `challengectl.server.log` (in WorkingDirectory, typically `/opt/challengectl/server`)
+- Rotated: On each restart, archived as `challengectl.server.YYYYMMDD_HHMMSS.log`
+- Format: `YYYY-MM-DDTHH:MM:SS challengectl-server[PID]: LEVEL: message`
+
+**Runner:**
+- File: `challengectl.runner.log` (in WorkingDirectory, typically `/opt/challengectl/runner`)
+- Rotated: On each restart, archived as `challengectl.runner.YYYYMMDD_HHMMSS.log`
+- Format: `YYYY-MM-DDTHH:MM:SS challengectl-runner[PID]: LEVEL: message`
+
+**Standalone:**
+- File: `challengectl.log` (in current directory)
+- Rotated: On each restart, archived as `challengectl.YYYYMMDD_HHMMSS.log`
+- Format: `YYYY-MM-DDTHH:MM:SS challengectl[PID]: LEVEL: message`
+
+### Log Levels
+
+Configure log verbosity via command line:
+
+```bash
+# Server
+python3 server.py --log-level DEBUG
+python3 server.py --log-level INFO    # Default
+python3 server.py --log-level WARNING
+python3 server.py --log-level ERROR
+
+# Runner
+python3 runner.py --log-level DEBUG
+
+# Standalone
+python3 challengectl.py config.yml --log-level DEBUG
+```
+
+### Viewing Logs
+
+**With systemd (production):**
+```bash
+# Real-time logs
+sudo journalctl -u challengectl-server -f
+sudo journalctl -u challengectl-runner -f
+
+# Recent logs
+sudo journalctl -u challengectl-server -n 100
+sudo journalctl -u challengectl-runner --since "1 hour ago"
+
+# Log files (also written to disk)
+sudo tail -f /opt/challengectl/server/challengectl.server.log
+sudo tail -f /opt/challengectl/runner/challengectl.runner.log
+```
+
+**Without systemd (development):**
+```bash
+# Log files in current/working directory
+tail -f challengectl.server.log
+tail -f challengectl.runner.log
+tail -f challengectl.log  # standalone
+```
+
+### Log Rotation
+
+Old log files are automatically rotated on startup with timestamps. Clean up old logs periodically:
+
+```bash
+# Clean server logs older than 30 days
+find /opt/challengectl/server -name "challengectl.server.*.log" -mtime +30 -delete
+
+# Clean runner logs older than 30 days
+find /opt/challengectl/runner -name "challengectl.runner.*.log" -mtime +30 -delete
+```
+
+### Common Log Messages
+
+**Successful startup:**
+```
+2025-01-15T10:30:00 challengectl-server[1234]: INFO: Logging initialized at INFO level
+2025-01-15T10:30:00 challengectl-server[1234]: INFO: ChallengeCtl Server Starting
+2025-01-15T10:30:00 challengectl-server[1234]: INFO: Listening on http://0.0.0.0:8443
+```
+
+**Runner connection:**
+```
+2025-01-15T10:30:15 challengectl-runner[5678]: INFO: Logging initialized at INFO level
+2025-01-15T10:30:15 challengectl-runner[5678]: INFO: Runner initialized: runner-1
+2025-01-15T10:30:15 challengectl-runner[5678]: INFO: Registered with server successfully
+```
+
 ## Performance Tuning
 
 ### Database Optimization
@@ -619,8 +711,9 @@ client_max_body_size 100M;
 ### File Cleanup
 
 ```bash
-# Clean old logs (older than 30 days)
-find /var/log/challengectl/ -name "*.log" -mtime +30 -delete
+# Clean old archived log files (see "Logging and Monitoring" section for details)
+find /opt/challengectl/server -name "challengectl.server.*.log" -mtime +30 -delete
+find /opt/challengectl/runner -name "challengectl.runner.*.log" -mtime +30 -delete
 
 # Clean runner cache (if needed)
 # Be careful - this removes downloaded challenge files

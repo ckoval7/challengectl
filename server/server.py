@@ -10,14 +10,18 @@ import sys
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 import signal
+from datetime import datetime
 
 from api import ChallengeCtlAPI
 from database import Database
 
-# Configure logging
+# Log file configuration
+LOG_FILE = 'challengectl.server.log'
+
+# Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s challengectl-server[%(process)d]: %(levelname)s: %(name)s: %(message)s',
+    format='%(asctime)s challengectl-server[%(process)d]: %(levelname)s: %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S'
 )
 
@@ -178,9 +182,30 @@ def main():
     parser = argument_parser()
     args = parser.parse_args()
 
-    # Set log level
+    # Configure logging with file output and rotation (like standalone challengectl)
+    # Rotate existing log file with timestamp before starting new log
+    if os.path.exists(LOG_FILE):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archived_log = f'challengectl.server.{timestamp}.log'
+        os.rename(LOG_FILE, archived_log)
+
+    # Convert log level string to logging constant
     log_level = getattr(logging, args.log_level)
-    logging.getLogger().setLevel(log_level)
+
+    # Reconfigure logging with file output
+    # Clear existing handlers and reconfigure
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    logging.basicConfig(
+        filename=LOG_FILE,
+        filemode='w',
+        level=log_level,
+        format='%(asctime)s challengectl-server[%(process)d]: %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S'
+    )
+
+    logging.info(f"Logging initialized at {args.log_level} level")
 
     # Check if config file exists
     if not os.path.exists(args.config):
