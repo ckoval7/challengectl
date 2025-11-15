@@ -117,46 +117,53 @@ sudo ufw enable
 
 ## Runner Deployment
 
-**Note:** The runner does NOT require root access or system-wide installation. It can run as a regular user with local directories (`cache/`, `temp/`). The systemd service setup below is optional for production deployments.
-
-### Quick Start (No Root Required)
+### 1. Basic Setup
 
 ```bash
-# Run directly as your user (recommended for development/testing)
+# Run from the runner directory
 cd runner
-python3 runner.py -c runner-config.yml
 
-# Cache and temp files will be created in local directories:
-# - cache/ (downloaded challenge files)
-# - temp/ (temporary LRS files)
-# - challengectl.runner.log (log file)
+# Copy example config
+cp runner-config.example.yml runner-config.yml
+
+# Edit configuration - set server URL and API key
+nano runner-config.yml
 ```
 
-### 1. System Setup (Optional - Production Only)
+The runner creates local directories for cache and temporary files:
+- `cache/` - Downloaded challenge files
+- `temp/` - Temporary files (LRS generation, etc)
+- `challengectl.runner.log` - Log file
 
-For production deployments with systemd, you can optionally use system-wide paths:
+### 2. Production Setup with Systemd
+
+For production deployments using systemd:
 
 ```bash
-# Create user and add to plugdev group (for USB devices)
+# Create user and add to plugdev group for USB device access
 sudo useradd -r -s /bin/false -G plugdev challengectl
 
 # Create directories
 sudo mkdir -p /opt/challengectl/runner
-sudo mkdir -p /var/cache/challengectl  # Optional - can use local cache/ instead
 sudo mkdir -p /etc/challengectl
 
 # Set permissions
 sudo chown -R challengectl:plugdev /opt/challengectl/runner
-sudo chown -R challengectl:plugdev /var/cache/challengectl  # If using system-wide cache
 ```
 
-**Important:** If using system-wide paths, update `runner-config.yml`:
+If you want to use system-wide cache directory, update `runner-config.yml`:
 ```yaml
 runner:
-  cache_dir: "/var/cache/challengectl"  # Change from default "cache"
+  cache_dir: "/var/cache/challengectl"
 ```
 
-### 2. Install Dependencies
+Then create and set permissions:
+```bash
+sudo mkdir -p /var/cache/challengectl
+sudo chown -R challengectl:plugdev /var/cache/challengectl
+```
+
+### 3. Install Dependencies
 
 ```bash
 # System packages
@@ -177,7 +184,7 @@ sudo apt-get install -y bladerf libbladerf-dev
 sudo apt-get install -y uhd-host libuhd-dev
 ```
 
-### 3. Deploy Runner Files
+### 4. Deploy Runner Files
 
 ```bash
 # Copy runner files
@@ -193,7 +200,7 @@ sudo nano /etc/challengectl/runner-config.yml
 # Set ca_cert if using custom CA
 ```
 
-### 4. Install Systemd Service
+### 5. Install Systemd Service (Production Only)
 
 ```bash
 # Copy service file
@@ -211,7 +218,7 @@ sudo systemctl status challengectl-runner
 sudo journalctl -u challengectl-runner -f
 ```
 
-### 5. Test SDR Access
+### 6. Test SDR Access
 
 ```bash
 # Test as challengectl user
