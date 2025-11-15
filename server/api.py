@@ -549,12 +549,36 @@ class ChallengeCtlAPI:
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
 
-    def run(self, host='0.0.0.0', port=8443, debug=False):
+    def run(self, host='0.0.0.0', port=8443, debug=False, ssl_cert=None, ssl_key=None):
         """Run the API server."""
-        logger.info(f"Starting ChallengeCtl API server on {host}:{port}")
 
-        # Note: For production with TLS, use a proper WSGI server like gunicorn with nginx
-        self.socketio.run(self.app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
+        # Determine protocol
+        protocol = 'https' if (ssl_cert and ssl_key) else 'http'
+        logger.info(f"Starting ChallengeCtl API server on {protocol}://{host}:{port}")
+
+        # Build SSL context if certificates provided
+        ssl_context = None
+        if ssl_cert and ssl_key:
+            try:
+                import ssl
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_context.load_cert_chain(ssl_cert, ssl_key)
+                logger.info(f"TLS enabled: cert={ssl_cert}, key={ssl_key}")
+            except Exception as e:
+                logger.error(f"Failed to load TLS certificates: {e}")
+                logger.warning("Starting server without TLS")
+                ssl_context = None
+
+        # Start server
+        # Note: For production with high load, use gunicorn with nginx for TLS termination
+        self.socketio.run(
+            self.app,
+            host=host,
+            port=port,
+            debug=debug,
+            ssl_context=ssl_context,
+            allow_unsafe_werkzeug=True
+        )
 
 
 def create_app(config_path='server-config.yml', db_path='challengectl.db', files_dir='files'):

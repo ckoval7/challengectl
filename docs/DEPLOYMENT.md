@@ -245,25 +245,103 @@ npm run dev
 
 ## TLS/SSL Configuration
 
-### Self-Signed Certificates (Development/Testing)
+You have two options for enabling TLS:
+
+1. **Direct Server TLS** - Server runs with HTTPS directly (good for small deployments, testing)
+2. **Nginx Reverse Proxy** - Recommended for production (better performance, features)
+
+### Option 1: Direct Server TLS
+
+The server can run with TLS directly without nginx.
+
+#### Self-Signed Certificates (Development/Testing)
 
 ```bash
 # Generate self-signed certificate
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/challengectl/server.key \
     -out /etc/challengectl/server.crt \
     -subj "/CN=challengectl.local"
 
-# Update nginx config to use these certificates
+# Update server-config.yml
+sudo nano /etc/challengectl/server-config.yml
+
+# Add TLS configuration:
+# server:
+#   tls:
+#     cert: "/etc/challengectl/server.crt"
+#     key: "/etc/challengectl/server.key"
+
+# Restart server
+sudo systemctl restart challengectl-server
+
+# Server now runs on https://
 ```
 
-### Let's Encrypt (Production)
+#### Let's Encrypt Certificates (Production)
 
 ```bash
-# Install certbot
+# Install certbot (standalone mode, not nginx)
+sudo apt-get install certbot
+
+# Stop server temporarily
+sudo systemctl stop challengectl-server
+
+# Get certificate (certbot will bind to port 80)
+sudo certbot certonly --standalone -d challengectl.example.com
+
+# Certificates will be in /etc/letsencrypt/live/challengectl.example.com/
+
+# Update server-config.yml
+sudo nano /etc/challengectl/server-config.yml
+
+# Add TLS configuration:
+# server:
+#   tls:
+#     cert: "/etc/letsencrypt/live/challengectl.example.com/fullchain.pem"
+#     key: "/etc/letsencrypt/live/challengectl.example.com/privkey.pem"
+
+# Give challengectl user read access to certificates
+sudo setfacl -R -m u:challengectl:rX /etc/letsencrypt/live
+sudo setfacl -R -m u:challengectl:rX /etc/letsencrypt/archive
+
+# Restart server
+sudo systemctl start challengectl-server
+
+# Auto-renewal: Create renewal hook
+sudo nano /etc/letsencrypt/renewal-hooks/post/challengectl-restart.sh
+
+#!/bin/bash
+systemctl restart challengectl-server
+
+sudo chmod +x /etc/letsencrypt/renewal-hooks/post/challengectl-restart.sh
+
+# Test renewal:
+sudo certbot renew --dry-run
+```
+
+#### Command Line TLS Options
+
+You can also specify certificates via command line:
+
+```bash
+# Run with TLS
+python3 server/server.py \
+    --ssl-cert /etc/challengectl/server.crt \
+    --ssl-key /etc/challengectl/server.key
+```
+
+### Option 2: Nginx Reverse Proxy (Recommended for Production)
+
+For production deployments with higher load or advanced features (load balancing, caching, etc.):
+
+#### Using Let's Encrypt with Nginx
+
+```bash
+# Install certbot with nginx plugin
 sudo apt-get install certbot python3-certbot-nginx
 
-# Get certificate
+# Get certificate (certbot will auto-configure nginx)
 sudo certbot --nginx -d challengectl.example.com
 
 # Auto-renewal is set up automatically
@@ -271,14 +349,62 @@ sudo certbot --nginx -d challengectl.example.com
 sudo certbot renew --dry-run
 ```
 
-### Custom CA Certificate
+#### Manual Nginx TLS Configuration
 
 ```bash
-# If using custom CA for internal network:
-# 1. Copy CA certificate to /etc/challengectl/ca.crt
+# Generate self-signed cert (for testing)
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/challengectl.key \
+    -out /etc/nginx/ssl/challengectl.crt \
+    -subj "/CN=challengectl.local"
+
+# Update nginx config to use these certificates
+# See docs/nginx-challengectl.conf for example
+```
+
+### Custom CA Certificate (For Runners)
+
+If using custom CA for internal network:
+
+```bash
+# On each runner:
+# 1. Copy CA certificate
+sudo cp ca.crt /etc/challengectl/ca.crt
+
 # 2. Update runner-config.yml:
-#    ca_cert: "/etc/challengectl/ca.crt"
+sudo nano /etc/challengectl/runner-config.yml
+
+# runner:
+#   ca_cert: "/etc/challengectl/ca.crt"
+#   verify_ssl: true
+
 # 3. Restart runner
+sudo systemctl restart challengectl-runner
+```
+
+### TLS Troubleshooting
+
+**Server won't start with TLS:**
+```bash
+# Check certificate files exist and are readable
+ls -la /etc/challengectl/server.{crt,key}
+sudo -u challengectl cat /etc/challengectl/server.crt
+
+# Check logs
+sudo journalctl -u challengectl-server -n 50
+```
+
+**Runner can't connect:**
+```bash
+# Test TLS connection
+openssl s_client -connect server-ip:8443 -showcerts
+
+# If using custom CA, verify CA cert is accessible
+sudo -u challengectl cat /etc/challengectl/ca.crt
+
+# For development, can disable SSL verification:
+# runner:
+#   verify_ssl: false  # DEVELOPMENT ONLY!
 ```
 
 ## Monitoring
