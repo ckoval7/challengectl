@@ -13,7 +13,7 @@ import os
 import hashlib
 import yaml
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import uuid
 
 from database import Database
@@ -146,7 +146,7 @@ class ChallengeCtlAPI:
                     if public_view.get('show_active_status', True):
                         # Check if currently assigned (actively transmitting)
                         is_active = (challenge.get('status') == 'assigned' and
-                                   challenge.get('assigned_to') is not None)
+                                     challenge.get('assigned_to') is not None)
                         public_challenge['is_active'] = is_active
 
                     public_challenges.append(public_challenge)
@@ -251,8 +251,9 @@ class ChallengeCtlAPI:
             challenge_id = data.get('challenge_id')
             success = data.get('success', False)
             error_message = data.get('error_message')
-            device_id = data.get('device_id', '')
-            frequency = data.get('frequency', 0)
+            # device_id and frequency are logged but not currently used
+            # device_id = data.get('device_id', '')
+            # frequency = data.get('frequency', 0)
 
             # Record transmission in history
             if success:
@@ -405,11 +406,9 @@ class ChallengeCtlAPI:
         def trigger_challenge(challenge_id):
             """Manually trigger a challenge to transmit immediately."""
             # Update next_tx_time to now
-            from datetime import datetime
             challenge = self.db.get_challenge(challenge_id)
 
             if challenge:
-                import sqlite3
                 with self.db.get_connection() as conn:
                     conn.execute('''
                         UPDATE challenges

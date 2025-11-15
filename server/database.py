@@ -334,7 +334,7 @@ class Database:
                 return None
 
     def complete_challenge(self, challenge_id: str, runner_id: str, success: bool,
-                          error_message: Optional[str] = None) -> bool:
+                           error_message: Optional[str] = None) -> bool:
         """Mark challenge as completed and requeue it."""
         with self.get_connection() as conn:
             cursor = conn.cursor()

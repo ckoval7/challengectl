@@ -8,7 +8,6 @@ import argparse
 import logging
 import sys
 import os
-from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 import signal
 
@@ -93,9 +92,9 @@ class ChallengeCtlServer:
         logger.info(f"Files directory: {self.files_dir}")
         logger.info(f"Listening on {host}:{port}")
         if ssl_cert and ssl_key:
-            logger.info(f"TLS: Enabled")
+            logger.info("TLS: Enabled")
         else:
-            logger.info(f"TLS: Disabled (HTTP only)")
+            logger.info("TLS: Disabled (HTTP only)")
         logger.info("="*60)
 
         # Start background scheduler

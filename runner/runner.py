@@ -13,15 +13,13 @@ import socket
 import hashlib
 import yaml
 import requests
-from pathlib import Path
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
-import json
 
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, pocsagtx_osmocom, lrs_pager, lrs_tx, freedv_tx
+from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, pocsagtx_osmocom, lrs_pager, lrs_tx  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -249,13 +247,13 @@ class ChallengeCtlRunner:
                     downloaded_hash = hashlib.sha256(f.read()).hexdigest()
 
                 if downloaded_hash != file_hash:
-                    logger.error(f"Hash mismatch for downloaded file")
+                    logger.error("Hash mismatch for downloaded file")
                     os.remove(temp_path)
                     return None
 
                 # Move to final location
                 os.rename(temp_path, cache_path)
-                logger.info(f"File downloaded successfully")
+                logger.info("File downloaded successfully")
                 return cache_path
 
             else:
@@ -439,8 +437,8 @@ class ChallengeCtlRunner:
         return ""
 
     def report_completion(self, challenge_id: str, success: bool,
-                         device_id: int, frequency: int,
-                         error_message: Optional[str] = None):
+                          device_id: int, frequency: int,
+                          error_message: Optional[str] = None):
         """Report task completion to server."""
         try:
             response = self.session.post(
@@ -477,7 +475,7 @@ class ChallengeCtlRunner:
                 },
                 timeout=5
             )
-        except:
+        except Exception:
             pass  # Don't fail if log upload fails
 
     def task_loop(self):
