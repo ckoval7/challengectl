@@ -612,33 +612,25 @@ class ChallengeCtlAPI:
             logger.error(f"Error broadcasting event: {e}")
 
     def run(self, host='0.0.0.0', port=8443, debug=False, ssl_cert=None, ssl_key=None):
-        """Run the API server."""
+        """Run the API server.
 
-        # Determine protocol
-        protocol = 'https' if (ssl_cert and ssl_key) else 'http'
-        logger.info(f"Starting ChallengeCtl API server on {protocol}://{host}:{port}")
+        Note: Direct SSL support with eventlet is not reliable. For production,
+        use nginx or another reverse proxy for TLS termination.
+        """
 
-        # Build SSL context if certificates provided
-        ssl_context = None
-        if ssl_cert and ssl_key:
-            try:
-                import ssl
-                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                ssl_context.load_cert_chain(ssl_cert, ssl_key)
-                logger.info(f"TLS enabled: cert={ssl_cert}, key={ssl_key}")
-            except Exception as e:
-                logger.error(f"Failed to load TLS certificates: {e}")
-                logger.warning("Starting server without TLS")
-                ssl_context = None
+        if ssl_cert or ssl_key:
+            logger.warning("Direct SSL/TLS not supported with eventlet backend")
+            logger.warning("For TLS, use nginx or a reverse proxy (see DEPLOYMENT.md)")
+
+        logger.info(f"Starting ChallengeCtl API server on http://{host}:{port}")
+        logger.info("For production with TLS, use nginx reverse proxy")
 
         # Start server
-        # Note: For production with high load, use gunicorn with nginx for TLS termination
         self.socketio.run(
             self.app,
             host=host,
             port=port,
             debug=debug,
-            ssl_context=ssl_context,
             allow_unsafe_werkzeug=True
         )
 

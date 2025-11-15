@@ -82,7 +82,7 @@ class ChallengeCtlServer:
 
         logger.info("Background cleanup tasks configured")
 
-    def start(self, host='0.0.0.0', port=8443, debug=False, ssl_cert=None, ssl_key=None):
+    def start(self, host='0.0.0.0', port=8443, debug=False):
         """Start the server and background tasks."""
         logger.info("="*60)
         logger.info("ChallengeCtl Server Starting")
@@ -90,11 +90,8 @@ class ChallengeCtlServer:
         logger.info(f"Configuration: {self.config_path}")
         logger.info(f"Database: {self.db_path}")
         logger.info(f"Files directory: {self.files_dir}")
-        logger.info(f"Listening on {host}:{port}")
-        if ssl_cert and ssl_key:
-            logger.info("TLS: Enabled")
-        else:
-            logger.info("TLS: Disabled (HTTP only)")
+        logger.info(f"Listening on http://{host}:{port}")
+        logger.info("For TLS/HTTPS, use nginx reverse proxy (see DEPLOYMENT.md)")
         logger.info("="*60)
 
         # Start background scheduler
@@ -112,7 +109,7 @@ class ChallengeCtlServer:
 
         # Start API server (blocking)
         try:
-            self.api.run(host=host, port=port, debug=debug, ssl_cert=ssl_cert, ssl_key=ssl_key)
+            self.api.run(host=host, port=port, debug=debug)
         except KeyboardInterrupt:
             self.shutdown()
 
@@ -173,16 +170,6 @@ def argument_parser():
         help='Set logging level (default: INFO)'
     )
 
-    parser.add_argument(
-        '--ssl-cert',
-        help='Path to SSL certificate file (for HTTPS)'
-    )
-
-    parser.add_argument(
-        '--ssl-key',
-        help='Path to SSL private key file (for HTTPS)'
-    )
-
     return parser
 
 
@@ -204,41 +191,6 @@ def main():
         logger.info("Please edit the configuration file and restart the server")
         sys.exit(1)
 
-    # Load config to get TLS settings if not provided via command line
-    import yaml
-    ssl_cert = args.ssl_cert
-    ssl_key = args.ssl_key
-
-    if not ssl_cert or not ssl_key:
-        try:
-            with open(args.config, 'r') as f:
-                config = yaml.safe_load(f)
-                server_config = config.get('server', {})
-                tls_config = server_config.get('tls', {})
-
-                if not ssl_cert:
-                    ssl_cert = tls_config.get('cert')
-                if not ssl_key:
-                    ssl_key = tls_config.get('key')
-        except Exception as e:
-            logger.warning(f"Could not load TLS config from file: {e}")
-
-    # Validate TLS configuration
-    if ssl_cert and not ssl_key:
-        logger.error("SSL certificate provided but no key file specified")
-        sys.exit(1)
-    if ssl_key and not ssl_cert:
-        logger.error("SSL key provided but no certificate file specified")
-        sys.exit(1)
-
-    if ssl_cert and ssl_key:
-        if not os.path.exists(ssl_cert):
-            logger.error(f"SSL certificate file not found: {ssl_cert}")
-            sys.exit(1)
-        if not os.path.exists(ssl_key):
-            logger.error(f"SSL key file not found: {ssl_key}")
-            sys.exit(1)
-
     # Create server
     server = ChallengeCtlServer(
         config_path=args.config,
@@ -250,9 +202,7 @@ def main():
     server.start(
         host=args.host,
         port=args.port,
-        debug=args.debug,
-        ssl_cert=ssl_cert,
-        ssl_key=ssl_key
+        debug=args.debug
     )
 
 
