@@ -163,6 +163,61 @@ class Challenge:
         return True
 
 
+def disable_bladerf_biastee(device):
+    """
+    Turn off BladeRF bias-tee after transmission completes.
+
+    Args:
+        device: Device string (e.g., "bladerf=serial,biastee=1")
+    """
+    if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
+        bladeserial = parse_bladerf_ser(device)
+        serialarg = '*:serial={}'.format(bladeserial)
+        subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
+
+
+def cleanup_after_transmission(device_id, device_q, flag_q, flag_args):
+    """
+    Cleanup after transmission: return device to pool, random sleep, return flag to queue.
+
+    Args:
+        device_id: Device ID to return to the queue
+        device_q: Device queue
+        flag_q: Flag queue
+        flag_args: Challenge arguments (contains timing and queue control)
+    """
+    # Return device to pool
+    device_q.put(device_id)
+
+    # Random sleep between transmissions (if not disabled)
+    norandsleep = flag_args[8]
+    if norandsleep == False:
+        mintime = flag_args[4]
+        maxtime = flag_args[5]
+        sleep(randint(mintime, maxtime))
+
+    # Return flag to queue for retransmission (if enabled)
+    replaceinqueue = flag_args[7]
+    if replaceinqueue != False:
+        flag_q.put(flag_args[0])
+
+
+def get_antenna_and_print(device_id):
+    """
+    Get antenna for device and print it if configured.
+
+    Args:
+        device_id: Device ID
+
+    Returns:
+        str: Antenna string (or empty string if not configured)
+    """
+    antenna = get_device_antenna(device_id)
+    if antenna:
+        print(f"Using antenna: {antenna}")
+    return antenna
+
+
 class transmitter:
     '''TODO: Doc string here'''
     # flag_args:chal_id,flag,modopt1,modopt2,minwait,maxwait,freq1
@@ -173,26 +228,12 @@ class transmitter:
         device = fetch_device(device_id)
         flag = flag_args[1]
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
-        # print("I ran fire_ask with flag=" + str(flag) + " and freq=" + str(freq))
+        antenna = get_antenna_and_print(device_id)
+
         ask.main(flag.encode("utf-8").hex(), freq, device, antenna)
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_cw(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting CW\n")
@@ -202,29 +243,14 @@ class transmitter:
         flag = flag_args[1]
         speed = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
-        # print("I ran fire_cw with flag=" + str(flag) + " and freq=" +
-        # str(freq) + " and speed=" + str(speed))
+        antenna = get_antenna_and_print(device_id)
+
         p = Process(target=cw.main, args=(flag, speed, freq, device, antenna))
         p.start()
         p.join()
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         if(p.exitcode != 0):
             sys.exit(p.exitcode)
 
@@ -252,11 +278,7 @@ class transmitter:
         print(f"\nTransmitting SSB ({mode.upper()})\n")
 
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
+        antenna = get_antenna_and_print(device_id)
 
         # Configure options for ssb_tx flowgraph
         ssb_opts = ssb_tx.argument_parser().parse_args('')
@@ -271,18 +293,8 @@ class transmitter:
         ssb_tx.main(options=ssb_opts)
 
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_nbfm(self, device_id, flag_q, device_q, *flag_args):
         """
@@ -297,15 +309,9 @@ class transmitter:
             exit(1)
         wav_rate = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
-        # print("I ran fire_nbfm with flag=" + str(wav_src) + " and freq=" +
-        # str(freq) + " and wav_rate=" + str(wav_rate))
-        # nbfm.main(wav_src, wav_rate, freq, device, antenna)
-        # Configure options for ssb_tx flowgraph
+        antenna = get_antenna_and_print(device_id)
+
+        # Configure options for nbfm_tx flowgraph
         nbfm_opts = nbfm.argument_parser().parse_args('')
         nbfm_opts.dev = device
         nbfm_opts.freq = freq
@@ -317,29 +323,18 @@ class transmitter:
         nbfm.main(options=nbfm_opts)
 
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_pocsag(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting POCSAG\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
-        # Parse options from flag_args
         flag = flag_args[1]
         modopt1 = flag_args[2]
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
         freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
         # Configure options specific to pocsagtx_osmocom script
         pocsagopts = pocsagtx_osmocom.argument_parser().parse_args('')
         pocsagopts.deviceargs = device
@@ -347,47 +342,26 @@ class transmitter:
         pocsagopts.pagerfreq = freq
         pocsagopts.capcode = int(modopt1)
         pocsagopts.message = flag
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
         pocsagopts.antenna = antenna
+
         # Call main in pocsagtx_osmocom, passing in pocsagopts options array
         pocsagtx_osmocom.main(options=pocsagopts)
-        # pocsag_tx.main(flag, int(modopt1), freq, device)
+
         print("Finished TX POCSAG, sleeping for 3sec before returning device")
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        # print("Slept for 30 seconds")
-        device_q.put(device_id)
-        # print("Returned Device top pool")
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        # sleep(10)
-        # print("Slept for 10 seconds")
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
-        # print("Returned flag to pool")
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_lrs(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting LRS\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
-        # Parse options from flag_args
-        # For LRS, flag will be used to pass in the raw string of command args
         flag = flag_args[1]
-        # modopt1 = flag_args[2]
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
         freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
         # Configure options specific to lrs_pager script
         lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
-        # Generate pager.bin file
         # Generate random filename in /tmp/ for pager bin file
         randomstring = ''.join(random.choices(
             string.ascii_uppercase + string.digits, k=6))
@@ -400,36 +374,17 @@ class transmitter:
         lrsopts.deviceargs = device
         lrsopts.freq = freq
         lrsopts.binfile = outfile
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
         lrsopts.antenna = antenna
-        # Gains below are defaults, added in case they need to be changed
-        # lrsopts.bbgain = 20.0
-        # lrsopts.ifgain = 20.0
-        # lrsopts.rfgain = 47.0
 
-        # Call main in pocsagtx_osmocom, passing in lrsopts options array
+        # Call main in lrs_tx, passing in lrsopts options array
         lrs_tx.main(options=lrsopts)
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
+        disable_bladerf_biastee(device)
+
         # Delete pager bin file from /tmp/
         os.remove(outfile)
         print("Removed outfile")
-        device_q.put(device_id)
-        print("Released Radio to pool")
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        # sleep(10)
-        print("Slept, returning flag to pool")
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         print("Returned flag to pool")
 
     def fire_fhss(self, device_id, flag_q, device_q, *flag_args):
@@ -457,11 +412,7 @@ class transmitter:
         wav_rate = int(flag_args[3]) if flag_args[3] else 48000
 
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = get_device_antenna(device_id)
-        if antenna:
-            print(f"Using antenna: {antenna}")
+        antenna = get_antenna_and_print(device_id)
 
         # Configure options for fhss_tx flowgraph
         fhss_opts = fhss_tx.argument_parser().parse_args('')
@@ -479,19 +430,8 @@ class transmitter:
         fhss_tx.main(options=fhss_opts)
 
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
 
 def select_freq(band):
