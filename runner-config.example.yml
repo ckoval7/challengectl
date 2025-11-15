@@ -22,8 +22,8 @@ runner:
   # In production, always use verify_ssl: true with proper certificates
   verify_ssl: true
 
-  # Cache directory for downloaded challenge files
-  cache_dir: "/var/cache/challengectl"
+  # Cache directory for downloaded challenge files (relative to runner directory)
+  cache_dir: "cache"
 
   # Heartbeat interval (seconds) - how often to ping server
   heartbeat_interval: 30

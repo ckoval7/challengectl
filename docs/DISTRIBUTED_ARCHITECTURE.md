@@ -199,7 +199,7 @@ runner:
   server_url: "https://192.168.1.100:8443"
   api_key: "secret-key-1"
 
-  cache_dir: "/var/cache/challengectl"
+  cache_dir: "cache"  # Relative to runner directory (default: "cache")
   heartbeat_interval: 30
   poll_interval: 10
 
@@ -294,10 +294,12 @@ Files identified by SHA-256 hash:
 
 ### Cache Directory
 
-Runner maintains cache at `/var/cache/challengectl/`:
+Runner maintains cache in local `cache/` directory (configurable):
 - Downloaded files persist across runs
 - Hash verification on every use
 - No manual cleanup needed (files are small)
+- Default: `cache/` relative to runner working directory
+- Can be configured to absolute path (e.g., `/var/cache/challengectl` for production)
 
 ## Operational Workflows
 

@@ -42,7 +42,7 @@ class ChallengeCtlRunner:
         self.runner_id = self.config['runner']['runner_id']
         self.server_url = self.config['runner']['server_url'].rstrip('/')
         self.api_key = self.config['runner']['api_key']
-        self.cache_dir = self.config['runner'].get('cache_dir', '/var/cache/challengectl')
+        self.cache_dir = self.config['runner'].get('cache_dir', 'cache')
         self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
 
@@ -405,9 +405,13 @@ class ChallengeCtlRunner:
             elif modulation == 'lrs':
                 import random
                 import string
+                import tempfile
                 lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
                 randomstring = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                outfile = f"/tmp/lrs_{randomstring}.bin"
+                # Use local temp directory instead of /tmp
+                temp_dir = os.path.join(os.getcwd(), 'temp')
+                os.makedirs(temp_dir, exist_ok=True)
+                outfile = os.path.join(temp_dir, f"lrs_{randomstring}.bin")
                 lrspageropts.outputfile = outfile
                 lrs_pager.main(options=lrspageropts)
 
@@ -653,7 +657,7 @@ runner:
   # Set to false to disable SSL verification (development only!)
   verify_ssl: true
 
-  cache_dir: "/var/cache/challengectl"
+  cache_dir: "cache"
   heartbeat_interval: 30
   poll_interval: 10
 

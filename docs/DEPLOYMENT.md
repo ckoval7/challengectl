@@ -117,7 +117,24 @@ sudo ufw enable
 
 ## Runner Deployment
 
-### 1. System Setup
+**Note:** The runner does NOT require root access or system-wide installation. It can run as a regular user with local directories (`cache/`, `temp/`). The systemd service setup below is optional for production deployments.
+
+### Quick Start (No Root Required)
+
+```bash
+# Run directly as your user (recommended for development/testing)
+cd runner
+python3 runner.py -c runner-config.yml
+
+# Cache and temp files will be created in local directories:
+# - cache/ (downloaded challenge files)
+# - temp/ (temporary LRS files)
+# - challengectl.runner.log (log file)
+```
+
+### 1. System Setup (Optional - Production Only)
+
+For production deployments with systemd, you can optionally use system-wide paths:
 
 ```bash
 # Create user and add to plugdev group (for USB devices)
@@ -125,12 +142,18 @@ sudo useradd -r -s /bin/false -G plugdev challengectl
 
 # Create directories
 sudo mkdir -p /opt/challengectl/runner
-sudo mkdir -p /var/cache/challengectl
+sudo mkdir -p /var/cache/challengectl  # Optional - can use local cache/ instead
 sudo mkdir -p /etc/challengectl
 
 # Set permissions
 sudo chown -R challengectl:plugdev /opt/challengectl/runner
-sudo chown -R challengectl:plugdev /var/cache/challengectl
+sudo chown -R challengectl:plugdev /var/cache/challengectl  # If using system-wide cache
+```
+
+**Important:** If using system-wide paths, update `runner-config.yml`:
+```yaml
+runner:
+  cache_dir: "/var/cache/challengectl"  # Change from default "cache"
 ```
 
 ### 2. Install Dependencies
