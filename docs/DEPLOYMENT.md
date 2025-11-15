@@ -240,11 +240,58 @@ sudo certbot certonly --nginx -d challengectl.example.com
 - Request a certificate from your FreeIPA server
 - Copy cert and key to your nginx configuration directory
 
-**Self-signed (development/testing only):**
+**Self-signed with mTLS (development/testing):**
+
+For development or internal deployments, create your own CA and use it to sign certificates for both the server and runners.
+
 ```bash
-sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/ssl/private/challengectl.key \
-    -out /etc/ssl/certs/challengectl.crt
+# Create CA
+mkdir -p ~/challengectl-ca
+cd ~/challengectl-ca
+
+# Generate CA private key
+openssl genrsa -out ca.key 4096
+
+# Generate CA certificate (valid 10 years)
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
+    -subj "/CN=ChallengeCtl CA"
+
+# Generate server private key
+openssl genrsa -out server.key 2048
+
+# Generate server certificate signing request
+openssl req -new -key server.key -out server.csr \
+    -subj "/CN=challengectl.example.com"
+
+# Sign server certificate with CA
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
+    -CAcreateserial -out server.crt -days 365
+
+# Generate client certificate for each runner
+# Runner 1:
+openssl genrsa -out runner-1.key 2048
+openssl req -new -key runner-1.key -out runner-1.csr \
+    -subj "/CN=runner-1"
+openssl x509 -req -in runner-1.csr -CA ca.crt -CAkey ca.key \
+    -CAcreateserial -out runner-1.crt -days 365
+
+# Runner 2:
+openssl genrsa -out runner-2.key 2048
+openssl req -new -key runner-2.key -out runner-2.csr \
+    -subj "/CN=runner-2"
+openssl x509 -req -in runner-2.csr -CA ca.crt -CAkey ca.key \
+    -CAcreateserial -out runner-2.crt -days 365
+
+# Copy server cert and key to nginx directory
+sudo cp server.crt server.key /etc/ssl/private/
+
+# Copy CA certificate (needed for client cert verification)
+sudo cp ca.crt /etc/ssl/certs/challengectl-ca.crt
+
+# Distribute to runners:
+# - ca.crt (to verify server)
+# - runner-N.crt (client certificate)
+# - runner-N.key (client private key)
 ```
 
 ### Configure Nginx
@@ -255,6 +302,12 @@ sudo cp docs/nginx-challengectl.conf /etc/nginx/sites-available/challengectl
 
 # Edit configuration (update server_name, ssl_certificate paths, root path, proxy_pass URL)
 # Use your preferred text editor
+#
+# For mTLS (mutual TLS with client certificates), add these lines to the server block:
+#   ssl_client_certificate /etc/ssl/certs/challengectl-ca.crt;
+#   ssl_verify_client on;
+#
+# This requires clients (runners) to present valid certificates signed by your CA.
 
 # Enable site
 sudo ln -s /etc/nginx/sites-available/challengectl /etc/nginx/sites-enabled/
@@ -320,7 +373,17 @@ runner:
   server_url: "https://challengectl.example.com:8443"
   api_key: "unique-key-for-runner-1"
 
+  # TLS verification
   verify_ssl: true
+
+  # Path to CA certificate (to verify server)
+  ca_cert: "/path/to/ca.crt"
+
+  # For mTLS - client certificate authentication
+  # Add these if using mutual TLS:
+  # client_cert: "/path/to/runner-1.crt"
+  # client_key: "/path/to/runner-1.key"
+
   cache_dir: "cache"
 
 radios:
@@ -336,6 +399,8 @@ radios:
         - "144000000-148000000"
         - "420000000-450000000"
 ```
+
+**Note on mTLS:** When using mutual TLS with client certificates, runners authenticate with both their API key (in headers) and their client certificate. The nginx server verifies the client certificate against the CA, and the backend server verifies the API key.
 
 ## Public Dashboard
 
