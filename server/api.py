@@ -701,19 +701,14 @@ class ChallengeCtlAPI:
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
 
-    def run(self, host='0.0.0.0', port=8443, debug=False, ssl_cert=None, ssl_key=None):
+    def run(self, host='0.0.0.0', port=8443, debug=False):
         """Run the API server.
 
-        Note: Direct SSL support with eventlet is not reliable. For production,
-        use nginx or another reverse proxy for TLS termination.
+        For production with HTTPS/TLS, use nginx or another reverse proxy
+        for TLS termination (see DEPLOYMENT.md).
         """
-
-        if ssl_cert or ssl_key:
-            logger.warning("Direct SSL/TLS not supported with eventlet backend")
-            logger.warning("For TLS, use nginx or a reverse proxy (see DEPLOYMENT.md)")
-
         logger.info(f"Starting ChallengeCtl API server on http://{host}:{port}")
-        logger.info("For production with TLS, use nginx reverse proxy")
+        logger.info("For production with HTTPS, use nginx reverse proxy")
 
         # Start server
         self.socketio.run(

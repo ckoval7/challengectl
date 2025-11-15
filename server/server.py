@@ -240,13 +240,6 @@ server:
   bind: "0.0.0.0"
   port: 8443
 
-  # TLS/SSL Configuration (optional)
-  # Leave empty to run without TLS (HTTP only - use nginx for TLS termination)
-  # Or specify paths to enable direct HTTPS
-  tls:
-    cert: ""  # Path to SSL certificate file
-    key: ""   # Path to SSL private key file
-
   # API keys for runner authentication
   # Format: runner_id: api_key
   api_keys:

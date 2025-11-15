@@ -6,13 +6,6 @@ server:
   bind: "0.0.0.0"
   port: 8443
 
-  # TLS/SSL Configuration (optional)
-  # Option 1: Leave empty and use nginx for TLS termination (recommended for production)
-  # Option 2: Specify certificate paths for direct HTTPS (good for development/testing)
-  tls:
-    cert: ""  # Path to SSL certificate file (e.g., /etc/challengectl/server.crt)
-    key: ""   # Path to SSL private key file (e.g., /etc/challengectl/server.key)
-
   # API keys for runner authentication
   # Each runner should have a unique API key
   # Generate secure keys with: python3 generate-api-key.py --count 4
