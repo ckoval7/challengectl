@@ -33,8 +33,10 @@ files/
 /frontend/dist/
 /frontend/.vite/
 
-# IDE
+# IDE and environment
 .vscode/
 .idea/
 *.swp
 *.swo
+settings.json
+venv/

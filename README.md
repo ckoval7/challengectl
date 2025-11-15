@@ -2,6 +2,60 @@
 [![Frontend CI](https://github.com/ckoval7/challengectl/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/ckoval7/challengectl/actions/workflows/frontend-ci.yml)
 [![Backend CI](https://github.com/ckoval7/challengectl/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/ckoval7/challengectl/actions/workflows/backend-ci.yml)
 [![WAV format check](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml/badge.svg)](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml)
+
+# challengectl v2
+
+Everthing is gonna be broken in this branch for a few weeks while I work on stuff. Don't even try to use it til this message is gone.
+
+## TODO:
+- [x] Convert Config Files to YAML
+  - [x] Create YAML Structure
+  - [x] Update Code to Parse YAML
+- [x] Implement a test mode
+- [x] Better Logging
+- [x] Update USB Flowgraph to SSB (Both LSB and USB Capable)
+  - [x] Finish GRC Flowgraph
+  - [x] Integrate into code
+- [ ] Include Source Flowgraphs when possible
+  - [x] NBFM
+  - [x] SSB
+  - [x] FreeDV
+  - [ ] POCSAG
+  - [ ] Paint
+  - [ ] CW - Potentially possible, TBD
+  - [ ] ASK - Likely not possible
+  - [x] Freq Hopper
+  - [ ] LRS (Dan?)
+- [ ] Update Flowgraphs to use parameters (instead of variables) for flags, device args, gain settings
+  - [x] NBFM
+  - [x] SSB
+  - [x] FreeDV
+  - [ ] POCSAG
+  - [ ] Paint
+  - [ ] CW
+  - [ ] ASK
+  - [x] Freq Hopper
+  - [ ] LRS
+- [ ] Change code to use unmodified GNU Radio Generated Python
+- [ ] Add FreeDV Challenge
+  - [x] Finish GRC Flowgraph
+  - [ ] Integrate into code
+- [x] Add Freq-hop challenge
+  - [x] Finish GRC Flowgraph
+  - [x] Integrate into code
+- [ ] Update documentation for new YAML format and new challenges
+- [ ] Integrate Device Enumeration
+- [ ] Add support for multiple TX frontends per device
+- [ ] Add frequency limits and device args per TX frontend for different amp/filter/antenna setups
+- [ ] Implement WebUI
+  - [ ] Admin Status Page
+  - [ ] Public Status Page
+  - [ ] Challenge Editor
+  - [ ] Log Viewer
+- [ ] Create a multihost mode with a runner that can query a controller
+  - [ ] Create "API" to communicate between runner and controller
+  - [ ] Sync flags and wav files from controller to runner
+
 # challengectl
 Queues challenges and gr-osmosdr radios to transmit for the RFCTF
 
