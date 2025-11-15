@@ -1,13 +1,35 @@
 #!/bin/sh
+# Test script for challengectl v2 with YAML configuration
+# Converts legacy CSV files to YAML on-the-fly for testing
+
 exit_code="0"
+converter="./qa/csv-to-yaml-test-converter.py"
+
+# Make converter executable if it isn't already
+chmod +x "${converter}" 2>/dev/null
+
 for conference in flags-archive/*.csv; do
   printf 'Testing %s...' "${conference}"
-  if errors=$(./challengectl.py --test --flagfile "${conference}" --devicefile devices.txt.ci 2>&1); then
+
+  # Generate temporary YAML config from CSV files
+  temp_config="/tmp/test-config-$$.yml"
+  if ! python3 "${converter}" "${conference}" devices.txt.ci "${temp_config}" >/dev/null 2>&1; then
+    printf 'FAILED (CSV conversion error)\n'
+    exit_code="1"
+    continue
+  fi
+
+  # Test with the generated YAML config
+  if errors=$(./challengectl.py --test "${temp_config}" 2>&1); then
     printf 'PASSED\n'
   else
     printf 'FAILED\n'
     printf '\n%s\n\n' "${errors}"
     exit_code="1"
   fi
+
+  # Clean up temporary config
+  rm -f "${temp_config}"
 done
+
 exit "${exit_code}"
