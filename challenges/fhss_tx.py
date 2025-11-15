@@ -7,7 +7,7 @@
 # GNU Radio Python Flow Graph
 # Title: Freq Hopper
 # Author: Corey Koval
-# GNU Radio version: 3.10.1.1
+# GNU Radio version: 3.10.9.2
 
 from gnuradio import analog
 from gnuradio import blocks
@@ -21,12 +21,9 @@ from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
 from math import pi
-try:
-    # Try relative import first (when imported as part of challenges package)
-    from . import fhss_tx_hop_set as hop_set
-except ImportError:
-    # Fall back to direct import (when run as __main__)
-    import fhss_tx_hop_set as hop_set  # embedded python module
+import fhss_tx_hop_set as hop_set  # embedded python module
+import osmosdr
+import time
 
 
 
@@ -57,8 +54,8 @@ class fhss_tx(gr.top_block):
         # Variables
         ##################################################
         self.rf_rate = rf_rate = rf_samp_rate
-        self.rand_low = rand_low = -(((rf_rate/2)-channel_spacing)/channel_spacing)
-        self.rand_high = rand_high = (((rf_rate/2)-channel_spacing)/channel_spacing)
+        self.rand_low = rand_low = int(-(((rf_rate/2)-channel_spacing)/channel_spacing))
+        self.rand_high = rand_high = int((((rf_rate/2)-channel_spacing)/channel_spacing))
         self.audio_rate = audio_rate = 48000
         self.temp_hops = temp_hops = [-3,-2,-1,0,1,2,3]
         self.num_channels = num_channels = ((((rf_rate/2)-channel_spacing)/channel_spacing)*2)+1
@@ -68,6 +65,7 @@ class fhss_tx(gr.top_block):
         ##################################################
         # Blocks
         ##################################################
+
         self.rational_resampler_xxx_1 = filter.rational_resampler_fff(
                 interpolation=audio_rate,
                 decimation=wav_rate,
@@ -78,6 +76,17 @@ class fhss_tx(gr.top_block):
                 decimation=if_rate,
                 taps=[],
                 fractional_bw=0)
+        self.osmosdr_sink_0 = osmosdr.sink(
+            args="numchan=" + str(1) + " " + dev
+        )
+        self.osmosdr_sink_0.set_sample_rate(rf_rate)
+        self.osmosdr_sink_0.set_center_freq(freq, 0)
+        self.osmosdr_sink_0.set_freq_corr(ppm, 0)
+        self.osmosdr_sink_0.set_gain(rf_gain, 0)
+        self.osmosdr_sink_0.set_if_gain(if_gain, 0)
+        self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
+        self.osmosdr_sink_0.set_antenna('', 0)
+        self.osmosdr_sink_0.set_bandwidth(0, 0)
         self.low_pass_filter_0 = filter.fir_filter_ccf(
             1,
             firdes.low_pass(
@@ -89,17 +98,15 @@ class fhss_tx(gr.top_block):
                 6.76))
         self.blocks_wavfile_source_0 = blocks.wavfile_source(file, False)
         self.blocks_vector_source_x_0 = blocks.vector_source_f(hopset, True, 1, [])
-        self.blocks_vco_c_0 = blocks.vco_c(rf_rate, 2*pi*channel_spacing, 1)
-        self.blocks_throttle_0 = blocks.throttle(gr.sizeof_gr_complex*1, rf_rate,True)
-        self.blocks_repeat_0 = blocks.repeat(gr.sizeof_float*1, int(rf_rate*(1/hop_rate)))
-        self.blocks_null_sink_0 = blocks.null_sink(gr.sizeof_gr_complex*1)
+        self.blocks_vco_c_0 = blocks.vco_c(rf_rate, (2*pi*channel_spacing), 1)
+        self.blocks_repeat_0 = blocks.repeat(gr.sizeof_float*1, (int(rf_rate*(1/hop_rate))))
         self.blocks_multiply_xx_0 = blocks.multiply_vcc(1)
         self.analog_nbfm_tx_0 = analog.nbfm_tx(
         	audio_rate=audio_rate,
         	quad_rate=if_rate,
-        	tau=75e-6,
+        	tau=(75e-6),
         	max_dev=5e3,
-        	fh=-1.0,
+        	fh=(-1.0),
                 )
 
 
@@ -107,9 +114,8 @@ class fhss_tx(gr.top_block):
         # Connections
         ##################################################
         self.connect((self.analog_nbfm_tx_0, 0), (self.rational_resampler_xxx_0, 0))
-        self.connect((self.blocks_multiply_xx_0, 0), (self.blocks_throttle_0, 0))
+        self.connect((self.blocks_multiply_xx_0, 0), (self.osmosdr_sink_0, 0))
         self.connect((self.blocks_repeat_0, 0), (self.blocks_vco_c_0, 0))
-        self.connect((self.blocks_throttle_0, 0), (self.blocks_null_sink_0, 0))
         self.connect((self.blocks_vco_c_0, 0), (self.blocks_multiply_xx_0, 0))
         self.connect((self.blocks_vector_source_x_0, 0), (self.blocks_repeat_0, 0))
         self.connect((self.blocks_wavfile_source_0, 0), (self.rational_resampler_xxx_1, 0))
@@ -123,6 +129,7 @@ class fhss_tx(gr.top_block):
 
     def set_bb_gain(self, bb_gain):
         self.bb_gain = bb_gain
+        self.osmosdr_sink_0.set_bb_gain(self.bb_gain, 0)
 
     def get_channel_spacing(self):
         return self.channel_spacing
@@ -130,8 +137,8 @@ class fhss_tx(gr.top_block):
     def set_channel_spacing(self, channel_spacing):
         self.channel_spacing = channel_spacing
         self.set_num_channels(((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)*2)+1)
-        self.set_rand_high((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing))
-        self.set_rand_low(-(((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing))
+        self.set_rand_high(int((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)))
+        self.set_rand_low(int(-(((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)))
 
     def get_dev(self):
         return self.dev
@@ -150,6 +157,7 @@ class fhss_tx(gr.top_block):
 
     def set_freq(self, freq):
         self.freq = freq
+        self.osmosdr_sink_0.set_center_freq(self.freq, 0)
 
     def get_hop_rate(self):
         return self.hop_rate
@@ -157,7 +165,7 @@ class fhss_tx(gr.top_block):
     def set_hop_rate(self, hop_rate):
         self.hop_rate = hop_rate
         self.set_hopset(hop_set.mkhopset(self.seed,self.rand_low,self.rand_high,self.hop_rate,self.hop_time))
-        self.blocks_repeat_0.set_interpolation(int(self.rf_rate*(1/self.hop_rate)))
+        self.blocks_repeat_0.set_interpolation((int(self.rf_rate*(1/self.hop_rate))))
 
     def get_hop_time(self):
         return self.hop_time
@@ -171,18 +179,21 @@ class fhss_tx(gr.top_block):
 
     def set_if_gain(self, if_gain):
         self.if_gain = if_gain
+        self.osmosdr_sink_0.set_if_gain(self.if_gain, 0)
 
     def get_ppm(self):
         return self.ppm
 
     def set_ppm(self, ppm):
         self.ppm = ppm
+        self.osmosdr_sink_0.set_freq_corr(self.ppm, 0)
 
     def get_rf_gain(self):
         return self.rf_gain
 
     def set_rf_gain(self, rf_gain):
         self.rf_gain = rf_gain
+        self.osmosdr_sink_0.set_gain(self.rf_gain, 0)
 
     def get_rf_samp_rate(self):
         return self.rf_samp_rate
@@ -210,11 +221,11 @@ class fhss_tx(gr.top_block):
     def set_rf_rate(self, rf_rate):
         self.rf_rate = rf_rate
         self.set_num_channels(((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)*2)+1)
-        self.set_rand_high((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing))
-        self.set_rand_low(-(((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing))
-        self.blocks_repeat_0.set_interpolation(int(self.rf_rate*(1/self.hop_rate)))
-        self.blocks_throttle_0.set_sample_rate(self.rf_rate)
+        self.set_rand_high(int((((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)))
+        self.set_rand_low(int(-(((self.rf_rate/2)-self.channel_spacing)/self.channel_spacing)))
+        self.blocks_repeat_0.set_interpolation((int(self.rf_rate*(1/self.hop_rate))))
         self.low_pass_filter_0.set_taps(firdes.low_pass(1, self.rf_rate, 3e3, 2e3, window.WIN_HAMMING, 6.76))
+        self.osmosdr_sink_0.set_sample_rate(self.rf_rate)
 
     def get_rand_low(self):
         return self.rand_low

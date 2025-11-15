@@ -85,7 +85,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: (((rf_rate/2)-channel_spacing)/channel_spacing)
+    value: int((((rf_rate/2)-channel_spacing)/channel_spacing))
   states:
     bus_sink: false
     bus_source: false
@@ -97,7 +97,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: -(((rf_rate/2)-channel_spacing)/channel_spacing)
+    value: int(-(((rf_rate/2)-channel_spacing)/channel_spacing))
   states:
     bus_sink: false
     bus_source: false
@@ -200,7 +200,7 @@ blocks:
     bus_structure: null
     coordinate: [1336, 80.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_repeat_0
   id: blocks_repeat
   parameters:
@@ -237,7 +237,7 @@ blocks:
     bus_structure: null
     coordinate: [1072, 76.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_vco_c_0
   id: blocks_vco_c
   parameters:
@@ -743,7 +743,7 @@ blocks:
     bus_structure: null
     coordinate: [1192, 140.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: ppm
   id: parameter
   parameters:
@@ -885,3 +885,4 @@ connections:
 
 metadata:
   file_format: 1
+  grc_version: 3.10.9.2
