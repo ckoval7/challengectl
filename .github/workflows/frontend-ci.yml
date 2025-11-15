@@ -46,19 +46,6 @@ jobs:
         working-directory: ./frontend
         run: npm test -- --run
 
-      - name: Generate coverage report
-        working-directory: ./frontend
-        run: npm run test:coverage -- --run
-        continue-on-error: true
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./frontend/coverage/lcov.info
-          flags: frontend
-          name: frontend-coverage
-        continue-on-error: true
-
   build:
     name: Build Frontend
     runs-on: ubuntu-latest
