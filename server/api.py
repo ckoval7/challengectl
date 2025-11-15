@@ -13,8 +13,10 @@ import os
 import hashlib
 import yaml
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 import uuid
+from collections import deque
+import threading
 
 from database import Database
 
@@ -24,22 +26,29 @@ logger = logging.getLogger(__name__)
 class WebSocketHandler(logging.Handler):
     """Custom logging handler that broadcasts logs to WebUI via WebSocket."""
 
-    def __init__(self, socketio):
+    def __init__(self, socketio, log_buffer, buffer_lock):
         super().__init__()
         self.socketio = socketio
+        self.log_buffer = log_buffer
+        self.buffer_lock = buffer_lock
 
     def emit(self, record):
         """Emit a log record to WebSocket clients."""
         try:
-            log_entry = self.format(record)
-            # Broadcast to WebUI
-            self.socketio.emit('event', {
+            log_entry = {
                 'type': 'log',
                 'source': 'server',
                 'level': record.levelname,
                 'message': record.getMessage(),
                 'timestamp': datetime.fromtimestamp(record.created).isoformat()
-            })
+            }
+
+            # Add to buffer for historical retrieval
+            with self.buffer_lock:
+                self.log_buffer.append(log_entry)
+
+            # Broadcast to WebUI
+            self.socketio.emit('event', log_entry)
         except Exception:
             # Silently ignore errors in the handler to avoid recursion
             pass
@@ -70,6 +79,10 @@ class ChallengeCtlAPI:
         self.api_keys = self.config.get('server', {}).get('api_keys', {})
         self.files_dir = files_dir
 
+        # In-memory log buffer for recent logs (last 500)
+        self.log_buffer = deque(maxlen=500)
+        self.buffer_lock = threading.Lock()
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -84,7 +97,7 @@ class ChallengeCtlAPI:
 
     def setup_websocket_logging(self):
         """Add WebSocket handler to root logger to broadcast all logs."""
-        ws_handler = WebSocketHandler(self.socketio)
+        ws_handler = WebSocketHandler(self.socketio, self.log_buffer, self.buffer_lock)
         ws_handler.setLevel(logging.INFO)
         # Don't format here - we send structured data
         logging.root.addHandler(ws_handler)
@@ -318,13 +331,21 @@ class ChallengeCtlAPI:
             data = request.json
             log_entry = data.get('log', {})
 
-            # Broadcast log event to WebUI
-            self.broadcast_event('log', {
+            # Create structured log event
+            log_event = {
+                'type': 'log',
                 'source': runner_id,
                 'level': log_entry.get('level', 'INFO'),
                 'message': log_entry.get('message', ''),
                 'timestamp': log_entry.get('timestamp', datetime.now().isoformat())
-            })
+            }
+
+            # Add to log buffer
+            with self.buffer_lock:
+                self.log_buffer.append(log_event)
+
+            # Broadcast log event to WebUI
+            self.broadcast_event('log', log_event)
 
             return jsonify({'status': 'received'}), 200
 
@@ -347,6 +368,26 @@ class ChallengeCtlAPI:
                 'stats': stats,
                 'runners': runners,
                 'recent_transmissions': recent_transmissions
+            }), 200
+
+        @self.app.route('/api/logs', methods=['GET'])
+        @self.require_api_key
+        def get_logs():
+            """Get recent log entries from in-memory buffer."""
+            limit = request.args.get('limit', 500, type=int)
+
+            # Get logs from buffer (thread-safe)
+            with self.buffer_lock:
+                # Convert deque to list and get most recent entries
+                # Logs are in chronological order (oldest to newest)
+                logs_list = list(self.log_buffer)
+
+                # Return most recent logs
+                recent_logs = logs_list[-limit:] if limit < len(logs_list) else logs_list
+
+            return jsonify({
+                'logs': recent_logs,
+                'total': len(recent_logs)
             }), 200
 
         @self.app.route('/api/runners', methods=['GET'])

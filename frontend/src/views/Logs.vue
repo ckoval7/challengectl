@@ -75,6 +75,7 @@
 <script>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { websocket } from '../websocket'
+import { api } from '../api'
 
 export default {
   name: 'Logs',
@@ -83,6 +84,7 @@ export default {
     const levelFilter = ref('')
     const autoScroll = ref(true)
     const logContainer = ref(null)
+    const loading = ref(false)
 
     const filteredLogs = computed(() => {
       if (!levelFilter.value) {
@@ -90,6 +92,26 @@ export default {
       }
       return logs.value.filter(log => log.level === levelFilter.value)
     })
+
+    const fetchLogs = async () => {
+      loading.value = true
+      try {
+        const response = await api.get('/api/logs')
+        const fetchedLogs = response.data.logs || []
+
+        // Add fetched logs in reverse order (newest first)
+        logs.value = fetchedLogs.map(log => ({
+          timestamp: log.timestamp || new Date().toISOString(),
+          source: log.source || 'server',
+          level: log.level || 'INFO',
+          message: log.message || ''
+        })).reverse()
+      } catch (error) {
+        console.error('Failed to fetch logs:', error)
+      } finally {
+        loading.value = false
+      }
+    }
 
     const handleLogEvent = (event) => {
       logs.value.unshift({
@@ -123,7 +145,11 @@ export default {
       return date.toLocaleTimeString()
     }
 
-    onMounted(() => {
+    onMounted(async () => {
+      // Fetch historical logs first
+      await fetchLogs()
+
+      // Then connect to WebSocket for real-time updates
       websocket.connect()
       websocket.on('log', handleLogEvent)
     })
@@ -138,6 +164,7 @@ export default {
       levelFilter,
       autoScroll,
       logContainer,
+      loading,
       clearLogs,
       formatTime
     }
