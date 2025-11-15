@@ -36,11 +36,11 @@ class ChallengeCtlServer:
         self.db_path = db_path
         self.files_dir = files_dir
 
-        # Initialize database
+        # Initialize database (single instance shared with API)
         self.db = Database(db_path)
 
-        # Initialize API
-        self.api = ChallengeCtlAPI(config_path, db_path, files_dir)
+        # Initialize API with shared database instance
+        self.api = ChallengeCtlAPI(config_path, self.db, files_dir)
 
         # Initialize background scheduler
         self.scheduler = BackgroundScheduler()

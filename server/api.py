@@ -21,10 +21,34 @@ from database import Database
 logger = logging.getLogger(__name__)
 
 
+class WebSocketHandler(logging.Handler):
+    """Custom logging handler that broadcasts logs to WebUI via WebSocket."""
+
+    def __init__(self, socketio):
+        super().__init__()
+        self.socketio = socketio
+
+    def emit(self, record):
+        """Emit a log record to WebSocket clients."""
+        try:
+            log_entry = self.format(record)
+            # Broadcast to WebUI
+            self.socketio.emit('event', {
+                'type': 'log',
+                'source': 'server',
+                'level': record.levelname,
+                'message': record.getMessage(),
+                'timestamp': datetime.fromtimestamp(record.created).isoformat()
+            })
+        except Exception:
+            # Silently ignore errors in the handler to avoid recursion
+            pass
+
+
 class ChallengeCtlAPI:
     """Main API server for challengectl."""
 
-    def __init__(self, config_path: str, db_path: str, files_dir: str):
+    def __init__(self, config_path: str, db: Database, files_dir: str):
         self.app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
         self.app.config['SECRET_KEY'] = os.urandom(24)
 
@@ -34,8 +58,8 @@ class ChallengeCtlAPI:
         # Initialize SocketIO for real-time updates
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
 
-        # Database
-        self.db = Database(db_path)
+        # Use provided database instance
+        self.db = db
 
         # Configuration
         self.config = self.load_config(config_path)
@@ -49,7 +73,17 @@ class ChallengeCtlAPI:
         self.register_routes()
         self.register_socketio_handlers()
 
+        # Set up WebSocket logging handler
+        self.setup_websocket_logging()
+
         logger.info("ChallengeCtl API initialized")
+
+    def setup_websocket_logging(self):
+        """Add WebSocket handler to root logger to broadcast all logs."""
+        ws_handler = WebSocketHandler(self.socketio)
+        ws_handler.setLevel(logging.INFO)
+        # Don't format here - we send structured data
+        logging.root.addHandler(ws_handler)
 
     def load_config(self, config_path: str) -> Dict:
         """Load server configuration from YAML."""
@@ -637,5 +671,6 @@ class ChallengeCtlAPI:
 
 def create_app(config_path='server-config.yml', db_path='challengectl.db', files_dir='files'):
     """Factory function to create the Flask app."""
-    api = ChallengeCtlAPI(config_path, db_path, files_dir)
+    db = Database(db_path)
+    api = ChallengeCtlAPI(config_path, db, files_dir)
     return api.app, api.socketio
