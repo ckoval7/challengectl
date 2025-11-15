@@ -1,0 +1,10 @@
+# ChallengeCtl Runner Dependencies
+
+# HTTP client
+requests>=2.31.0
+
+# Configuration
+PyYAML>=6.0
+
+# All existing challengectl dependencies for SDR operations
+# (Assumes GNU Radio and gr-osmosdr already installed)

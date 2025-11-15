@@ -1,0 +1,615 @@
+#!/usr/bin/env python3
+"""
+ChallengeCtl Runner - Client that runs on each SDR host.
+Polls server for tasks, downloads files, executes challenges.
+"""
+
+import argparse
+import logging
+import sys
+import os
+import time
+import socket
+import hashlib
+import yaml
+import requests
+from pathlib import Path
+from typing import Optional, Dict, List
+import threading
+from datetime import datetime
+import json
+
+# Import challenge modules from parent directory
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, pocsagtx_osmocom, lrs_pager, lrs_tx, freedv_tx
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s challengectl-runner[%(process)d]: %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S'
+)
+
+logger = logging.getLogger(__name__)
+
+
+class ChallengeCtlRunner:
+    """Runner client for executing challenges on SDR devices."""
+
+    def __init__(self, config_path: str):
+        self.config = self.load_config(config_path)
+        self.runner_id = self.config['runner']['runner_id']
+        self.server_url = self.config['runner']['server_url'].rstrip('/')
+        self.api_key = self.config['runner']['api_key']
+        self.cache_dir = self.config['runner'].get('cache_dir', '/var/cache/challengectl')
+        self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
+        self.poll_interval = self.config['runner'].get('poll_interval', 10)
+
+        # Devices from configuration
+        self.devices = self.load_devices()
+
+        # Cache directory setup
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+        # Running state
+        self.running = False
+        self.current_task = None
+
+        # HTTP session for connection pooling
+        self.session = requests.Session()
+        self.session.headers.update({'Authorization': f'Bearer {self.api_key}'})
+
+        # Disable SSL warnings if using self-signed certs (for development)
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        logger.info(f"Runner initialized: {self.runner_id}")
+
+    def load_config(self, config_path: str) -> Dict:
+        """Load runner configuration from YAML."""
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                logger.info(f"Loaded configuration from {config_path}")
+                return config
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
+            sys.exit(1)
+
+    def load_devices(self) -> List[Dict]:
+        """Load and enumerate SDR devices from configuration."""
+        devices = []
+        radios_config = self.config.get('radios', {})
+
+        # Get model defaults
+        models_config = radios_config.get('models', [])
+        model_defaults = {}
+        for model_conf in models_config:
+            model_name = model_conf.get('model')
+            if model_name:
+                model_defaults[model_name] = model_conf
+
+        # Parse devices
+        devices_config = radios_config.get('devices', [])
+        for idx, device_conf in enumerate(devices_config):
+            model = device_conf.get('model')
+            name = device_conf.get('name')
+            model_def = model_defaults.get(model, {})
+
+            # Build device string (same logic as v2)
+            device_string = f"{model}={name}"
+            if device_conf.get('bias_t') or model_def.get('bias_t'):
+                device_string += ",biastee=1"
+
+            device_info = {
+                'device_id': idx,
+                'model': model,
+                'name': name,
+                'device_string': device_string,
+                'antenna': device_conf.get('antenna', model_def.get('antenna', '')),
+                'frequency_limits': device_conf.get('frequency_limits', [])
+            }
+
+            devices.append(device_info)
+            logger.info(f"Configured device {idx}: {device_string}")
+
+        return devices
+
+    def register(self) -> bool:
+        """Register this runner with the server."""
+        try:
+            hostname = socket.gethostname()
+
+            # Prepare device info for server
+            devices_info = []
+            for dev in self.devices:
+                devices_info.append({
+                    'device_id': dev['device_id'],
+                    'model': dev['model'],
+                    'name': dev['name'],
+                    'frequency_limits': dev['frequency_limits']
+                })
+
+            response = self.session.post(
+                f"{self.server_url}/api/runners/register",
+                json={
+                    'hostname': hostname,
+                    'devices': devices_info
+                },
+                verify=False,  # TODO: Use proper CA cert
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                logger.info(f"Successfully registered with server as {self.runner_id}")
+                return True
+            else:
+                logger.error(f"Registration failed: {response.status_code} - {response.text}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during registration: {e}")
+            return False
+
+    def send_heartbeat(self):
+        """Send periodic heartbeat to server."""
+        try:
+            response = self.session.post(
+                f"{self.server_url}/api/runners/{self.runner_id}/heartbeat",
+                verify=False,
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                logger.debug("Heartbeat sent")
+            else:
+                logger.warning(f"Heartbeat failed: {response.status_code}")
+
+        except Exception as e:
+            logger.error(f"Error sending heartbeat: {e}")
+
+    def heartbeat_loop(self):
+        """Background thread for sending heartbeats."""
+        while self.running:
+            self.send_heartbeat()
+            time.sleep(self.heartbeat_interval)
+
+    def get_task(self) -> Optional[Dict]:
+        """Request next task from server."""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/runners/{self.runner_id}/task",
+                verify=False,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                task = data.get('task')
+
+                if task:
+                    logger.info(f"Received task: {task['name']}")
+                    return task
+                else:
+                    logger.debug("No tasks available")
+                    return None
+            else:
+                logger.warning(f"Get task failed: {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error getting task: {e}")
+            return None
+
+    def download_file(self, file_hash: str) -> Optional[str]:
+        """Download a file from server if not in cache."""
+        cache_path = os.path.join(self.cache_dir, file_hash)
+
+        # Check if file exists and verify hash
+        if os.path.exists(cache_path):
+            with open(cache_path, 'rb') as f:
+                existing_hash = hashlib.sha256(f.read()).hexdigest()
+                if existing_hash == file_hash:
+                    logger.debug(f"File {file_hash[:8]}... found in cache")
+                    return cache_path
+
+        # Download file
+        try:
+            logger.info(f"Downloading file {file_hash[:8]}...")
+
+            response = self.session.get(
+                f"{self.server_url}/api/files/{file_hash}",
+                verify=False,
+                timeout=60,
+                stream=True
+            )
+
+            if response.status_code == 200:
+                # Write to temp file first
+                temp_path = cache_path + '.tmp'
+                with open(temp_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                # Verify hash
+                with open(temp_path, 'rb') as f:
+                    downloaded_hash = hashlib.sha256(f.read()).hexdigest()
+
+                if downloaded_hash != file_hash:
+                    logger.error(f"Hash mismatch for downloaded file")
+                    os.remove(temp_path)
+                    return None
+
+                # Move to final location
+                os.rename(temp_path, cache_path)
+                logger.info(f"File downloaded successfully")
+                return cache_path
+
+            else:
+                logger.error(f"File download failed: {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error downloading file: {e}")
+            return None
+
+    def resolve_file_path(self, flag_value: str) -> str:
+        """
+        Resolve file path from flag value.
+        If it's a hash (sha256:...), download from server.
+        Otherwise, assume it's a local path.
+        """
+        if flag_value.startswith('sha256:'):
+            file_hash = flag_value[7:]  # Remove 'sha256:' prefix
+            return self.download_file(file_hash)
+        else:
+            # Assume it's a local path relative to parent directory
+            parent_dir = os.path.join(os.path.dirname(__file__), '..')
+            return os.path.join(parent_dir, flag_value)
+
+    def execute_challenge(self, task: Dict) -> bool:
+        """Execute a challenge task."""
+        challenge_id = task['challenge_id']
+        name = task['name']
+        config = task['config']
+
+        modulation = config.get('modulation')
+        flag = config.get('flag')
+        frequency = config.get('frequency')
+
+        logger.info(f"Executing challenge: {name} ({modulation}) on {frequency} Hz")
+
+        # Select first available device (simple strategy for now)
+        if not self.devices:
+            logger.error("No devices available")
+            return False
+
+        device = self.devices[0]
+        device_string = device['device_string']
+        antenna = device['antenna']
+
+        try:
+            # Resolve file paths if needed
+            if modulation in ['nbfm', 'ssb', 'fhss', 'freedv']:
+                flag_path = self.resolve_file_path(flag)
+                if not flag_path or not os.path.exists(flag_path):
+                    logger.error(f"Flag file not found: {flag}")
+                    return False
+                flag = flag_path
+
+            # Execute based on modulation type
+            if modulation == 'cw':
+                speed = config.get('speed', 35)
+                from multiprocessing import Process
+                p = Process(target=cw.main, args=(flag, speed, frequency, device_string, antenna))
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
+
+            elif modulation == 'ask':
+                ask.main(flag.encode("utf-8").hex(), frequency, device_string, antenna)
+                success = True
+
+            elif modulation == 'nbfm':
+                wav_rate = config.get('wav_samplerate', 48000)
+                nbfm_opts = nbfm.argument_parser().parse_args('')
+                nbfm_opts.dev = device_string
+                nbfm_opts.freq = frequency
+                nbfm_opts.wav_file = flag
+                nbfm_opts.wav_samp_rate = wav_rate
+                nbfm_opts.antenna = antenna
+                nbfm.main(options=nbfm_opts)
+                success = True
+
+            elif modulation == 'ssb':
+                mode = config.get('mode', 'usb')
+                wav_rate = config.get('wav_samplerate', 48000)
+                ssb_opts = ssb_tx.argument_parser().parse_args('')
+                ssb_opts.dev = device_string
+                ssb_opts.freq = frequency
+                ssb_opts.wav_file = flag
+                ssb_opts.wav_samp_rate = wav_rate
+                ssb_opts.mode = mode
+                ssb_opts.antenna = antenna
+                ssb_tx.main(options=ssb_opts)
+                success = True
+
+            elif modulation == 'fhss':
+                wav_rate = config.get('wav_samplerate', 48000)
+                channel_spacing = config.get('channel_spacing', 10000)
+                hop_rate = config.get('hop_rate', 10)
+                hop_time = config.get('hop_time', 60)
+                seed = config.get('seed', 'RFHS')
+
+                fhss_opts = fhss_tx.argument_parser().parse_args('')
+                fhss_opts.dev = device_string
+                fhss_opts.freq = frequency
+                fhss_opts.file = flag
+                fhss_opts.wav_rate = wav_rate
+                fhss_opts.channel_spacing = channel_spacing
+                fhss_opts.hop_rate = hop_rate
+                fhss_opts.hop_time = hop_time
+                fhss_opts.seed = seed
+                fhss_opts.antenna = antenna
+                fhss_tx.main(options=fhss_opts)
+                success = True
+
+            elif modulation == 'pocsag':
+                capcode = config.get('capcode', 0)
+                pocsag_opts = pocsagtx_osmocom.argument_parser().parse_args('')
+                pocsag_opts.deviceargs = device_string
+                pocsag_opts.samp_rate = 2400000
+                pocsag_opts.pagerfreq = frequency
+                pocsag_opts.capcode = capcode
+                pocsag_opts.message = flag
+                pocsag_opts.antenna = antenna
+                pocsagtx_osmocom.main(options=pocsag_opts)
+                success = True
+
+            elif modulation == 'lrs':
+                import random
+                import string
+                lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
+                randomstring = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                outfile = f"/tmp/lrs_{randomstring}.bin"
+                lrspageropts.outputfile = outfile
+                lrs_pager.main(options=lrspageropts)
+
+                lrsopts = lrs_tx.argument_parser().parse_args('')
+                lrsopts.deviceargs = device_string
+                lrsopts.freq = frequency
+                lrsopts.binfile = outfile
+                lrsopts.antenna = antenna
+                lrs_tx.main(options=lrsopts)
+
+                os.remove(outfile)
+                success = True
+
+            else:
+                logger.error(f"Unknown modulation type: {modulation}")
+                success = False
+
+            # Turn off bias-tee if needed
+            if 'bladerf' in device_string and 'biastee=1' in device_string:
+                self.disable_bladerf_biastee(device_string)
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error executing challenge: {e}", exc_info=True)
+            return False
+
+    def disable_bladerf_biastee(self, device_string: str):
+        """Turn off BladeRF bias-tee after transmission."""
+        try:
+            import subprocess
+            bladeserial = self.parse_bladerf_serial(device_string)
+            serialarg = f'*:serial={bladeserial}'
+            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
+            logger.debug(f"Disabled bias-tee for BladeRF {bladeserial}")
+        except Exception as e:
+            logger.error(f"Error disabling bias-tee: {e}")
+
+    def parse_bladerf_serial(self, device_string: str) -> str:
+        """Parse BladeRF serial from device string."""
+        idx = device_string.find("bladerf=")
+        if idx != -1:
+            start = idx + 8
+            end = start + 32
+            return device_string[start:end]
+        return ""
+
+    def report_completion(self, challenge_id: str, success: bool, error_message: Optional[str] = None):
+        """Report task completion to server."""
+        try:
+            response = self.session.post(
+                f"{self.server_url}/api/runners/{self.runner_id}/complete",
+                json={
+                    'challenge_id': challenge_id,
+                    'success': success,
+                    'error_message': error_message,
+                    'device_id': self.devices[0]['device_id'] if self.devices else 0,
+                    'frequency': 0  # TODO: Get from task
+                },
+                verify=False,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                logger.info(f"Completion reported for {challenge_id}")
+            else:
+                logger.warning(f"Completion report failed: {response.status_code}")
+
+        except Exception as e:
+            logger.error(f"Error reporting completion: {e}")
+
+    def send_log(self, level: str, message: str):
+        """Send log entry to server."""
+        try:
+            self.session.post(
+                f"{self.server_url}/api/runners/{self.runner_id}/log",
+                json={
+                    'log': {
+                        'level': level,
+                        'message': message,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                },
+                verify=False,
+                timeout=5
+            )
+        except:
+            pass  # Don't fail if log upload fails
+
+    def task_loop(self):
+        """Main task execution loop."""
+        logger.info("Task loop started")
+
+        while self.running:
+            try:
+                # Get next task
+                task = self.get_task()
+
+                if task:
+                    self.current_task = task
+                    challenge_id = task['challenge_id']
+
+                    # Execute challenge
+                    success = self.execute_challenge(task)
+
+                    # Report completion
+                    error_msg = None if success else "Execution failed"
+                    self.report_completion(challenge_id, success, error_msg)
+
+                    self.current_task = None
+
+                    # Small delay between tasks
+                    time.sleep(3)
+                else:
+                    # No tasks available, wait before polling again
+                    time.sleep(self.poll_interval)
+
+            except Exception as e:
+                logger.error(f"Error in task loop: {e}", exc_info=True)
+                time.sleep(self.poll_interval)
+
+    def start(self):
+        """Start the runner."""
+        logger.info("="*60)
+        logger.info(f"ChallengeCtl Runner Starting: {self.runner_id}")
+        logger.info("="*60)
+        logger.info(f"Server: {self.server_url}")
+        logger.info(f"Devices: {len(self.devices)}")
+        logger.info("="*60)
+
+        # Register with server
+        if not self.register():
+            logger.error("Failed to register with server. Exiting.")
+            sys.exit(1)
+
+        self.running = True
+
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=self.heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
+        logger.info("Heartbeat thread started")
+
+        # Start task loop (blocking)
+        try:
+            self.task_loop()
+        except KeyboardInterrupt:
+            logger.info("Shutdown requested")
+            self.stop()
+
+    def stop(self):
+        """Stop the runner."""
+        logger.info("Stopping runner...")
+        self.running = False
+        time.sleep(1)
+        logger.info("Runner stopped")
+
+
+def argument_parser():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="ChallengeCtl Runner - Execute challenges on SDR devices"
+    )
+
+    parser.add_argument(
+        '-c', '--config',
+        default='runner-config.yml',
+        help='Path to runner configuration file (default: runner-config.yml)'
+    )
+
+    parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='Set logging level (default: INFO)'
+    )
+
+    return parser
+
+
+def main():
+    """Main entry point."""
+    parser = argument_parser()
+    args = parser.parse_args()
+
+    # Set log level
+    log_level = getattr(logging, args.log_level)
+    logging.getLogger().setLevel(log_level)
+
+    # Check if config exists
+    if not os.path.exists(args.config):
+        logger.error(f"Configuration file not found: {args.config}")
+        logger.info("Creating default configuration...")
+        create_default_config(args.config)
+        logger.info(f"Default configuration created at {args.config}")
+        logger.info("Please edit the configuration file and restart")
+        sys.exit(1)
+
+    # Create and start runner
+    runner = ChallengeCtlRunner(args.config)
+    runner.start()
+
+
+def create_default_config(config_path: str):
+    """Create default runner configuration."""
+    default_config = """---
+runner:
+  runner_id: "runner-1"
+  server_url: "https://192.168.1.100:8443"
+  api_key: "change-this-key-abc123"
+
+  cache_dir: "/var/cache/challengectl"
+  heartbeat_interval: 30
+  poll_interval: 10
+
+radios:
+  models:
+  - model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    bias_t: true
+
+  - model: bladerf
+    rf_gain: 43
+    bias_t: true
+
+  devices:
+  - name: 0
+    model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    frequency_limits:
+      - "144000000-148000000"
+      - "420000000-450000000"
+"""
+
+    with open(config_path, 'w') as f:
+        f.write(default_config)
+
+
+if __name__ == '__main__':
+    main()

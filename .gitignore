@@ -12,3 +12,30 @@ test_*
 devices.txt.corey
 devices.txt.test
 flags.txt
+
+# Distributed mode additions
+__pycache__/
+*.py[cod]
+*.log
+challengectl.*.log
+
+# Configuration (may contain secrets)
+server-config.yml
+runner-config.yml
+*-config.local.yml
+
+# Cache and files
+/server/files/
+files/
+
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+/frontend/package-lock.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
