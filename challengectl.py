@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-# import sys
+import sys
 from multiprocessing import Process, Queue
 import logging
 import string
