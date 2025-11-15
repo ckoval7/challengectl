@@ -1,0 +1,40 @@
+[Unit]
+Description=ChallengeCtl Server - Distributed SDR Challenge Coordinator
+Documentation=https://github.com/ckoval7/challengectl
+After=network.target
+
+[Service]
+Type=simple
+User=challengectl
+Group=challengectl
+
+# Working directory
+WorkingDirectory=/opt/challengectl/server
+
+# Start server
+ExecStart=/usr/bin/python3 /opt/challengectl/server/server.py \
+    --config /etc/challengectl/server-config.yml \
+    --database /var/lib/challengectl/challengectl.db \
+    --files-dir /var/lib/challengectl/files
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=challengectl-server
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/challengectl /var/log/challengectl
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

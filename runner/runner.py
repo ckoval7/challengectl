@@ -45,6 +45,10 @@ class ChallengeCtlRunner:
         self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
 
+        # TLS configuration
+        self.ca_cert = self.config['runner'].get('ca_cert')
+        self.verify_ssl = self.config['runner'].get('verify_ssl', True)
+
         # Devices from configuration
         self.devices = self.load_devices()
 
@@ -59,9 +63,22 @@ class ChallengeCtlRunner:
         self.session = requests.Session()
         self.session.headers.update({'Authorization': f'Bearer {self.api_key}'})
 
-        # Disable SSL warnings if using self-signed certs (for development)
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        # Configure TLS verification
+        if self.ca_cert and os.path.exists(self.ca_cert):
+            # Use provided CA certificate
+            self.session.verify = self.ca_cert
+            logger.info(f"Using CA certificate: {self.ca_cert}")
+        elif not self.verify_ssl:
+            # Disable SSL verification (development only)
+            self.session.verify = False
+            logger.warning("SSL verification disabled - development mode only!")
+            # Disable SSL warnings if verification is disabled
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        else:
+            # Use default system CA certificates
+            self.session.verify = True
+            logger.info("Using system CA certificates")
 
         logger.info(f"Runner initialized: {self.runner_id}")
 
@@ -136,7 +153,6 @@ class ChallengeCtlRunner:
                     'hostname': hostname,
                     'devices': devices_info
                 },
-                verify=False,  # TODO: Use proper CA cert
                 timeout=10
             )
 
@@ -156,7 +172,6 @@ class ChallengeCtlRunner:
         try:
             response = self.session.post(
                 f"{self.server_url}/api/runners/{self.runner_id}/heartbeat",
-                verify=False,
                 timeout=5
             )
 
@@ -179,7 +194,6 @@ class ChallengeCtlRunner:
         try:
             response = self.session.get(
                 f"{self.server_url}/api/runners/{self.runner_id}/task",
-                verify=False,
                 timeout=10
             )
 
@@ -219,7 +233,6 @@ class ChallengeCtlRunner:
 
             response = self.session.get(
                 f"{self.server_url}/api/files/{file_hash}",
-                verify=False,
                 timeout=60,
                 stream=True
             )
@@ -267,8 +280,13 @@ class ChallengeCtlRunner:
             parent_dir = os.path.join(os.path.dirname(__file__), '..')
             return os.path.join(parent_dir, flag_value)
 
-    def execute_challenge(self, task: Dict) -> bool:
-        """Execute a challenge task."""
+    def execute_challenge(self, task: Dict) -> tuple:
+        """
+        Execute a challenge task.
+
+        Returns:
+            tuple: (success: bool, device_id: int, frequency: int)
+        """
         challenge_id = task['challenge_id']
         name = task['name']
         config = task['config']
@@ -282,9 +300,10 @@ class ChallengeCtlRunner:
         # Select first available device (simple strategy for now)
         if not self.devices:
             logger.error("No devices available")
-            return False
+            return (False, 0, frequency or 0)
 
         device = self.devices[0]
+        device_id = device['device_id']
         device_string = device['device_string']
         antenna = device['antenna']
 
@@ -393,11 +412,11 @@ class ChallengeCtlRunner:
             if 'bladerf' in device_string and 'biastee=1' in device_string:
                 self.disable_bladerf_biastee(device_string)
 
-            return success
+            return (success, device_id, frequency or 0)
 
         except Exception as e:
             logger.error(f"Error executing challenge: {e}", exc_info=True)
-            return False
+            return (False, device_id if 'device_id' in locals() else 0, frequency or 0)
 
     def disable_bladerf_biastee(self, device_string: str):
         """Turn off BladeRF bias-tee after transmission."""
@@ -419,7 +438,9 @@ class ChallengeCtlRunner:
             return device_string[start:end]
         return ""
 
-    def report_completion(self, challenge_id: str, success: bool, error_message: Optional[str] = None):
+    def report_completion(self, challenge_id: str, success: bool,
+                         device_id: int, frequency: int,
+                         error_message: Optional[str] = None):
         """Report task completion to server."""
         try:
             response = self.session.post(
@@ -428,10 +449,9 @@ class ChallengeCtlRunner:
                     'challenge_id': challenge_id,
                     'success': success,
                     'error_message': error_message,
-                    'device_id': self.devices[0]['device_id'] if self.devices else 0,
-                    'frequency': 0  # TODO: Get from task
+                    'device_id': device_id,
+                    'frequency': frequency
                 },
-                verify=False,
                 timeout=10
             )
 
@@ -455,7 +475,6 @@ class ChallengeCtlRunner:
                         'timestamp': datetime.now().isoformat()
                     }
                 },
-                verify=False,
                 timeout=5
             )
         except:
@@ -475,11 +494,11 @@ class ChallengeCtlRunner:
                     challenge_id = task['challenge_id']
 
                     # Execute challenge
-                    success = self.execute_challenge(task)
+                    success, device_id, frequency = self.execute_challenge(task)
 
                     # Report completion
                     error_msg = None if success else "Execution failed"
-                    self.report_completion(challenge_id, success, error_msg)
+                    self.report_completion(challenge_id, success, device_id, frequency, error_msg)
 
                     self.current_task = None
 
@@ -581,6 +600,13 @@ runner:
   runner_id: "runner-1"
   server_url: "https://192.168.1.100:8443"
   api_key: "change-this-key-abc123"
+
+  # TLS/SSL Configuration
+  # Path to CA certificate file for server verification
+  # Leave blank to use system CA certificates
+  ca_cert: ""
+  # Set to false to disable SSL verification (development only!)
+  verify_ssl: true
 
   cache_dir: "/var/cache/challengectl"
   heartbeat_interval: 30

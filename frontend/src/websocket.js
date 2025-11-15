@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client'
+import config from './config'
 
 class WebSocketManager {
   constructor() {
@@ -7,12 +8,15 @@ class WebSocketManager {
     this.listeners = {}
   }
 
-  connect(url = 'http://localhost:8443') {
+  connect(url = null) {
     if (this.socket) {
       return
     }
 
-    this.socket = io(url, {
+    // Use provided URL, or config, or current origin
+    const wsUrl = url || config.websocket.url
+
+    this.socket = io(wsUrl, {
       transports: ['websocket', 'polling']
     })
 

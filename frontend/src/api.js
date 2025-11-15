@@ -1,10 +1,11 @@
 import axios from 'axios'
+import config from './config'
 
 // API client configuration
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: config.api.baseURL || '/api',
   headers: {
-    'Authorization': 'Bearer change-this-admin-key-xyz999'  // TODO: Make configurable
+    'Authorization': `Bearer ${config.api.apiKey}`
   }
 })
 
