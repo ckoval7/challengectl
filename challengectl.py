@@ -17,7 +17,9 @@ import numpy as np
 import subprocess
 
 from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx,
-                        freedv_tx, fhss_tx, ssb_tx)
+                        freedv_tx, ssb_tx)
+# fhss_tx not yet fully implemented - commented out to prevent import errors
+# from challenges import fhss_tx
 
 logging.basicConfig(filename='challengectl.log',
                     filemode='w',
