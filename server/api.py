@@ -49,8 +49,12 @@ class ChallengeCtlAPI:
     """Main API server for challengectl."""
 
     def __init__(self, config_path: str, db: Database, files_dir: str):
-        self.app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
+        # Don't use Flask's static file serving - we'll handle it manually for SPA routing
+        self.app = Flask(__name__)
         self.app.config['SECRET_KEY'] = os.urandom(24)
+
+        # Store frontend directory path
+        self.frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/dist'))
 
         # Enable CORS for development
         CORS(self.app)
@@ -600,22 +604,33 @@ class ChallengeCtlAPI:
                 return jsonify({'error': str(e)}), 500
 
         # Serve WebUI (Vue.js SPA)
+        # This must be the LAST route to catch all non-API requests
         @self.app.route('/')
         @self.app.route('/<path:path>')
-        def serve_frontend(path='index.html'):
-            """Serve the Vue.js frontend."""
-            frontend_dir = os.path.join(self.app.static_folder)
+        def serve_frontend(path=''):
+            """Serve the Vue.js frontend SPA.
 
-            # If frontend is built, serve it
-            if os.path.exists(frontend_dir):
-                if path and os.path.exists(os.path.join(frontend_dir, path)):
-                    return send_from_directory(frontend_dir, path)
-                else:
-                    return send_from_directory(frontend_dir, 'index.html')
-            else:
+            For SPA routing to work, we serve index.html for all non-file requests.
+            Vue Router handles the client-side routing.
+            """
+            # Check if frontend is built
+            if not os.path.exists(self.frontend_dir):
                 return jsonify({
                     'message': 'Frontend not built. Run `cd frontend && npm run build`'
                 }), 404
+
+            # If path is empty or '/', serve index.html
+            if not path or path == '/':
+                return send_from_directory(self.frontend_dir, 'index.html')
+
+            # Check if the requested path is an actual file (like CSS, JS, images)
+            file_path = os.path.join(self.frontend_dir, path)
+            if os.path.isfile(file_path):
+                return send_from_directory(self.frontend_dir, path)
+
+            # For all other paths (like /public, /runners, etc.), serve index.html
+            # This allows Vue Router to handle the routing
+            return send_from_directory(self.frontend_dir, 'index.html')
 
     def register_socketio_handlers(self):
         """Register WebSocket event handlers."""
