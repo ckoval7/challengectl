@@ -1,3 +1,6 @@
+[![Challengectl test](https://github.com/ckoval7/challengectl/actions/workflows/challengectl-test.yaml/badge.svg)](https://github.com/ckoval7/challengectl/actions/workflows/challengectl-test.yaml)
+[![Frontend CI](https://github.com/ckoval7/challengectl/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/ckoval7/challengectl/actions/workflows/frontend-ci.yml)
+[![Backend CI](https://github.com/ckoval7/challengectl/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/ckoval7/challengectl/actions/workflows/backend-ci.yml)
 [![WAV format check](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml/badge.svg)](https://github.com/rfhs/challengectl/actions/workflows/wav-format-check.yaml)
 # challengectl
 Queues challenges and gr-osmosdr radios to transmit for the RFCTF
