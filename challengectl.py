@@ -15,11 +15,19 @@ import csv
 import yaml
 import numpy as np
 import subprocess
+from datetime import datetime
 
 from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx,
                         freedv_tx, ssb_tx, fhss_tx)
 
-logging.basicConfig(filename='challengectl.log',
+# Rotate existing log file with timestamp before starting new log
+LOG_FILE = 'challengectl.log'
+if os.path.exists(LOG_FILE):
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    archived_log = f'{LOG_FILE}.{timestamp}'
+    os.rename(LOG_FILE, archived_log)
+
+logging.basicConfig(filename=LOG_FILE,
                     filemode='w',
                     level=logging.DEBUG,
                     format='%(asctime)s challengectl[%(process)d]: %(levelname)s: %(message)s',
