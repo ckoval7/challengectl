@@ -394,7 +394,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [448, 68.0]
+    coordinate: [456, 68.0]
     rotation: 0
     state: true
 - name: hop_time
@@ -860,8 +860,8 @@ blocks:
     alias: ''
     comment: ''
     hide: none
-    label: Wav File Sample Rate
-    short_id: r
+    label: Wav File Audio Sample Rate
+    short_id: a
     type: intx
     value: '48000'
   states:

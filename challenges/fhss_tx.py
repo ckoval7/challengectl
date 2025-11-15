@@ -319,8 +319,8 @@ def argument_parser():
         "-s", "--seed", dest="seed", type=str, default='RFHS',
         help="Set Seed [default=%(default)r]")
     parser.add_argument(
-        "-r", "--wav-rate", dest="wav_rate", type=intx, default=48000,
-        help="Set Wav File Sample Rate [default=%(default)r]")
+        "-a", "--wav-rate", dest="wav_rate", type=intx, default=48000,
+        help="Set Wav File Audio Sample Rate [default=%(default)r]")
     return parser
 
 
