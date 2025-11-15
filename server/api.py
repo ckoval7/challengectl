@@ -243,11 +243,26 @@ class ChallengeCtlAPI:
         def register_runner():
             """Register a runner with the server."""
             data = request.json
+
+            # Validate request body
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
             runner_id = request.runner_id
 
-            hostname = data.get('hostname', '')
+            # Validate required fields
+            hostname = data.get('hostname')
+            if not hostname or not hostname.strip():
+                return jsonify({'error': 'Missing required field: hostname'}), 400
+
+            devices = data.get('devices')
+            if devices is None:
+                return jsonify({'error': 'Missing required field: devices'}), 400
+
+            if not isinstance(devices, list):
+                return jsonify({'error': 'Field "devices" must be a list'}), 400
+
             ip_address = request.remote_addr
-            devices = data.get('devices', [])
 
             success = self.db.register_runner(runner_id, hostname, ip_address, devices)
 
@@ -321,8 +336,20 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Unauthorized'}), 403
 
             data = request.json
+
+            # Validate request body
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            # Validate required fields
             challenge_id = data.get('challenge_id')
+            if not challenge_id:
+                return jsonify({'error': 'Missing required field: challenge_id'}), 400
+
             success = data.get('success', False)
+            if not isinstance(success, bool):
+                return jsonify({'error': 'Field "success" must be a boolean'}), 400
+
             error_message = data.get('error_message')
             # device_id and frequency are logged but not currently used
             # device_id = data.get('device_id', '')
@@ -471,7 +498,18 @@ class ChallengeCtlAPI:
         def update_challenge(challenge_id):
             """Update challenge configuration."""
             data = request.json
-            config = data.get('config', {})
+
+            # Validate request body
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            # Validate config field
+            config = data.get('config')
+            if config is None:
+                return jsonify({'error': 'Missing required field: config'}), 400
+
+            if not isinstance(config, dict):
+                return jsonify({'error': 'Field "config" must be a dictionary'}), 400
 
             success = self.db.update_challenge(challenge_id, config)
 
