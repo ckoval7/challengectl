@@ -177,7 +177,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import axios from 'axios'
+import { api } from '../api'
 import { Loading, Refresh, Warning, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
 
 export default {
@@ -243,7 +243,7 @@ export default {
     const loadChallenges = async () => {
       try {
         // Public endpoint - no authentication required
-        const response = await axios.get('/api/public/challenges')
+        const response = await api.get('/api/public/challenges')
         challenges.value = response.data.challenges || []
         lastUpdateTime.value = new Date().toLocaleTimeString()
         error.value = null

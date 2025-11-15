@@ -13,6 +13,10 @@ import socket
 import hashlib
 import yaml
 import requests
+import subprocess
+import random
+import string
+import tempfile
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
@@ -314,7 +318,7 @@ class ChallengeCtlRunner:
                 flag_path = self.resolve_file_path(flag)
                 if not flag_path or not os.path.exists(flag_path):
                     logger.error(f"Flag file not found: {flag}")
-                    return False
+                    return (False, device_id, frequency or 0)
                 flag = flag_path
 
             # Execute based on modulation type
@@ -403,9 +407,6 @@ class ChallengeCtlRunner:
                 success = True
 
             elif modulation == 'lrs':
-                import random
-                import string
-                import tempfile
                 lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
                 randomstring = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
                 # Use local temp directory instead of /tmp
@@ -449,7 +450,6 @@ class ChallengeCtlRunner:
     def disable_bladerf_biastee(self, device_string: str):
         """Turn off BladeRF bias-tee after transmission."""
         try:
-            import subprocess
             bladeserial = self.parse_bladerf_serial(device_string)
             serialarg = f'*:serial={bladeserial}'
             subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
@@ -505,8 +505,9 @@ class ChallengeCtlRunner:
                 },
                 timeout=5
             )
-        except Exception:
-            pass  # Don't fail if log upload fails
+        except Exception as e:
+            # Log at debug level to avoid recursion
+            logger.debug(f"Failed to send log to server: {e}")
 
     def task_loop(self):
         """Main task execution loop."""

@@ -12,6 +12,7 @@ import logging
 import os
 import hashlib
 import yaml
+import json
 from datetime import datetime
 from typing import Dict, Any, List
 import uuid
@@ -49,9 +50,13 @@ class WebSocketHandler(logging.Handler):
 
             # Broadcast to WebUI
             self.socketio.emit('event', log_entry)
-        except Exception:
-            # Silently ignore errors in the handler to avoid recursion
-            pass
+        except Exception as e:
+            # Try to log at debug level to avoid recursion
+            # If this fails, silently ignore to prevent infinite loop
+            try:
+                logger.debug(f"WebSocket handler error: {e}")
+            except Exception:
+                pass
 
 
 class ChallengeCtlAPI:
@@ -112,6 +117,23 @@ class ChallengeCtlAPI:
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             return {}
+
+    def _parse_runner_devices(self, runner: Dict) -> Dict:
+        """Parse devices JSON field in runner dict.
+
+        Args:
+            runner: Runner dict with 'devices' field (JSON string)
+
+        Returns:
+            Runner dict with 'devices' parsed as dict/list
+        """
+        if runner and runner.get('devices'):
+            try:
+                runner['devices'] = json.loads(runner['devices'])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse devices for runner {runner.get('runner_id')}")
+                runner['devices'] = []
+        return runner
 
     def require_api_key(self, f):
         """Decorator to require API key authentication."""
@@ -359,10 +381,7 @@ class ChallengeCtlAPI:
             recent_transmissions = self.db.get_recent_transmissions(limit=20)
 
             # Parse runner devices JSON
-            for runner in runners:
-                if runner.get('devices'):
-                    import json
-                    runner['devices'] = json.loads(runner['devices'])
+            runners = [self._parse_runner_devices(r) for r in runners]
 
             return jsonify({
                 'stats': stats,
@@ -397,10 +416,7 @@ class ChallengeCtlAPI:
             runners = self.db.get_all_runners()
 
             # Parse devices JSON
-            for runner in runners:
-                if runner.get('devices'):
-                    import json
-                    runner['devices'] = json.loads(runner['devices'])
+            runners = [self._parse_runner_devices(r) for r in runners]
 
             return jsonify({'runners': runners}), 200
 
@@ -411,9 +427,7 @@ class ChallengeCtlAPI:
             runner = self.db.get_runner(runner_id)
 
             if runner:
-                if runner.get('devices'):
-                    import json
-                    runner['devices'] = json.loads(runner['devices'])
+                runner = self._parse_runner_devices(runner)
                 return jsonify(runner), 200
             else:
                 return jsonify({'error': 'Runner not found'}), 404
