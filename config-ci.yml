@@ -1,0 +1,111 @@
+---
+# CI Configuration for challengectl v2
+# Uses file sinks instead of real SDR hardware for testing
+mode: controller
+conference:
+  name: CI_Test
+  start: "2063-04-05 09:00:00 -5"
+  stop: "2063-04-07 12:00:00 -5"
+
+radios:
+  autodetect: False
+  models:
+  - model: file
+    rf_samplerate: 1000000
+
+  devices:
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
+
+# Test challenges for all modulation types
+challenges:
+  - default_min_delay: 1
+    default_max_delay: 1
+
+  # ASK test
+  - name: CI_ASK
+    frequency: 146550000
+    modulation: ask
+    flag: 'CI test ASK flag'
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # CW test
+  - name: CI_CW
+    frequency: 146550000
+    modulation: cw
+    flag: 'CI test CW flag'
+    speed: 35
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # NBFM test
+  - name: CI_NBFM
+    frequency: 146550000
+    modulation: nbfm
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # SSB test (USB)
+  - name: CI_SSB_USB
+    frequency: 146550000
+    modulation: ssb
+    mode: usb
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # SSB test (LSB)
+  - name: CI_SSB_LSB
+    frequency: 146550000
+    modulation: ssb
+    mode: lsb
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # POCSAG test
+  - name: CI_POCSAG
+    frequency: 146550000
+    modulation: pocsag
+    flag: 'CI test POCSAG message'
+    capcode: 123456
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # LRS test
+  - name: CI_LRS
+    frequency: 146550000
+    modulation: lrs
+    flag: '-s 10 -p 976 -pf 1'
+    min_delay: 1
+    max_delay: 1
+    enabled: True
+
+  # FHSS test
+  - name: CI_FHSS
+    frequency: 146550000
+    modulation: fhss
+    flag: challenges/examples/example_voice.wav
+    channel_spacing: 10000
+    hop_rate: 10
+    hop_time: 60
+    seed: RFHS
+    wav_samplerate: 48000
+    min_delay: 1
+    max_delay: 1
+    enabled: True

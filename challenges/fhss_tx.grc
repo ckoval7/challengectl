@@ -85,7 +85,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: (((rf_rate/2)-channel_spacing)/channel_spacing)
+    value: int((((rf_rate/2)-channel_spacing)/channel_spacing))
   states:
     bus_sink: false
     bus_source: false
@@ -97,7 +97,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: -(((rf_rate/2)-channel_spacing)/channel_spacing)
+    value: int(-(((rf_rate/2)-channel_spacing)/channel_spacing))
   states:
     bus_sink: false
     bus_source: false
@@ -200,7 +200,7 @@ blocks:
     bus_structure: null
     coordinate: [1336, 80.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_repeat_0
   id: blocks_repeat
   parameters:
@@ -237,7 +237,7 @@ blocks:
     bus_structure: null
     coordinate: [1072, 76.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_vco_c_0
   id: blocks_vco_c
   parameters:
@@ -394,7 +394,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [448, 68.0]
+    coordinate: [456, 68.0]
     rotation: 0
     state: true
 - name: hop_time
@@ -435,7 +435,9 @@ blocks:
   id: import
   parameters:
     alias: ''
-    comment: ''
+    comment: 'IMPORTANT: After generating fhss_tx.py, manually replace the line "import
+      fhss_tx_hop_set as hop_set" with try/except logic to support relative imports.
+      See existing fhss_tx.py for reference.'
     imports: from math import pi
   states:
     bus_sink: false
@@ -743,7 +745,7 @@ blocks:
     bus_structure: null
     coordinate: [1192, 140.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: ppm
   id: parameter
   parameters:
@@ -858,8 +860,8 @@ blocks:
     alias: ''
     comment: ''
     hide: none
-    label: Wav File Sample Rate
-    short_id: r
+    label: Wav File Audio Sample Rate
+    short_id: a
     type: intx
     value: '48000'
   states:
@@ -885,3 +887,4 @@ connections:
 
 metadata:
   file_format: 1
+  grc_version: 3.10.9.2

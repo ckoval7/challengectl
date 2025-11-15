@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-# import sys
+import sys
 from multiprocessing import Process, Queue
 import logging
 import string
@@ -17,102 +17,13 @@ import numpy as np
 import subprocess
 
 from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx,
-                        freedv_tx, fhss_tx, ssb_tx)
+                        freedv_tx, ssb_tx, fhss_tx)
 
 logging.basicConfig(filename='challengectl.log',
                     filemode='w',
                     level=logging.DEBUG,
                     format='%(asctime)s %(message)s',
                     datefmt='%d %b %Y %H:%M:%S')
-
-modulation_parameters = {
-    'ask': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    },
-    'cw': {
-       'mandatory': [
-            'flag',
-            'frequency',
-            'speed'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'nbfm': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'ssb': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'mode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'pocsag': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'capcode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'lrs': {
-        'mandatory': [
-            'flag',
-            'frequency'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay'
-        ]
-    }, 'freedv':{
-        'mandatory': [
-            'flag',
-            'frequency',
-            'mode'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }, 'fhss': {
-        'mandatory': [
-            'flag',
-            'frequency',
-            'seed',
-            'hop_rate',
-            'hop_time',
-            'channel_spacing'
-        ],
-        'optional': [
-            'min_delay',
-            'max_delay',
-            'wav_samplerate'
-        ]
-    }
-}
 
 # def build_database(flagfile, devicefile):
 #     """Create sqlite database based on flags file and devices file.
@@ -177,9 +88,16 @@ class Challenge:
         '''
         Checks if the modulation type is valid. Disables challenge if it's not.
         '''
-        # Move this to another file
-        # valid_modulation_types = ['ask', 'cw', 'nbfm', 'ssb', 'pocsag', 'lrs', 'freedv', 'fhss']
-        valid_modulation_types = modulation_parameters.keys()
+        # Load modulation parameters to get valid types
+        params_def = load_modulation_parameters()
+        if not params_def:
+            logging.error("Cannot validate modulation type: modulation_parameters.yml not loaded")
+            self.enabled = False
+            return False
+
+        # Get valid modulation types (exclude 'all' which is for global parameters)
+        valid_modulation_types = [k for k in params_def.keys() if k != 'all']
+
         if requested_modulation in valid_modulation_types:
             passed = True
             logging.info("Modulation check for %s passed.", self.name)
@@ -189,23 +107,117 @@ class Challenge:
             passed = False
         return passed
 
-    # TODO: Finish this
-    def check_parameters(self) -> None:
+    def check_parameters(self) -> bool:
         '''
-        Checks for manatory parameters
-        Sets defaults for optional parameters
+        Checks for mandatory parameters based on modulation type
+        Validates optional parameters
+        Returns True if all mandatory parameters present, False otherwise
         '''
-        if self.properties.get('flag') is not None:
-            # Check if file exists
-            self.flag = self.properties.get('flag')
-            if not os.path.exists(self.flag):
-                logging.error("File not found: %s", self.flag)
-                self.enabled = False
+        # Load modulation parameter definitions
+        params_def = load_modulation_parameters()
+        if not params_def:
+            logging.error("Cannot validate parameters: modulation_parameters.yml not loaded")
+            return False
+
+        modulation = self.properties.get('modulation')
+        if not modulation:
+            logging.error(f"Challenge '{self.name}' missing 'modulation' parameter")
+            self.enabled = False
+            return False
+
+        # Get parameter requirements for this modulation type
+        mod_params = params_def.get(modulation, {})
+        global_params = params_def.get('all', {})
+
+        # Combine mandatory parameters (global + modulation-specific)
+        mandatory = set(global_params.get('mandatory', [])) | set(mod_params.get('mandatory', []))
+        optional = set(global_params.get('optional', [])) | set(mod_params.get('optional', []))
+
+        # Check all mandatory parameters are present
+        missing_params = []
+        for param in mandatory:
+            if param not in self.properties or self.properties[param] is None:
+                missing_params.append(param)
+
+        if missing_params:
+            logging.error(f"Challenge '{self.name}' missing mandatory parameters: {', '.join(missing_params)}")
+            self.enabled = False
+            return False
+
+        # Validate flag file exists if it's a file path
+        flag = self.properties.get('flag')
+        if flag and isinstance(flag, str):
+            # Only check if it looks like a file path (contains / or ends with common extensions)
+            if '/' in flag or flag.endswith(('.wav', '.bin', '.txt')):
+                if not os.path.exists(flag):
+                    logging.error(f"Challenge '{self.name}': Flag file not found: {flag}")
+                    self.enabled = False
+                    return False
+
+        # Log info about optional parameters
+        present_optional = [p for p in optional if p in self.properties and self.properties[p] is not None]
+        if present_optional:
+            logging.debug(f"Challenge '{self.name}' has optional parameters: {', '.join(present_optional)}")
+
+        logging.info(f"Challenge '{self.name}' parameter validation passed")
+        return True
 
 
+def disable_bladerf_biastee(device):
+    """
+    Turn off BladeRF bias-tee after transmission completes.
+
+    Args:
+        device: Device string (e.g., "bladerf=serial,biastee=1")
+    """
+    if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
+        bladeserial = parse_bladerf_ser(device)
+        serialarg = '*:serial={}'.format(bladeserial)
+        subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
 
 
-# TODO: Maybe rename this to Flowgraph?
+def cleanup_after_transmission(device_id, device_q, flag_q, flag_args):
+    """
+    Cleanup after transmission: return device to pool, random sleep, return flag to queue.
+
+    Args:
+        device_id: Device ID to return to the queue
+        device_q: Device queue
+        flag_q: Flag queue
+        flag_args: Challenge arguments (contains timing and queue control)
+    """
+    # Return device to pool
+    device_q.put(device_id)
+
+    # Random sleep between transmissions (if not disabled)
+    norandsleep = flag_args[8]
+    if norandsleep == False:
+        mintime = flag_args[4]
+        maxtime = flag_args[5]
+        sleep(randint(mintime, maxtime))
+
+    # Return flag to queue for retransmission (if enabled)
+    replaceinqueue = flag_args[7]
+    if replaceinqueue != False:
+        flag_q.put(flag_args[0])
+
+
+def get_antenna_and_print(device_id):
+    """
+    Get antenna for device and print it if configured.
+
+    Args:
+        device_id: Device ID
+
+    Returns:
+        str: Antenna string (or empty string if not configured)
+    """
+    antenna = get_device_antenna(device_id)
+    if antenna:
+        print(f"Using antenna: {antenna}")
+    return antenna
+
+
 class transmitter:
     '''TODO: Doc string here'''
     # flag_args:chal_id,flag,modopt1,modopt2,minwait,maxwait,freq1
@@ -216,29 +228,12 @@ class transmitter:
         device = fetch_device(device_id)
         flag = flag_args[1]
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
-        # print("I ran fire_ask with flag=" + str(flag) + " and freq=" + str(freq))
+        antenna = get_antenna_and_print(device_id)
+
         ask.main(flag.encode("utf-8").hex(), freq, device, antenna)
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_cw(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting CW\n")
@@ -248,91 +243,58 @@ class transmitter:
         flag = flag_args[1]
         speed = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
-        # print("I ran fire_cw with flag=" + str(flag) + " and freq=" +
-        # str(freq) + " and speed=" + str(speed))
+        antenna = get_antenna_and_print(device_id)
+
         p = Process(target=cw.main, args=(flag, speed, freq, device, antenna))
         p.start()
         p.join()
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         if(p.exitcode != 0):
             sys.exit(p.exitcode)
-
-    # def fire_usb(self, device_id, flag_q, device_q, *flag_args):
-    #     print("\nTransmitting USB\n")
-    #     flag_args = flag_args[0]
-    #     device = fetch_device(device_id)
-    #     wav_src = str(flag_args[1])
-    #     wav_rate = int(flag_args[2])
-    #     freq = int(flag_args[6]) * 1000
-    #     mintime = flag_args[4]
-    #     maxtime = flag_args[5]
-    #     # print("I ran fire_usb with flag=" + str(wav_src) + " and freq=" +
-    #     # str(freq) + " and wav_rate=" + str(wav_rate))
-    #     usb_tx.main(wav_src, wav_rate, freq, device)
-    #     sleep(3)
-    #     device_q.put(device_id)
-    #     sleep(randint(mintime, maxtime))
-    #     flag_q.put(flag_args[0])
 
     def fire_ssb(self, device_id, flag_q, device_q, *flag_args):
         """
         Call the ssb_tx flow graph to transmit Lower Sideband (LSB)
         or Upper Sideband (USB) modulated signals.
         """
-        mode = 'tbd'
-        print(f"\nTransmitting SSB ({mode})\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         wav_src = str(flag_args[1])
         if not os.path.isfile(wav_src):
             print("Unable to find wav file {}".format(wav_src))
             exit(1)
-        wav_rate = int(flag_args[2])
-        freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
+
+        # modopt1 might be 'mode' (lsb/usb) or wav_samplerate, check which
+        mode_or_rate = str(flag_args[2]) if flag_args[2] else ''
+        if mode_or_rate.lower() in ['lsb', 'usb']:
+            mode = mode_or_rate.lower()
+            wav_rate = int(flag_args[3]) if flag_args[3] else 48000
         else:
-            print("Antenna set to default empty string. device: {}".format(device))
-        # print("I ran fire_usb with flag=" + str(wav_src) + " and freq=" +
-        # str(freq) + " and wav_rate=" + str(wav_rate))
-        usb_tx.main(wav_src, wav_rate, freq, device, antenna)
+            mode = 'usb'  # default to USB
+            wav_rate = int(mode_or_rate) if mode_or_rate else 48000
+
+        print(f"\nTransmitting SSB ({mode.upper()})\n")
+
+        freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
+        # Configure options for ssb_tx flowgraph
+        ssb_opts = ssb_tx.argument_parser().parse_args('')
+        ssb_opts.dev = device
+        ssb_opts.freq = freq
+        ssb_opts.wav_file = wav_src
+        ssb_opts.wav_samp_rate = wav_rate
+        ssb_opts.mode = mode
+        ssb_opts.antenna = antenna
+
+        # Call ssb_tx main with options
+        ssb_tx.main(options=ssb_opts)
+
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_nbfm(self, device_id, flag_q, device_q, *flag_args):
         """
@@ -347,41 +309,32 @@ class transmitter:
             exit(1)
         wav_rate = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
-        # print("I ran fire_nbfm with flag=" + str(wav_src) + " and freq=" +
-        # str(freq) + " and wav_rate=" + str(wav_rate))
-        nbfm.main(wav_src, wav_rate, freq, device, antenna)
+        antenna = get_antenna_and_print(device_id)
+
+        # Configure options for nbfm_tx flowgraph
+        nbfm_opts = nbfm.argument_parser().parse_args('')
+        nbfm_opts.dev = device
+        nbfm_opts.freq = freq
+        nbfm_opts.wav_file = wav_src
+        nbfm_opts.wav_samp_rate = wav_rate
+        nbfm_opts.antenna = antenna
+
+        # Call nbfm_tx main with options
+        nbfm.main(options=nbfm_opts)
+
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        device_q.put(device_id)
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_pocsag(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting POCSAG\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
-        # Parse options from flag_args
         flag = flag_args[1]
         modopt1 = flag_args[2]
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
         freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
         # Configure options specific to pocsagtx_osmocom script
         pocsagopts = pocsagtx_osmocom.argument_parser().parse_args('')
         pocsagopts.deviceargs = device
@@ -389,50 +342,26 @@ class transmitter:
         pocsagopts.pagerfreq = freq
         pocsagopts.capcode = int(modopt1)
         pocsagopts.message = flag
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
         pocsagopts.antenna = antenna
+
         # Call main in pocsagtx_osmocom, passing in pocsagopts options array
         pocsagtx_osmocom.main(options=pocsagopts)
-        # pocsag_tx.main(flag, int(modopt1), freq, device)
+
         print("Finished TX POCSAG, sleeping for 3sec before returning device")
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-        # print("Slept for 30 seconds")
-        device_q.put(device_id)
-        # print("Returned Device top pool")
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        # sleep(10)
-        # print("Slept for 10 seconds")
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
-        # print("Returned flag to pool")
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_lrs(self, device_id, flag_q, device_q, *flag_args):
         print("\nTransmitting LRS\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
-        # Parse options from flag_args
-        # For LRS, flag will be used to pass in the raw string of command args
         flag = flag_args[1]
-        # modopt1 = flag_args[2]
-        mintime = flag_args[4]
-        maxtime = flag_args[5]
         freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
         # Configure options specific to lrs_pager script
         lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
-        # Generate pager.bin file
         # Generate random filename in /tmp/ for pager bin file
         randomstring = ''.join(random.choices(
             string.ascii_uppercase + string.digits, k=6))
@@ -445,40 +374,64 @@ class transmitter:
         lrsopts.deviceargs = device
         lrsopts.freq = freq
         lrsopts.binfile = outfile
-        antenna = ""
-        if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-            antenna = "TX2"
-            print("Set antenna to TX2")
-        else:
-            print("Antenna set to default empty string. device: {}".format(device))
         lrsopts.antenna = antenna
-        # Gains below are defaults, added in case they need to be changed
-        # lrsopts.bbgain = 20.0
-        # lrsopts.ifgain = 20.0
-        # lrsopts.rfgain = 47.0
 
-        # Call main in pocsagtx_osmocom, passing in lrsopts options array
+        # Call main in lrs_tx, passing in lrsopts options array
         lrs_tx.main(options=lrsopts)
         sleep(3)
-        # Turn off biastee if the device is a bladerf with the biastee enabled
-        if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
-            bladeserial = parse_bladerf_ser(device)
-            serialarg = '*:serial={}'.format(bladeserial)
-            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
+        disable_bladerf_biastee(device)
+
         # Delete pager bin file from /tmp/
         os.remove(outfile)
         print("Removed outfile")
-        device_q.put(device_id)
-        print("Released Radio to pool")
-        norandsleep = flag_args[8]
-        if(norandsleep == False):
-            sleep(randint(mintime, maxtime))
-        # sleep(10)
-        print("Slept, returning flag to pool")
-        replaceinqueue = flag_args[7]
-        if(replaceinqueue != False):
-            flag_q.put(flag_args[0])
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         print("Returned flag to pool")
+
+    def fire_fhss(self, device_id, flag_q, device_q, *flag_args):
+        """
+        Call the fhss_tx flow graph to transmit Frequency Hopping Spread Spectrum signals
+        """
+        print("\nTransmitting FHSS\n")
+        flag_args = flag_args[0]
+        device = fetch_device(device_id)
+
+        # Extract parameters from flag_args
+        wav_src = str(flag_args[1])
+        if not os.path.isfile(wav_src):
+            print("Unable to find wav file {}".format(wav_src))
+            exit(1)
+
+        # modopt1 contains FHSS-specific parameters as a dict
+        fhss_params = flag_args[2] if isinstance(flag_args[2], dict) else {}
+        channel_spacing = fhss_params.get('channel_spacing', 10000)  # Hz
+        hop_rate = fhss_params.get('hop_rate', 10)  # hops per second
+        hop_time = fhss_params.get('hop_time', 60)  # seconds
+        seed = fhss_params.get('seed', 'RFHS')  # RNG seed
+
+        # modopt2 contains wav_samplerate
+        wav_rate = int(flag_args[3]) if flag_args[3] else 48000
+
+        freq = int(flag_args[6]) * 1000
+        antenna = get_antenna_and_print(device_id)
+
+        # Configure options for fhss_tx flowgraph
+        fhss_opts = fhss_tx.argument_parser().parse_args('')
+        fhss_opts.dev = device
+        fhss_opts.freq = freq
+        fhss_opts.file = wav_src
+        fhss_opts.wav_rate = wav_rate
+        fhss_opts.channel_spacing = int(channel_spacing)
+        fhss_opts.hop_rate = int(hop_rate)
+        fhss_opts.hop_time = float(hop_time)
+        fhss_opts.seed = str(seed)
+        fhss_opts.antenna = antenna
+
+        # Call fhss_tx main with options
+        fhss_tx.main(options=fhss_opts)
+
+        sleep(3)
+        disable_bladerf_biastee(device)
+        cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
 
 def select_freq(band):
@@ -525,7 +478,54 @@ def select_freq(band):
 #     return devices_input
 
 
-# def fetch_device(dev_id):
+# Global device registry for YAML-based configuration
+device_registry = {}
+
+# Global modulation parameters loaded from modulation_parameters.yml
+modulation_params = None
+
+
+def load_modulation_parameters():
+    """Load modulation parameter definitions from YAML file."""
+    global modulation_params
+    if modulation_params is None:
+        try:
+            with open('modulation_parameters.yml', 'r', encoding='utf-8') as f:
+                modulation_params = yaml.safe_load(f)
+                logging.info("Loaded modulation parameter definitions")
+        except FileNotFoundError:
+            logging.error("modulation_parameters.yml not found")
+            modulation_params = {}
+        except yaml.YAMLError as e:
+            logging.error(f"Error parsing modulation_parameters.yml: {e}")
+            modulation_params = {}
+    return modulation_params
+
+
+def fetch_device(dev_id):
+    """Get device string for a given device id from global registry."""
+    global device_registry
+    if dev_id in device_registry:
+        return device_registry[dev_id]['device_string']
+    else:
+        logging.error(f"Device ID {dev_id} not found in registry")
+        return None
+
+
+def get_device_antenna(dev_id):
+    """Get the preferred antenna for a device from the registry."""
+    global device_registry
+    if dev_id in device_registry:
+        # Check device-specific antenna setting first
+        antenna = device_registry[dev_id]['config'].get('antenna', '')
+        # If not set at device level, check model defaults
+        if not antenna:
+            antenna = device_registry[dev_id]['model_defaults'].get('antenna', '')
+        return antenna if antenna else ""
+    return ""
+
+
+# def fetch_device_old(dev_id):
 #     """Query database for device string for a given device id and return the device string."""
 #     global conference
 #     conn = sqlite3.connect(conference + ".db")
@@ -552,6 +552,7 @@ def argument_parser():
     parser.add_argument('configfile', help="YAML Configuration File", default='config.yml')
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-t", "--test", help="Run each challenge once to test flags.", action="store_true")
+    parser.add_argument("-d", "--dump-config", help="Display parsed devices and challenges without running anything.", action="store_true", dest="dump_config")
     return parser
 
 
@@ -572,6 +573,113 @@ def check_challenges(challenge_config):
     pass
 
 
+def build_device_string(device_config: dict, model_defaults: dict) -> str:
+    '''
+    Build gr-osmosdr device string from device configuration and model defaults
+    '''
+    model = device_config.get('model')
+    name = device_config.get('name')
+
+    # Start with model=name or model=serial
+    device_string = f"{model}={name}"
+
+    # Add bias_t if specified (check device config first, then model defaults)
+    bias_t = device_config.get('bias_t')
+    if bias_t is None and model_defaults:
+        bias_t = model_defaults.get('bias_t')
+    if bias_t:
+        device_string += ",biastee=1"
+
+    return device_string
+
+
+def parse_radios_from_yaml(config: dict) -> list:
+    '''
+    Parse radios configuration from YAML and return list of device info tuples
+    Returns: List of (device_id, device_string, device_config) tuples
+    '''
+    radios_config = config.get('radios', {})
+    devices = radios_config.get('devices', [])
+    models_config = radios_config.get('models', [])
+
+    # Build model defaults dictionary
+    model_defaults = {}
+    for model_conf in models_config:
+        model_name = model_conf.get('model')
+        if model_name:
+            model_defaults[model_name] = model_conf
+
+    # Build device list
+    device_list = []
+    for idx, device_conf in enumerate(devices):
+        model = device_conf.get('model')
+        model_def = model_defaults.get(model, {})
+        device_string = build_device_string(device_conf, model_def)
+        device_list.append((idx, device_string, device_conf, model_def))
+        logging.info(f"Configured device {idx}: {device_string}")
+
+    if not device_list:
+        logging.warning("No devices configured in YAML")
+
+    return device_list
+
+
+def parse_challenges_from_yaml(config: dict) -> list:
+    '''
+    Parse challenges configuration from YAML and return list of enabled, validated challenges
+    Returns: List of challenge dictionaries that passed validation
+    '''
+    challenges_raw = config.get('challenges', [])
+
+    # Extract default delays if present
+    default_min_delay = None
+    default_max_delay = None
+    challenges = []
+
+    for item in challenges_raw:
+        if isinstance(item, dict):
+            # Check if this is the defaults dict
+            if 'default_min_delay' in item or 'default_max_delay' in item:
+                default_min_delay = item.get('default_min_delay', 60)
+                default_max_delay = item.get('default_max_delay', 90)
+                continue
+
+            # Apply defaults if not specified in challenge
+            if default_min_delay is not None and 'min_delay' not in item:
+                item['min_delay'] = default_min_delay
+            if default_max_delay is not None and 'max_delay' not in item:
+                item['max_delay'] = default_max_delay
+
+            # Check if challenge is explicitly disabled
+            if not item.get('enabled', True):
+                logging.info(f"Skipping disabled challenge: {item.get('name')}")
+                continue
+
+            # Create Challenge object and validate
+            challenge = Challenge(item)
+
+            # Check modulation type
+            modulation = item.get('modulation')
+            if modulation and challenge.check_modulation(modulation):
+                # Validate parameters
+                if challenge.check_parameters():
+                    # Only add if still enabled after validation
+                    if challenge.enabled:
+                        challenges.append(item)
+                        logging.info(f"Loaded and validated challenge: {item.get('name')}")
+                    else:
+                        logging.warning(f"Challenge '{item.get('name')}' failed validation and was disabled")
+                else:
+                    logging.warning(f"Challenge '{item.get('name')}' failed parameter validation")
+            else:
+                logging.warning(f"Challenge '{item.get('name')}' has invalid modulation type or failed modulation check")
+
+    if not challenges:
+        logging.warning("No enabled challenges found in YAML")
+
+    return challenges
+
+
 def parse_yaml(configfile) -> dict:
     '''
     Parse config.yml, check for mandatory fields
@@ -581,21 +689,77 @@ def parse_yaml(configfile) -> dict:
         config = yaml.safe_load(conf_file)
 
     if config.get('radios') is not None:
-        # radio_confg = config['radios']
-        pass
+        # Validate radios configuration
+        logging.info("Found radios configuration")
     else:
         logging.critical("Section 'radios' is missing from configuration")
         raise parse_err
 
     if config.get('challenges') is not None:
-        # challenge_config = config['challenges']
-        pass
+        # Validate challenges configuration
+        logging.info("Found challenges configuration")
     else:
         logging.critical("Section 'challenges' is missing from configuration")
         raise parse_err
 
     return config
 
+
+def dump_config(device_list, challenges_list, config):
+    """
+    Display parsed devices and challenges without running anything
+    """
+    print("\n" + "="*80)
+    print("CONFIGURATION DUMP")
+    print("="*80)
+
+    # Display conference info
+    conference_config = config.get('conference', {})
+    print(f"\nConference: {conference_config.get('name', 'N/A')}")
+    print(f"Start: {conference_config.get('start', 'N/A')}")
+    print(f"Stop: {conference_config.get('stop', 'N/A')}")
+
+    # Display devices
+    print("\n" + "-"*80)
+    print(f"DEVICES ({len(device_list)} configured)")
+    print("-"*80)
+
+    for dev_id, dev_string, dev_config, model_defaults in device_list:
+        print(f"\nDevice {dev_id}:")
+        print(f"  Model: {dev_config.get('model', 'N/A')}")
+        print(f"  Name/Serial: {dev_config.get('name', 'N/A')}")
+        print(f"  Device String: {dev_string}")
+        antenna = dev_config.get('antenna', model_defaults.get('antenna', ''))
+        if antenna:
+            print(f"  Antenna: {antenna}")
+        bias_t = dev_config.get('bias_t', model_defaults.get('bias_t'))
+        if bias_t:
+            print(f"  Bias-T: {bias_t}")
+
+    # Display challenges
+    print("\n" + "-"*80)
+    print(f"CHALLENGES ({len(challenges_list)} enabled)")
+    print("-"*80)
+
+    for idx, challenge in enumerate(challenges_list):
+        print(f"\n[{idx+1}] {challenge.get('name', 'N/A')}")
+        print(f"    Modulation: {challenge.get('modulation', 'N/A')}")
+        print(f"    Flag: {challenge.get('flag', 'N/A')}")
+        print(f"    Frequency: {challenge.get('frequency', 'N/A')} Hz")
+        print(f"    Delays: {challenge.get('min_delay', 'N/A')}s - {challenge.get('max_delay', 'N/A')}s")
+
+        # Display modulation-specific parameters
+        mod_params = {}
+        for key in ['speed', 'capcode', 'mode', 'wav_samplerate', 'seed', 'hop_rate', 'hop_time', 'channel_spacing', 'text']:
+            if key in challenge and challenge[key] is not None:
+                mod_params[key] = challenge[key]
+
+        if mod_params:
+            print(f"    Parameters: {', '.join([f'{k}={v}' for k, v in mod_params.items()])}")
+
+    print("\n" + "="*80)
+    print(f"Total: {len(device_list)} devices, {len(challenges_list)} challenges")
+    print("="*80 + "\n")
 
 
 def main(options=None):
@@ -605,44 +769,60 @@ def main(options=None):
     args = options
     verbose = args.verbose
     test = args.test
-    global conference
+    global conference, device_registry
+
     # Create thread safe FIFO queues for devices and flags
     device_Q = Queue()
     flag_Q = Queue()
-    # Read flags file
+
+    # Parse YAML configuration file
     config = parse_yaml(args.configfile)
-    # flag_input = read_flags(flagfile)
-    # Extract conference name from first item returned by read_flags
+
+    # Extract conference name from config
     conference = config['conference']['name']
-    # Check to see if database for conference name exists, create it if not
-    # if not os.path.exists(conference + ".db"):
-    #     build_database(flagfile, devicefile)
-    # # Connect to conference database
-    # conn = sqlite3.connect(conference + ".db")
-    # c = conn.cursor()
+    logging.info(f"Conference: {conference}")
 
-    # Create a list of device IDs from devices in the database
-    # c.execute("SELECT dev_id FROM devices")
-    # dev_list = c.fetchall()
+    # Parse radios from YAML and populate device registry and queue
+    device_list = parse_radios_from_yaml(config)
+    if not device_list:
+        logging.error("No devices configured. Exiting.")
+        print("Error: No devices configured in YAML file.")
+        return 1
 
-    dev_list = futurethinghere
-    for row in dev_list:
-        device_Q.put(row[0])
+    # Populate device registry and queue
+    for dev_id, dev_string, dev_config, model_defaults in device_list:
+        device_registry[dev_id] = {
+            'device_string': dev_string,
+            'config': dev_config,
+            'model_defaults': model_defaults
+        }
+        device_Q.put(dev_id)
+        logging.info(f"Device {dev_id} added to queue: {dev_string}")
 
-    # Create a list of challenge IDs based on flags that are enabled in the database
-    # c.execute("SELECT chal_id FROM flag_status WHERE enabled=1")
-    flag_list = config['challenges']
-    flag_list = list(sum(flag_list, ()))
-    # Randomize order of flag_list except when testing flags
-    if(test != True):
-        shuffle(flag_list)
-    print(flag_list)
-    flag_count = len(flag_list)
+    # Parse challenges from YAML
+    challenges_list = parse_challenges_from_yaml(config)
+    if not challenges_list:
+        logging.error("No enabled challenges found. Exiting.")
+        print("Error: No enabled challenges found in YAML file.")
+        return 1
+
+    # If dump_config flag is set, display configuration and exit
+    if args.dump_config:
+        dump_config(device_list, challenges_list, config)
+        return 0
+
+    # Randomize order of challenges except when testing flags
+    if test != True:
+        shuffle(challenges_list)
+
+    logging.info(f"Loaded {len(challenges_list)} challenges")
+    print(f"Loaded {len(challenges_list)} challenges")
+
     challenges_transmitted = 0
-    # logging.info(f'Initial flag transmision order: {flag_list}')
-    # Put flag_list into thread safe flag_Q
-    for row in flag_list:
-        flag_Q.put(row)
+
+    # Put challenges into thread safe flag_Q
+    for challenge in challenges_list:
+        flag_Q.put(challenge)
 
     dev_available = device_Q.get()
     t = transmitter()
@@ -651,65 +831,88 @@ def main(options=None):
 
     try:
         while dev_available is not None:
-            chal_id = flag_Q.get()
-            c.execute('''SELECT module,chal_id,flag,modopt1,modopt2,minwait,maxwait,
-            freq1,chal_name FROM flags WHERE chal_id=? AND module!="dvbt"''', (chal_id,))
-            current_chal = c.fetchone()
-            current_chal = list(current_chal)
+            # Get next challenge from queue
+            challenge = flag_Q.get()
 
-            # Parse database fields into named variables to avoid using list index in multiple places
-            cc_module = current_chal[0]
-            cc_id = current_chal[1]
-            cc_flag = current_chal[2]
-            cc_modopt1 = current_chal[3]
-            cc_modopt2 = current_chal[4]
-            cc_minwait = current_chal[5]
-            cc_maxwait = current_chal[6]
-            cc_freq1 = current_chal[7]
-            cc_name = current_chal[8]
+            # Extract challenge parameters from YAML structure
+            cc_name = challenge.get('name', 'Unknown')
+            cc_module = challenge.get('modulation')
+            cc_flag = challenge.get('flag')
+            cc_minwait = challenge.get('min_delay', 60)
+            cc_maxwait = challenge.get('max_delay', 90)
+            cc_freq1 = challenge.get('frequency')
 
+            # Extract modulation-specific options
+            if cc_module == 'fhss':
+                # For FHSS, pack multiple parameters into modopt1 as a dict
+                cc_modopt1 = {
+                    'channel_spacing': challenge.get('channel_spacing', 10000),
+                    'hop_rate': challenge.get('hop_rate', 10),
+                    'hop_time': challenge.get('hop_time', 60),
+                    'seed': challenge.get('seed', 'RFHS')
+                }
+                cc_modopt2 = challenge.get('wav_samplerate', 48000)
+            else:
+                cc_modopt1 = challenge.get('speed') or challenge.get('capcode') or challenge.get('mode') or challenge.get('wav_samplerate', '')
+                cc_modopt2 = challenge.get('wav_samplerate', '')
+
+            # Determine frequency (could be numeric or named range)
             try:
+                # Frequency in Hz from YAML
                 txfreq = int(cc_freq1)
-                freq_or_range = str(txfreq)
-            except ValueError:
+                # Convert to kHz for display/legacy compatibility
+                txfreq_khz = txfreq // 1000
+                freq_or_range = str(txfreq_khz)
+            except (ValueError, TypeError):
+                # Named frequency range (e.g., "ham_144")
                 freq_range = select_freq(cc_freq1)
-                txfreq = freq_range[0]
+                txfreq_khz = freq_range[0]
+                txfreq = txfreq_khz * 1000
                 freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
 
             # Paint waterfall every time during the CTF, or only once when testing
             if(test != True or challenges_transmitted == 0):
-                print(f"\nPainting Waterfall on {txfreq}\n")
-                # spectrum_paint.main(current_chal[7] * 1000, fetch_device(dev_available))
-                antenna = ""
+                print(f"\nPainting Waterfall on {txfreq_khz} kHz\n")
                 device = fetch_device(dev_available)
-                # bladerf with serial 1c4842b8d80e43438c042dbd752c6640 has a broken TX1 port
-                if(device.find("bladerf=1c4842b8d80e43438c042dbd752c6640") != -1):
-                    antenna = "TX2"
-                    print("Set antenna to TX2")
-                else:
-                    print("Antenna set to default empty string. device: {}".format(device))
+                antenna = get_device_antenna(dev_available)
+                if antenna:
+                    print(f"Using antenna: {antenna}")
 
-                p = Process(target=spectrum_paint.main, args=(txfreq * 1000, device, antenna))  # , daemon=True)
+                p = Process(target=spectrum_paint.main, args=(txfreq, device, antenna))
                 p.start()
                 p.join()
                 # Turn off biastee if the device is a bladerf with the biastee enabled
-                if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):
+                if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
                     bladeserial = parse_bladerf_ser(device)
                     serialarg = '*:serial={}'.format(bladeserial)
                     subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
-            print(f"\nStarting {cc_name} on {txfreq}")
-            # Create list of challenge module arguments, using txfreq to allow setting random freq here instead of in the challenge module
+
+            print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
+
+            # Create list of challenge module arguments
+            # Format: [chal_id, flag, modopt1, modopt2, minwait, maxwait, freq_khz, replaceinqueue, norandsleep]
             replaceinqueue = True
             norandsleep = False
             if(test):
                 replaceinqueue = False
                 norandsleep = True
-            challengeargs = [cc_id, cc_flag, cc_modopt1, cc_modopt2, cc_minwait, cc_maxwait, txfreq, replaceinqueue, norandsleep]
-            p = Process(target=getattr(t, "fire_" + cc_module), args=(dev_available, flag_Q, device_Q, challengeargs))
-            p.start()
-            if(test == True):
-                jobs.append(p)
-            challenges_transmitted += 1
+
+            # Use challenge dict as ID for now (will be replaced with proper ID system later)
+            cc_id = challenges_transmitted
+            challengeargs = [cc_id, cc_flag, cc_modopt1, cc_modopt2, cc_minwait, cc_maxwait, txfreq_khz, replaceinqueue, norandsleep]
+
+            # Call appropriate fire_ method for modulation type
+            if hasattr(t, "fire_" + cc_module):
+                p = Process(target=getattr(t, "fire_" + cc_module), args=(dev_available, flag_Q, device_Q, challengeargs))
+                p.start()
+                if(test == True):
+                    jobs.append(p)
+                challenges_transmitted += 1
+            else:
+                logging.error(f"Unknown modulation type '{cc_module}' for challenge '{cc_name}'")
+                print(f"Error: Unknown modulation type '{cc_module}' for challenge '{cc_name}'. Skipping.")
+                # Put device back in queue since we didn't use it
+                device_Q.put(dev_available)
             # #we need a way to know if p.start errored or not
             # os.system("echo " + freq_or_range + " > /run/shm/wctf_status/" + current_chal[8] + "_sdr")
             # os.system('''timeout 15 ssh -F /root/wctf/liludallasmultipass/ssh/config -oStrictHostKeyChecking=no -oConnectTimeout=10 -oPasswordAuthentication=no -n scoreboard echo ''' + freq_or_range + " > /run/shm/wctf_status/" + current_chal[8] + "_sdr")

@@ -65,6 +65,7 @@ blocks:
     cutoff_freq: '3000'
     gain: audio_gain
     samp_rate: wav_rate
+    value: ''
     width: '300'
     win: window.WIN_HAMMING
   states:
@@ -144,7 +145,7 @@ blocks:
     bus_structure: null
     coordinate: [1272, 360.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_throttle_0
   id: blocks_throttle
   parameters:
@@ -163,14 +164,14 @@ blocks:
     bus_structure: null
     coordinate: [1088, 356.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_wavfile_source_0
   id: blocks_wavfile_source
   parameters:
     affinity: ''
     alias: ''
     comment: ''
-    file: file
+    file: wav_file
     maxoutbuf: '0'
     minoutbuf: '0'
     nchan: '1'
@@ -197,23 +198,6 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [360, 4.0]
-    rotation: 0
-    state: true
-- name: file
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: Wav File
-    short_id: w
-    type: str
-    value: ./test.wav
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [256, 4.0]
     rotation: 0
     state: true
 - name: freq
@@ -534,7 +518,7 @@ blocks:
     bus_structure: null
     coordinate: [1176, 140.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: ppm
   id: parameter
   parameters:
@@ -626,14 +610,31 @@ blocks:
     coordinate: [720, 4.0]
     rotation: 0
     state: true
+- name: wav_file
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Wav File
+    short_id: w
+    type: str
+    value: ./test.wav
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [256, 4.0]
+    rotation: 0
+    state: true
 - name: wav_rate
   id: parameter
   parameters:
     alias: ''
     comment: ''
     hide: none
-    label: Wav File Sample Rate
-    short_id: r
+    label: Wav File Audio Sample Rate
+    short_id: a
     type: intx
     value: '48000'
   states:
@@ -655,3 +656,4 @@ connections:
 
 metadata:
   file_format: 1
+  grc_version: 3.10.9.2

@@ -29,37 +29,20 @@ radios:
     bias_t: True
     rf_samplerate: 2000000
     ppm: 0
+  # "file=/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+  - model: file
+    rf_samplerate: 1000000
 
   # Define individual device settings here
   # Device Strings are generated from information set here
   # name could be a device index or serial number. Basically the identifier used by gr-osmosdr
   devices:
-  # hackrf=0
-  - name: 0
-    model: hackrf
-    rf_gain: 0
-    if_gain: 32
-    bias_t: True
-    ppm: -7
-    # use named ranges or custom range for device frequency limits
-    frequency_limits:
-      - ham_144
-      - ham_440
-      - 800000000-850000000
-
-  # bladerf=123456789abcdef0123456
-  - name: 123456789abcdef0123456
-    model: bladerf
-    rf_gain: 43
-    # if_gain would do nothing for the bladerf
-    bias_t: True
-    # Specify antenna port (e.g., TX1, TX2). Leave blank for default.
-    antenna: ""
-    # use named ranges or custom range for device frequency limits
-    frequency_limits:
-      - ham_144
-      - ham_440
-      - 800000000-850000000
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
+  - name: "/dev/null,freq=100e6,label='Complex Sampled (IQ) File',rate=1e6,throttle=false"
+    model: file
 
   # Example: bladeRF with broken TX1 port - force TX2
   # - name: 1c4842b8d80e43438c042dbd752c6640
