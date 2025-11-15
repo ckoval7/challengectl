@@ -22,8 +22,8 @@ from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pag
 logging.basicConfig(filename='challengectl.log',
                     filemode='w',
                     level=logging.DEBUG,
-                    format='%(asctime)s %(message)s',
-                    datefmt='%d %b %Y %H:%M:%S')
+                    format='%(asctime)s challengectl[%(process)d]: %(levelname)s: %(message)s',
+                    datefmt='%b %d %H:%M:%S')
 
 # def build_database(flagfile, devicefile):
 #     """Create sqlite database based on flags file and devices file.
