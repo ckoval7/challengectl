@@ -5,16 +5,16 @@
 Everthing is gonna be broken in this branch for a few weeks while I work on stuff. Don't even try to use it til this message is gone.
 
 ## TODO:
-- [ ] Convert Config Files to YAML
+- [x] Convert Config Files to YAML
   - [x] Create YAML Structure
-  - [ ] Update Code to Parse YAML
-- [ ] Implement a test mode
+  - [x] Update Code to Parse YAML
+- [x] Implement a test mode
 - [ ] Better Logging
-- [ ] Update USB Flowgraph to SSB (Both LSB and USB Capable)
+- [x] Update USB Flowgraph to SSB (Both LSB and USB Capable)
   - [x] Finish GRC Flowgraph
-  - [ ] Integrate into code
+  - [x] Integrate into code
 - [ ] Include Source Flowgraphs when possible
-  - [ ] NBFM
+  - [x] NBFM
   - [x] SSB
   - [x] FreeDV
   - [ ] POCSAG
@@ -24,7 +24,7 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
   - [x] Freq Hopper
   - [ ] LRS (Dan?)
 - [ ] Update Flowgraphs to use parameters (instead of variables) for flags, device args, gain settings
-  - [ ] NBFM
+  - [x] NBFM
   - [x] SSB
   - [x] FreeDV
   - [ ] POCSAG
@@ -37,9 +37,9 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
 - [ ] Add FreeDV Challenge
   - [x] Finish GRC Flowgraph
   - [ ] Integrate into code
-- [ ] Add Freq-hop challenge
+- [x] Add Freq-hop challenge
   - [x] Finish GRC Flowgraph
-  - [ ] Integrate into code
+  - [x] Integrate into code
 - [ ] Update documentation for new YAML format and new challenges
 - [ ] Integrate Device Enumeration
 - [ ] Add support for multiple TX frontends per device
