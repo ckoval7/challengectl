@@ -444,6 +444,23 @@ blocks:
     coordinate: [200, 68.0]
     rotation: 0
     state: true
+- name: import_1
+  id: import
+  parameters:
+    alias: ''
+    comment: 'Override auto-generated import to support relative imports'
+    imports: |-
+      try:
+          from . import fhss_tx_hop_set as hop_set
+      except ImportError:
+          import fhss_tx_hop_set as hop_set
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 132.0]
+    rotation: 0
+    state: true
 - name: low_pass_filter_0
   id: low_pass_filter
   parameters:
