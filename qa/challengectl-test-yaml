@@ -1,0 +1,13 @@
+#!/bin/sh
+# Quick test script for native YAML configuration
+# Tests config-ci.yml without CSV conversion
+
+printf 'Testing challengectl with config-ci.yml...\n'
+
+if ./challengectl.py --test config-ci.yml; then
+  printf '\n✓ PASSED: All challenges tested successfully\n'
+  exit 0
+else
+  printf '\n✗ FAILED: Some challenges failed\n'
+  exit 1
+fi
