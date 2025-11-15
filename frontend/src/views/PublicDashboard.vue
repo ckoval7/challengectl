@@ -5,6 +5,12 @@
       <p class="subtitle">
         {{ conference.name }}
       </p>
+      <el-button
+        circle
+        :icon="isDark ? Moon : Sunny"
+        class="theme-toggle"
+        @click="toggleTheme"
+      />
     </div>
 
     <!-- Loading State -->
@@ -172,7 +178,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
-import { Loading, Refresh, Warning, Promotion } from '@element-plus/icons-vue'
+import { Loading, Refresh, Warning, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
 
 export default {
   name: 'PublicDashboard',
@@ -180,7 +186,9 @@ export default {
     Loading,
     Refresh,
     Warning,
-    Promotion
+    Promotion,
+    Moon,
+    Sunny
   },
   setup() {
     const challenges = ref([])
@@ -189,11 +197,35 @@ export default {
     const lastUpdateTime = ref('')
     const refreshInterval = ref(30000) // 30 seconds
     let refreshTimer = null
+    const isDark = ref(true) // Default to dark theme
 
     // Conference info (could be loaded from config)
     const conference = ref({
       name: 'RF CTF Challenge Status'
     })
+
+    // Initialize theme from localStorage or default to dark
+    const initTheme = () => {
+      const savedTheme = localStorage.getItem('theme')
+      if (savedTheme) {
+        isDark.value = savedTheme === 'dark'
+      }
+      applyTheme()
+    }
+
+    const applyTheme = () => {
+      if (isDark.value) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+    }
+
+    const toggleTheme = () => {
+      isDark.value = !isDark.value
+      localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+      applyTheme()
+    }
 
     // Computed properties to determine which columns to show
     const hasAnyFrequencyVisible = computed(() => {
@@ -257,6 +289,7 @@ export default {
     }
 
     onMounted(() => {
+      initTheme()
       loadChallenges()
       startAutoRefresh()
     })
@@ -275,7 +308,11 @@ export default {
       hasAnyFrequencyVisible,
       hasAnyLastTxVisible,
       hasAnyActiveStatusVisible,
-      formatTime
+      formatTime,
+      isDark,
+      Moon,
+      Sunny,
+      toggleTheme
     }
   }
 }
@@ -293,18 +330,25 @@ export default {
   margin-bottom: 30px;
   padding: 20px 0;
   border-bottom: 2px solid #409eff;
+  position: relative;
+}
+
+.theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
 }
 
 .header h1 {
   margin: 0;
   font-size: 2.5em;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .subtitle {
   margin: 10px 0 0 0;
   font-size: 1.2em;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 
 .loading-container,

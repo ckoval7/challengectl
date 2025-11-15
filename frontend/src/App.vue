@@ -10,6 +10,12 @@
         </h2>
         <div style="flex: 1" />
         <el-button
+          circle
+          :icon="isDark ? Moon : Sunny"
+          style="margin-right: 10px"
+          @click="toggleTheme"
+        />
+        <el-button
           v-if="systemPaused"
           type="success"
           style="margin-right: 10px"
@@ -36,12 +42,12 @@
       <el-container>
         <el-aside
           width="200px"
-          style="background: #f5f7fa; padding: 20px;"
+          class="sidebar"
         >
           <el-menu
             :default-active="$route.path"
             router
-            style="border: none; background: transparent"
+            class="sidebar-menu"
           >
             <el-menu-item index="/">
               <el-icon><Monitor /></el-icon>
@@ -71,8 +77,8 @@
 </template>
 
 <script>
-import { ref } from 'vue'
-import { Monitor, Connection, Document, Notebook } from '@element-plus/icons-vue'
+import { ref, onMounted } from 'vue'
+import { Monitor, Connection, Document, Notebook, Moon, Sunny } from '@element-plus/icons-vue'
 import { api } from './api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -82,10 +88,36 @@ export default {
     Monitor,
     Connection,
     Document,
-    Notebook
+    Notebook,
+    Moon,
+    Sunny
   },
   setup() {
     const systemPaused = ref(false)
+    const isDark = ref(true) // Default to dark theme
+
+    // Initialize theme from localStorage or default to dark
+    onMounted(() => {
+      const savedTheme = localStorage.getItem('theme')
+      if (savedTheme) {
+        isDark.value = savedTheme === 'dark'
+      }
+      applyTheme()
+    })
+
+    const applyTheme = () => {
+      if (isDark.value) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+    }
+
+    const toggleTheme = () => {
+      isDark.value = !isDark.value
+      localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+      applyTheme()
+    }
 
     const pauseSystem = async () => {
       try {
@@ -131,6 +163,10 @@ export default {
 
     return {
       systemPaused,
+      isDark,
+      Moon,
+      Sunny,
+      toggleTheme,
       pauseSystem,
       resumeSystem,
       emergencyStop
@@ -148,5 +184,26 @@ body {
 
 #app {
   height: 100vh;
+}
+
+.sidebar {
+  background: var(--el-bg-color-page);
+  padding: 20px;
+  border-right: 1px solid var(--el-border-color);
+}
+
+.sidebar-menu {
+  border: none;
+  background: transparent;
+}
+
+/* Dark mode adjustments */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
 }
 </style>
