@@ -65,6 +65,7 @@ blocks:
     cutoff_freq: '3000'
     gain: audio_gain
     samp_rate: wav_rate
+    value: ''
     width: '300'
     win: window.WIN_HAMMING
   states:
@@ -144,7 +145,7 @@ blocks:
     bus_structure: null
     coordinate: [1272, 360.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_throttle_0
   id: blocks_throttle
   parameters:
@@ -163,7 +164,7 @@ blocks:
     bus_structure: null
     coordinate: [1088, 356.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_wavfile_source_0
   id: blocks_wavfile_source
   parameters:
@@ -534,7 +535,7 @@ blocks:
     bus_structure: null
     coordinate: [1176, 140.0]
     rotation: 0
-    state: disabled
+    state: enabled
 - name: ppm
   id: parameter
   parameters:
@@ -655,3 +656,4 @@ connections:
 
 metadata:
   file_format: 1
+  grc_version: 3.10.9.2
