@@ -173,6 +173,7 @@ def disable_bladerf_biastee(device):
     if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
         bladeserial = parse_bladerf_ser(device)
         serialarg = '*:serial={}'.format(bladeserial)
+        logging.debug(f"Disabling BladeRF bias-tee for serial {bladeserial}")
         subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
 
 
@@ -187,6 +188,7 @@ def cleanup_after_transmission(device_id, device_q, flag_q, flag_args):
         flag_args: Challenge arguments (contains timing and queue control)
     """
     # Return device to pool
+    logging.debug(f"Returning device {device_id} to pool")
     device_q.put(device_id)
 
     # Random sleep between transmissions (if not disabled)
@@ -194,11 +196,14 @@ def cleanup_after_transmission(device_id, device_q, flag_q, flag_args):
     if norandsleep == False:
         mintime = flag_args[4]
         maxtime = flag_args[5]
-        sleep(randint(mintime, maxtime))
+        sleep_time = randint(mintime, maxtime)
+        logging.debug(f"Sleeping for {sleep_time} seconds between transmissions")
+        sleep(sleep_time)
 
     # Return flag to queue for retransmission (if enabled)
     replaceinqueue = flag_args[7]
     if replaceinqueue != False:
+        logging.debug(f"Returning challenge {flag_args[0]} to queue for retransmission")
         flag_q.put(flag_args[0])
 
 
@@ -214,7 +219,10 @@ def get_antenna_and_print(device_id):
     """
     antenna = get_device_antenna(device_id)
     if antenna:
+        logging.debug(f"Device {device_id} using antenna: {antenna}")
         print(f"Using antenna: {antenna}")
+    else:
+        logging.debug(f"Device {device_id} has no antenna configured")
     return antenna
 
 
@@ -230,8 +238,12 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
 
+        logging.info(f"Starting ASK transmission: device={device_id}, freq={freq}Hz")
+        logging.debug(f"ASK flag data: {flag[:20]}..." if len(flag) > 20 else f"ASK flag data: {flag}")
+
         ask.main(flag.encode("utf-8").hex(), freq, device, antenna)
         sleep(3)
+        logging.info("ASK transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
@@ -245,10 +257,19 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
 
+        logging.info(f"Starting CW transmission: device={device_id}, freq={freq}Hz, speed={speed}WPM")
+        logging.debug(f"CW flag text: {flag[:30]}..." if len(flag) > 30 else f"CW flag text: {flag}")
+
         p = Process(target=cw.main, args=(flag, speed, freq, device, antenna))
         p.start()
         p.join()
         sleep(3)
+
+        if(p.exitcode != 0):
+            logging.error(f"CW transmission process exited with code {p.exitcode}")
+        else:
+            logging.info("CW transmission complete")
+
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         if(p.exitcode != 0):
@@ -263,6 +284,7 @@ class transmitter:
         device = fetch_device(device_id)
         wav_src = str(flag_args[1])
         if not os.path.isfile(wav_src):
+            logging.error(f"SSB: WAV file not found: {wav_src}")
             print("Unable to find wav file {}".format(wav_src))
             exit(1)
 
@@ -280,6 +302,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
 
+        logging.info(f"Starting SSB transmission: device={device_id}, mode={mode.upper()}, freq={freq}Hz, wav_rate={wav_rate}")
+        logging.debug(f"SSB WAV source: {wav_src}")
+
         # Configure options for ssb_tx flowgraph
         ssb_opts = ssb_tx.argument_parser().parse_args('')
         ssb_opts.dev = device
@@ -293,6 +318,7 @@ class transmitter:
         ssb_tx.main(options=ssb_opts)
 
         sleep(3)
+        logging.info("SSB transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
@@ -305,11 +331,15 @@ class transmitter:
         device = fetch_device(device_id)
         wav_src = str(flag_args[1])
         if not os.path.isfile(wav_src):
+            logging.error(f"NBFM: WAV file not found: {wav_src}")
             print("Unable to find wav file {}".format(wav_src))
             exit(1)
         wav_rate = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
+
+        logging.info(f"Starting NBFM transmission: device={device_id}, freq={freq}Hz, wav_rate={wav_rate}")
+        logging.debug(f"NBFM WAV source: {wav_src}")
 
         # Configure options for nbfm_tx flowgraph
         nbfm_opts = nbfm.argument_parser().parse_args('')
@@ -323,6 +353,7 @@ class transmitter:
         nbfm.main(options=nbfm_opts)
 
         sleep(3)
+        logging.info("NBFM transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
@@ -334,6 +365,9 @@ class transmitter:
         modopt1 = flag_args[2]
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
+
+        logging.info(f"Starting POCSAG transmission: device={device_id}, freq={freq}Hz, capcode={modopt1}")
+        logging.debug(f"POCSAG message: {flag[:30]}..." if len(flag) > 30 else f"POCSAG message: {flag}")
 
         # Configure options specific to pocsagtx_osmocom script
         pocsagopts = pocsagtx_osmocom.argument_parser().parse_args('')
@@ -349,6 +383,7 @@ class transmitter:
 
         print("Finished TX POCSAG, sleeping for 3sec before returning device")
         sleep(3)
+        logging.info("POCSAG transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
@@ -360,6 +395,9 @@ class transmitter:
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
 
+        logging.info(f"Starting LRS transmission: device={device_id}, freq={freq}Hz")
+        logging.debug(f"LRS pager arguments: {flag}")
+
         # Configure options specific to lrs_pager script
         lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
         # Generate random filename in /tmp/ for pager bin file
@@ -367,6 +405,7 @@ class transmitter:
             string.ascii_uppercase + string.digits, k=6))
         outfile = f"/tmp/lrs_{randomstring}.bin"
         lrspageropts.outputfile = outfile
+        logging.debug(f"Generating LRS binary file: {outfile}")
         lrs_pager.main(options=lrspageropts)
 
         # Configure options specific to lrs_tx script
@@ -379,10 +418,12 @@ class transmitter:
         # Call main in lrs_tx, passing in lrsopts options array
         lrs_tx.main(options=lrsopts)
         sleep(3)
+        logging.info("LRS transmission complete")
         disable_bladerf_biastee(device)
 
         # Delete pager bin file from /tmp/
         os.remove(outfile)
+        logging.debug(f"Removed temporary file: {outfile}")
         print("Removed outfile")
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         print("Returned flag to pool")
@@ -398,6 +439,7 @@ class transmitter:
         # Extract parameters from flag_args
         wav_src = str(flag_args[1])
         if not os.path.isfile(wav_src):
+            logging.error(f"FHSS: WAV file not found: {wav_src}")
             print("Unable to find wav file {}".format(wav_src))
             exit(1)
 
@@ -413,6 +455,10 @@ class transmitter:
 
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
+
+        logging.info(f"Starting FHSS transmission: device={device_id}, freq={freq}Hz, hop_rate={hop_rate}Hz")
+        logging.debug(f"FHSS parameters: channel_spacing={channel_spacing}, hop_time={hop_time}, seed={seed}, wav_rate={wav_rate}")
+        logging.debug(f"FHSS WAV source: {wav_src}")
 
         # Configure options for fhss_tx flowgraph
         fhss_opts = fhss_tx.argument_parser().parse_args('')
@@ -430,6 +476,7 @@ class transmitter:
         fhss_tx.main(options=fhss_opts)
 
         sleep(3)
+        logging.info("FHSS transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
@@ -506,7 +553,9 @@ def fetch_device(dev_id):
     """Get device string for a given device id from global registry."""
     global device_registry
     if dev_id in device_registry:
-        return device_registry[dev_id]['device_string']
+        device_string = device_registry[dev_id]['device_string']
+        logging.debug(f"Fetched device {dev_id}: {device_string}")
+        return device_string
     else:
         logging.error(f"Device ID {dev_id} not found in registry")
         return None
@@ -521,7 +570,9 @@ def get_device_antenna(dev_id):
         # If not set at device level, check model defaults
         if not antenna:
             antenna = device_registry[dev_id]['model_defaults'].get('antenna', '')
+        logging.debug(f"Retrieved antenna for device {dev_id}: {antenna if antenna else '(none)'}")
         return antenna if antenna else ""
+    logging.warning(f"Device {dev_id} not found in registry when retrieving antenna")
     return ""
 
 
@@ -589,6 +640,9 @@ def build_device_string(device_config: dict, model_defaults: dict) -> str:
         bias_t = model_defaults.get('bias_t')
     if bias_t:
         device_string += ",biastee=1"
+        logging.debug(f"Built device string with bias-tee: {device_string}")
+    else:
+        logging.debug(f"Built device string: {device_string}")
 
     return device_string
 
@@ -821,10 +875,12 @@ def main(options=None):
     challenges_transmitted = 0
 
     # Put challenges into thread safe flag_Q
+    logging.debug(f"Queueing {len(challenges_list)} challenges")
     for challenge in challenges_list:
         flag_Q.put(challenge)
 
     dev_available = device_Q.get()
+    logging.debug(f"Got first available device: {dev_available}")
     t = transmitter()
 
     jobs = []
@@ -873,6 +929,7 @@ def main(options=None):
             # Paint waterfall every time during the CTF, or only once when testing
             if(test != True or challenges_transmitted == 0):
                 print(f"\nPainting Waterfall on {txfreq_khz} kHz\n")
+                logging.info(f"Painting waterfall on {txfreq_khz} kHz using device {dev_available}")
                 device = fetch_device(dev_available)
                 antenna = get_device_antenna(dev_available)
                 if antenna:
@@ -881,6 +938,7 @@ def main(options=None):
                 p = Process(target=spectrum_paint.main, args=(txfreq, device, antenna))
                 p.start()
                 p.join()
+                logging.debug("Waterfall painting complete")
                 # Turn off biastee if the device is a bladerf with the biastee enabled
                 if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
                     bladeserial = parse_bladerf_ser(device)
@@ -888,6 +946,7 @@ def main(options=None):
                     subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
 
             print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
+            logging.info(f"Starting challenge '{cc_name}' ({cc_module}) on {txfreq_khz} kHz with device {dev_available}")
 
             # Create list of challenge module arguments
             # Format: [chal_id, flag, modopt1, modopt2, minwait, maxwait, freq_khz, replaceinqueue, norandsleep]
