@@ -10,7 +10,7 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
   - [x] Create YAML Structure
   - [x] Update Code to Parse YAML
 - [x] Implement a test mode
-- [ ] Better Logging
+- [x] Better Logging
 - [x] Update USB Flowgraph to SSB (Both LSB and USB Capable)
   - [x] Finish GRC Flowgraph
   - [x] Integrate into code
