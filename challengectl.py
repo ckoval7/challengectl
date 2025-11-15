@@ -326,7 +326,18 @@ class transmitter:
             print(f"Using antenna: {antenna}")
         # print("I ran fire_nbfm with flag=" + str(wav_src) + " and freq=" +
         # str(freq) + " and wav_rate=" + str(wav_rate))
-        nbfm.main(wav_src, wav_rate, freq, device, antenna)
+        # nbfm.main(wav_src, wav_rate, freq, device, antenna)
+        # Configure options for ssb_tx flowgraph
+        nbfm_opts = nbfm.argument_parser().parse_args('')
+        nbfm_opts.dev = device
+        nbfm_opts.freq = freq
+        nbfm_opts.wav_file = wav_src
+        nbfm_opts.wav_samp_rate = wav_rate
+        nbfm_opts.antenna = antenna
+
+        # Call nbfm_tx main with options
+        nbfm.main(options=nbfm_opts)
+
         sleep(3)
         # Turn off biastee if the device is a bladerf with the biastee enabled
         if(device.find("bladerf") != -1 and device.find("biastee=1") != -1):

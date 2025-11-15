@@ -171,7 +171,7 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    file: file
+    file: wav_file
     maxoutbuf: '0'
     minoutbuf: '0'
     nchan: '1'
@@ -198,23 +198,6 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [360, 4.0]
-    rotation: 0
-    state: true
-- name: file
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: Wav File
-    short_id: w
-    type: str
-    value: ./test.wav
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [256, 4.0]
     rotation: 0
     state: true
 - name: freq
@@ -627,14 +610,31 @@ blocks:
     coordinate: [720, 4.0]
     rotation: 0
     state: true
+- name: wav_file
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Wav File
+    short_id: w
+    type: str
+    value: ./test.wav
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [256, 4.0]
+    rotation: 0
+    state: true
 - name: wav_rate
   id: parameter
   parameters:
     alias: ''
     comment: ''
     hide: none
-    label: Wav File Sample Rate
-    short_id: r
+    label: Wav File Audio Sample Rate
+    short_id: a
     type: intx
     value: '48000'
   states:

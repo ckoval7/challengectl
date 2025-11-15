@@ -29,7 +29,7 @@ import time
 
 class nbfm(gr.top_block):
 
-    def __init__(self, audio_gain=0.6, bb_gain=20, dev='bladerf=0', file='./test.wav', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_rate=48000):
+    def __init__(self, audio_gain=0.6, bb_gain=20, dev='bladerf=0', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='./test.wav', wav_rate=48000):
         gr.top_block.__init__(self, "NBFM Transmitter", catch_exceptions=True)
 
         ##################################################
@@ -38,12 +38,12 @@ class nbfm(gr.top_block):
         self.audio_gain = audio_gain
         self.bb_gain = bb_gain
         self.dev = dev
-        self.file = file
         self.freq = freq
         self.if_gain = if_gain
         self.ppm = ppm
         self.rf_gain = rf_gain
         self.rf_samp_rate = rf_samp_rate
+        self.wav_file = wav_file
         self.wav_rate = wav_rate
 
         ##################################################
@@ -87,7 +87,7 @@ class nbfm(gr.top_block):
                 2e3,
                 window.WIN_HAMMING,
                 6.76))
-        self.blocks_wavfile_source_0 = blocks.wavfile_source(file, False)
+        self.blocks_wavfile_source_0 = blocks.wavfile_source(wav_file, False)
         self.analog_nbfm_tx_0 = analog.nbfm_tx(
         	audio_rate=audio_rate,
         	quad_rate=if_rate,
@@ -127,12 +127,6 @@ class nbfm(gr.top_block):
     def set_dev(self, dev):
         self.dev = dev
 
-    def get_file(self):
-        return self.file
-
-    def set_file(self, file):
-        self.file = file
-
     def get_freq(self):
         return self.freq
 
@@ -168,6 +162,12 @@ class nbfm(gr.top_block):
         self.rf_samp_rate = rf_samp_rate
         self.low_pass_filter_0.set_taps(firdes.low_pass(1, self.rf_samp_rate, 3e3, 2e3, window.WIN_HAMMING, 6.76))
         self.osmosdr_sink_0.set_sample_rate(self.rf_samp_rate)
+
+    def get_wav_file(self):
+        return self.wav_file
+
+    def set_wav_file(self, wav_file):
+        self.wav_file = wav_file
 
     def get_wav_rate(self):
         return self.wav_rate
@@ -211,9 +211,6 @@ def argument_parser():
         "-d", "--dev", dest="dev", type=str, default='bladerf=0',
         help="Set Device String [default=%(default)r]")
     parser.add_argument(
-        "-w", "--file", dest="file", type=str, default='./test.wav',
-        help="Set Wav File [default=%(default)r]")
-    parser.add_argument(
         "-f", "--freq", dest="freq", type=intx, default=int(449e6),
         help="Set Center Frequency [default=%(default)r]")
     parser.add_argument(
@@ -229,15 +226,18 @@ def argument_parser():
         "-r", "--rf-samp-rate", dest="rf_samp_rate", type=intx, default=2000000,
         help="Set RF Sample Rate [default=%(default)r]")
     parser.add_argument(
-        "-r", "--wav-rate", dest="wav_rate", type=intx, default=48000,
-        help="Set Wav File Sample Rate [default=%(default)r]")
+        "-w", "--wav-file", dest="wav_file", type=str, default='./test.wav',
+        help="Set Wav File [default=%(default)r]")
+    parser.add_argument(
+        "-a", "--wav-rate", dest="wav_rate", type=intx, default=48000,
+        help="Set Wav File Audio Sample Rate [default=%(default)r]")
     return parser
 
 
 def main(top_block_cls=nbfm, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, file=options.file, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_rate=options.wav_rate)
+    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_rate=options.wav_rate)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()
