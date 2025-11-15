@@ -841,7 +841,7 @@ def main(options=None):
                         filemode='w',
                         level=log_level,
                         format='%(asctime)s challengectl[%(process)d]: %(levelname)s: %(message)s',
-                        datefmt='%b %d %H:%M:%S')
+                        datefmt='%Y-%m-%dT%H:%M:%S')
 
     logging.info(f"Logging initialized at {args.log_level} level")
 
