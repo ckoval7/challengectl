@@ -21,7 +21,12 @@ from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
 from math import pi
-import fhss_tx_hop_set as hop_set  # embedded python module
+try:
+    # Try relative import first (when imported as part of challenges package)
+    from . import fhss_tx_hop_set as hop_set
+except ImportError:
+    # Fall back to direct import (when run as __main__)
+    import fhss_tx_hop_set as hop_set  # embedded python module
 import osmosdr
 import time
 
