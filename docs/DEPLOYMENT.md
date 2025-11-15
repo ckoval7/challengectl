@@ -67,11 +67,8 @@ cd server
 # Copy example config
 cp ../server-config.example.yml server-config.yml
 
-# Edit configuration
-nano server-config.yml
-# Change all API keys
-# Configure challenges
-# Set conference details
+# Edit configuration (change all API keys, configure challenges, set conference details)
+# Use your preferred text editor
 ```
 
 ### Install Dependencies
@@ -106,8 +103,8 @@ Edit `docs/challengectl-server.service` and update paths:
 # Copy service file
 sudo cp docs/challengectl-server.service /etc/systemd/system/
 
-# Edit paths in service file
-sudo nano /etc/systemd/system/challengectl-server.service
+# Edit paths in service file (WorkingDirectory, ExecStart, config path)
+# Use your preferred text editor
 
 # Reload systemd
 sudo systemctl daemon-reload
@@ -131,12 +128,8 @@ cd runner
 # Copy example config
 cp ../runner-config.example.yml runner-config.yml
 
-# Edit configuration
-nano runner-config.yml
-# Set unique runner_id
-# Set server_url (with https:// if using TLS)
-# Set api_key (must match server config)
-# Configure SDR devices
+# Edit configuration (set runner_id, server_url, api_key, configure SDR devices)
+# Use your preferred text editor
 ```
 
 The runner creates local directories for cache and temporary files:
@@ -205,8 +198,8 @@ Edit `docs/challengectl-runner.service` and update paths:
 # Copy service file
 sudo cp docs/challengectl-runner.service /etc/systemd/system/
 
-# Edit paths
-sudo nano /etc/systemd/system/challengectl-runner.service
+# Edit paths (WorkingDirectory, ExecStart, config path)
+# Use your preferred text editor
 
 # Reload systemd
 sudo systemctl daemon-reload
@@ -260,14 +253,8 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 # Copy example config
 sudo cp docs/nginx-challengectl.conf /etc/nginx/sites-available/challengectl
 
-# Edit configuration
-sudo nano /etc/nginx/sites-available/challengectl
-# Update:
-#   - server_name (your domain)
-#   - ssl_certificate paths
-#   - ssl_certificate_key paths
-#   - root path (to your frontend/dist directory)
-#   - proxy_pass URL (to your backend server)
+# Edit configuration (update server_name, ssl_certificate paths, root path, proxy_pass URL)
+# Use your preferred text editor
 
 # Enable site
 sudo ln -s /etc/nginx/sites-available/challengectl /etc/nginx/sites-enabled/
