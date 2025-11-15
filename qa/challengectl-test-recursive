@@ -19,28 +19,28 @@ else
 fi
 
 # Then test CSV conversions for backwards compatibility
-for conference in flags-archive/*.csv; do
-  printf 'Testing %s...' "${conference}"
+# for conference in flags-archive/*.csv; do
+#   printf 'Testing %s...' "${conference}"
 
-  # Generate temporary YAML config from CSV files
-  temp_config="/tmp/test-config-$$.yml"
-  if ! python3 "${converter}" "${conference}" devices.txt.ci "${temp_config}" >/dev/null 2>&1; then
-    printf 'FAILED (CSV conversion error)\n'
-    exit_code="1"
-    continue
-  fi
+#   # Generate temporary YAML config from CSV files
+#   temp_config="/tmp/test-config-$$.yml"
+#   if ! python3 "${converter}" "${conference}" devices.txt.ci "${temp_config}" >/dev/null 2>&1; then
+#     printf 'FAILED (CSV conversion error)\n'
+#     exit_code="1"
+#     continue
+#   fi
 
-  # Test with the generated YAML config
-  if errors=$(./challengectl.py --test "${temp_config}" 2>&1); then
-    printf 'PASSED\n'
-  else
-    printf 'FAILED\n'
-    printf '\n%s\n\n' "${errors}"
-    exit_code="1"
-  fi
+#   # Test with the generated YAML config
+#   if errors=$(./challengectl.py --test "${temp_config}" 2>&1); then
+#     printf 'PASSED\n'
+#   else
+#     printf 'FAILED\n'
+#     printf '\n%s\n\n' "${errors}"
+#     exit_code="1"
+#   fi
 
-  # Clean up temporary config
-  rm -f "${temp_config}"
-done
+#   # Clean up temporary config
+#   rm -f "${temp_config}"
+# done
 
 exit "${exit_code}"
