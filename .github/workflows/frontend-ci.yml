@@ -3,7 +3,7 @@ name: Frontend CI
 on:
   push:
     branches:
-      - main
+      - master
       - challengectl-v2
       - 'claude/**'
     paths:
