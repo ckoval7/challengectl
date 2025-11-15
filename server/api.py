@@ -101,6 +101,69 @@ class ChallengeCtlAPI:
                 'timestamp': datetime.now().isoformat()
             })
 
+        # Public dashboard endpoint (no auth required)
+        @self.app.route('/api/public/challenges', methods=['GET'])
+        def get_public_challenges():
+            """Get public view of enabled challenges with configurable visibility."""
+            try:
+                all_challenges = self.db.get_all_challenges()
+
+                # Filter to only enabled challenges and remove sensitive information
+                public_challenges = []
+                for challenge in all_challenges:
+                    if not challenge.get('enabled'):
+                        continue
+
+                    config = challenge.get('config', {})
+
+                    # Build public challenge object with only safe fields
+                    public_challenge = {
+                        'challenge_id': challenge['challenge_id'],
+                        'name': challenge['name'],
+                        'modulation': config.get('modulation', 'unknown'),
+                        'transmission_count': challenge.get('transmission_count', 0),
+                    }
+
+                    # Conditionally add fields based on public view settings
+                    public_view = config.get('public_view', {})
+
+                    # Show frequency if enabled (default: True)
+                    if public_view.get('show_frequency', True):
+                        frequency = config.get('frequency')
+                        if frequency:
+                            # Format frequency in MHz for readability
+                            freq_mhz = frequency / 1_000_000
+                            public_challenge['frequency'] = frequency
+                            public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
+
+                    # Show last transmission time if enabled (default: False)
+                    if public_view.get('show_last_tx_time', False):
+                        last_tx = challenge.get('last_tx_time')
+                        if last_tx:
+                            public_challenge['last_tx_time'] = last_tx
+
+                    # Show active status if enabled (default: True)
+                    if public_view.get('show_active_status', True):
+                        # Check if currently assigned (actively transmitting)
+                        is_active = (challenge.get('status') == 'assigned' and
+                                   challenge.get('assigned_to') is not None)
+                        public_challenge['is_active'] = is_active
+
+                    public_challenges.append(public_challenge)
+
+                # Sort by name
+                public_challenges.sort(key=lambda x: x['name'])
+
+                return jsonify({
+                    'challenges': public_challenges,
+                    'count': len(public_challenges),
+                    'timestamp': datetime.now().isoformat()
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error getting public challenges: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
         # Runner endpoints
         @self.app.route('/api/runners/register', methods=['POST'])
         @self.require_api_key

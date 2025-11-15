@@ -3,6 +3,7 @@ import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import Challenges from './views/Challenges.vue'
 import Logs from './views/Logs.vue'
+import PublicDashboard from './views/PublicDashboard.vue'
 
 const routes = [
   {
@@ -24,6 +25,11 @@ const routes = [
     path: '/logs',
     name: 'Logs',
     component: Logs
+  },
+  {
+    path: '/public',
+    name: 'PublicDashboard',
+    component: PublicDashboard
   }
 ]
 

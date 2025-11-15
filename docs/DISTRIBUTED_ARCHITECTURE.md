@@ -219,7 +219,15 @@ radios:
 
 ## API Reference
 
-### Runner Endpoints
+### Public Endpoints (No Authentication Required)
+
+- `GET /api/health` - Health check
+- `GET /api/public/challenges` - Public challenge status dashboard
+  - Returns enabled challenges with configurable visibility
+  - Never exposes flag content, file paths, or sensitive information
+  - Respects per-challenge `public_view` settings
+
+### Runner Endpoints (Requires Runner API Key)
 
 - `POST /api/runners/register` - Register runner
 - `POST /api/runners/{id}/heartbeat` - Send heartbeat
@@ -227,7 +235,7 @@ radios:
 - `POST /api/runners/{id}/complete` - Report completion
 - `GET /api/files/{hash}` - Download file
 
-### Admin Endpoints
+### Admin Endpoints (Requires Admin API Key)
 
 - `GET /api/dashboard` - Dashboard statistics
 - `GET /api/runners` - List all runners

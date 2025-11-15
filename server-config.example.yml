@@ -46,7 +46,7 @@ challenges:
   - default_min_delay: 60  # Seconds
     default_max_delay: 90  # Seconds
 
-  # NBFM Example
+  # NBFM Example - Full public visibility
   - name: NBFM_FLAG_1
     frequency: 146550000  # Hz (146.550 MHz)
     modulation: nbfm
@@ -55,8 +55,14 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
+    # Public dashboard visibility settings (optional)
+    # Controls what information is shown on the public /public route
+    public_view:
+      show_frequency: true      # Show frequency on public dashboard (default: true)
+      show_last_tx_time: true   # Show last transmission time (default: false)
+      show_active_status: true  # Show if currently transmitting (default: true)
 
-  # CW (Morse Code) Example
+  # CW (Morse Code) Example - Minimal public visibility
   - name: CW_MORSE_1
     frequency: 146450000  # Hz (146.450 MHz)
     modulation: cw
@@ -65,8 +71,13 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
+    # Example: Hide frequency and transmission times from public
+    public_view:
+      show_frequency: false
+      show_last_tx_time: false
+      show_active_status: false
 
-  # SSB (Single Sideband) Example
+  # SSB (Single Sideband) Example - Default visibility (omit public_view to use defaults)
   - name: SSB_FLAG_1
     frequency: 146600000  # Hz (146.600 MHz)
     modulation: ssb
@@ -76,6 +87,7 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
+    # No public_view section = uses defaults (show_frequency: true, show_last_tx_time: false, show_active_status: true)
 
   # ASK (Amplitude Shift Keying) Example
   - name: ASK_FLAG_1

@@ -243,6 +243,51 @@ npm run dev
 # Access at http://localhost:3000
 ```
 
+### Public Dashboard
+
+The frontend includes a public dashboard at `/public` that shows challenge status without requiring authentication. This is useful for:
+- Displaying live challenge status to CTF participants
+- Public scoreboard/status displays
+- Conference dashboards
+
+**Accessing the Public Dashboard:**
+- URL: `https://challengectl.example.com/public`
+- No authentication required
+- Auto-refreshes every 30 seconds
+
+**Configuring Visibility:**
+
+Each challenge can have custom visibility settings in `server-config.yml`:
+
+```yaml
+challenges:
+  - name: EXAMPLE_CHALLENGE
+    frequency: 146550000
+    modulation: nbfm
+    # ... other settings ...
+    public_view:
+      show_frequency: true       # Show frequency (default: true)
+      show_last_tx_time: true    # Show last TX time (default: false)
+      show_active_status: true   # Show active status (default: true)
+```
+
+**What is Hidden:**
+- The public dashboard NEVER shows:
+  - Flag content or file paths
+  - API keys or authentication details
+  - Runner/device information
+  - Internal configuration details
+
+**Displaying on Public Screens:**
+
+For kiosk/display mode, you can run the public dashboard in fullscreen:
+
+```bash
+# Using Chromium for kiosk mode
+chromium-browser --kiosk --disable-infobars \
+  https://challengectl.example.com/public
+```
+
 ## TLS/SSL Configuration
 
 You have two options for enabling TLS:
