@@ -3,13 +3,22 @@
     <h1>Dashboard</h1>
 
     <!-- Statistics Cards -->
-    <el-row :gutter="20" style="margin-bottom: 20px">
+    <el-row
+      :gutter="20"
+      style="margin-bottom: 20px"
+    >
       <el-col :span="6">
         <el-card>
           <div class="stat-card">
-            <div class="stat-value">{{ stats.runners_online || 0 }}</div>
-            <div class="stat-label">Runners Online</div>
-            <div class="stat-sublabel">{{ stats.runners_total || 0 }} Total</div>
+            <div class="stat-value">
+              {{ stats.runners_online || 0 }}
+            </div>
+            <div class="stat-label">
+              Runners Online
+            </div>
+            <div class="stat-sublabel">
+              {{ stats.runners_total || 0 }} Total
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -17,9 +26,15 @@
       <el-col :span="6">
         <el-card>
           <div class="stat-card">
-            <div class="stat-value">{{ stats.challenges_queued || 0 }}</div>
-            <div class="stat-label">Challenges Queued</div>
-            <div class="stat-sublabel">{{ stats.challenges_total || 0 }} Total</div>
+            <div class="stat-value">
+              {{ stats.challenges_queued || 0 }}
+            </div>
+            <div class="stat-label">
+              Challenges Queued
+            </div>
+            <div class="stat-sublabel">
+              {{ stats.challenges_total || 0 }} Total
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -27,9 +42,15 @@
       <el-col :span="6">
         <el-card>
           <div class="stat-card">
-            <div class="stat-value">{{ stats.total_transmissions || 0 }}</div>
-            <div class="stat-label">Total Transmissions</div>
-            <div class="stat-sublabel">{{ stats.transmissions_last_hour || 0 }} Last Hour</div>
+            <div class="stat-value">
+              {{ stats.total_transmissions || 0 }}
+            </div>
+            <div class="stat-label">
+              Total Transmissions
+            </div>
+            <div class="stat-sublabel">
+              {{ stats.transmissions_last_hour || 0 }} Last Hour
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -37,9 +58,15 @@
       <el-col :span="6">
         <el-card>
           <div class="stat-card">
-            <div class="stat-value">{{ stats.success_rate?.toFixed(1) || 0 }}%</div>
-            <div class="stat-label">Success Rate</div>
-            <div class="stat-sublabel">Last Hour</div>
+            <div class="stat-value">
+              {{ stats.success_rate?.toFixed(1) || 0 }}%
+            </div>
+            <div class="stat-label">
+              Success Rate
+            </div>
+            <div class="stat-sublabel">
+              Last Hour
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -55,10 +82,25 @@
             </div>
           </template>
 
-          <el-table :data="runners" style="width: 100%" max-height="400">
-            <el-table-column prop="runner_id" label="Runner ID" width="150" />
-            <el-table-column prop="hostname" label="Hostname" width="180" />
-            <el-table-column label="Status" width="100">
+          <el-table
+            :data="runners"
+            style="width: 100%"
+            max-height="400"
+          >
+            <el-table-column
+              prop="runner_id"
+              label="Runner ID"
+              width="150"
+            />
+            <el-table-column
+              prop="hostname"
+              label="Hostname"
+              width="180"
+            />
+            <el-table-column
+              label="Status"
+              width="100"
+            >
               <template #default="scope">
                 <el-tag
                   :type="scope.row.status === 'online' ? 'success' : 'info'"
@@ -68,7 +110,10 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="Devices" width="80">
+            <el-table-column
+              label="Devices"
+              width="80"
+            >
               <template #default="scope">
                 {{ scope.row.devices?.length || 0 }}
               </template>
@@ -90,20 +135,40 @@
             </div>
           </template>
 
-          <el-table :data="recentTransmissions" style="width: 100%" max-height="400">
-            <el-table-column label="Time" width="100">
+          <el-table
+            :data="recentTransmissions"
+            style="width: 100%"
+            max-height="400"
+          >
+            <el-table-column
+              label="Time"
+              width="100"
+            >
               <template #default="scope">
                 {{ formatTime(scope.row.started_at) }}
               </template>
             </el-table-column>
-            <el-table-column prop="runner_id" label="Runner" width="120" />
-            <el-table-column prop="challenge_name" label="Challenge" />
-            <el-table-column label="Frequency" width="120">
+            <el-table-column
+              prop="runner_id"
+              label="Runner"
+              width="120"
+            />
+            <el-table-column
+              prop="challenge_name"
+              label="Challenge"
+            />
+            <el-table-column
+              label="Frequency"
+              width="120"
+            >
               <template #default="scope">
                 {{ formatFrequency(scope.row.frequency) }}
               </template>
             </el-table-column>
-            <el-table-column label="Status" width="100">
+            <el-table-column
+              label="Status"
+              width="100"
+            >
               <template #default="scope">
                 <el-tag
                   :type="scope.row.status === 'success' ? 'success' : (scope.row.status === 'failed' ? 'danger' : 'warning')"

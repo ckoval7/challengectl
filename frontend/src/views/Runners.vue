@@ -2,11 +2,29 @@
   <div class="runners">
     <h1>Runners</h1>
 
-    <el-table :data="runners" style="width: 100%">
-      <el-table-column prop="runner_id" label="Runner ID" width="180" />
-      <el-table-column prop="hostname" label="Hostname" width="200" />
-      <el-table-column prop="ip_address" label="IP Address" width="150" />
-      <el-table-column label="Status" width="100">
+    <el-table
+      :data="runners"
+      style="width: 100%"
+    >
+      <el-table-column
+        prop="runner_id"
+        label="Runner ID"
+        width="180"
+      />
+      <el-table-column
+        prop="hostname"
+        label="Hostname"
+        width="200"
+      />
+      <el-table-column
+        prop="ip_address"
+        label="IP Address"
+        width="150"
+      />
+      <el-table-column
+        label="Status"
+        width="100"
+      >
         <template #default="scope">
           <el-tag
             :type="scope.row.status === 'online' ? 'success' : 'info'"
@@ -16,17 +34,26 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Devices" width="100">
+      <el-table-column
+        label="Devices"
+        width="100"
+      >
         <template #default="scope">
           {{ scope.row.devices?.length || 0 }}
         </template>
       </el-table-column>
-      <el-table-column label="Last Heartbeat" width="180">
+      <el-table-column
+        label="Last Heartbeat"
+        width="180"
+      >
         <template #default="scope">
           {{ formatTimestamp(scope.row.last_heartbeat) }}
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="150">
+      <el-table-column
+        label="Actions"
+        width="150"
+      >
         <template #default="scope">
           <el-button
             size="small"
@@ -41,10 +68,24 @@
         <template #default="scope">
           <div style="padding: 20px">
             <h4>Devices:</h4>
-            <el-table :data="scope.row.devices || []" style="width: 100%">
-              <el-table-column prop="device_id" label="ID" width="80" />
-              <el-table-column prop="model" label="Model" width="150" />
-              <el-table-column prop="name" label="Name/Serial" />
+            <el-table
+              :data="scope.row.devices || []"
+              style="width: 100%"
+            >
+              <el-table-column
+                prop="device_id"
+                label="ID"
+                width="80"
+              />
+              <el-table-column
+                prop="model"
+                label="Model"
+                width="150"
+              />
+              <el-table-column
+                prop="name"
+                label="Name/Serial"
+              />
               <el-table-column label="Frequency Limits">
                 <template #default="devScope">
                   {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}

@@ -3,22 +3,43 @@
     <h1>Challenges</h1>
 
     <div style="margin-bottom: 20px">
-      <el-button type="primary" @click="reloadChallenges">Reload from Config</el-button>
+      <el-button
+        type="primary"
+        @click="reloadChallenges"
+      >
+        Reload from Config
+      </el-button>
     </div>
 
-    <el-table :data="challenges" style="width: 100%">
-      <el-table-column prop="name" label="Name" width="200" />
-      <el-table-column label="Modulation" width="120">
+    <el-table
+      :data="challenges"
+      style="width: 100%"
+    >
+      <el-table-column
+        prop="name"
+        label="Name"
+        width="200"
+      />
+      <el-table-column
+        label="Modulation"
+        width="120"
+      >
         <template #default="scope">
           {{ scope.row.config?.modulation || 'N/A' }}
         </template>
       </el-table-column>
-      <el-table-column label="Frequency" width="150">
+      <el-table-column
+        label="Frequency"
+        width="150"
+      >
         <template #default="scope">
           {{ formatFrequency(scope.row.config?.frequency) }}
         </template>
       </el-table-column>
-      <el-table-column label="Status" width="100">
+      <el-table-column
+        label="Status"
+        width="100"
+      >
         <template #default="scope">
           <el-tag
             :type="scope.row.status === 'queued' ? 'success' : (scope.row.status === 'assigned' ? 'warning' : 'info')"
@@ -28,7 +49,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Enabled" width="100">
+      <el-table-column
+        label="Enabled"
+        width="100"
+      >
         <template #default="scope">
           <el-switch
             v-model="scope.row.enabled"
@@ -36,17 +60,26 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="TX Count" width="100">
+      <el-table-column
+        label="TX Count"
+        width="100"
+      >
         <template #default="scope">
           {{ scope.row.transmission_count || 0 }}
         </template>
       </el-table-column>
-      <el-table-column label="Last TX" width="180">
+      <el-table-column
+        label="Last TX"
+        width="180"
+      >
         <template #default="scope">
           {{ formatTimestamp(scope.row.last_tx_time) }}
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="150">
+      <el-table-column
+        label="Actions"
+        width="150"
+      >
         <template #default="scope">
           <el-button
             size="small"

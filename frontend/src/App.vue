@@ -1,22 +1,27 @@
 <template>
   <div id="app">
     <el-container style="height: 100vh">
-      <el-header height="60px" style="background: #409EFF; color: white; display: flex; align-items: center; padding: 0 20px;">
-        <h2 style="margin: 0">ChallengeCtl Control Center</h2>
-        <div style="flex: 1"></div>
+      <el-header
+        height="60px"
+        style="background: #409EFF; color: white; display: flex; align-items: center; padding: 0 20px;"
+      >
+        <h2 style="margin: 0">
+          ChallengeCtl Control Center
+        </h2>
+        <div style="flex: 1" />
         <el-button
           v-if="systemPaused"
           type="success"
-          @click="resumeSystem"
           style="margin-right: 10px"
+          @click="resumeSystem"
         >
           Resume
         </el-button>
         <el-button
           v-else
           type="warning"
-          @click="pauseSystem"
           style="margin-right: 10px"
+          @click="pauseSystem"
         >
           Pause
         </el-button>
@@ -29,7 +34,10 @@
       </el-header>
 
       <el-container>
-        <el-aside width="200px" style="background: #f5f7fa; padding: 20px;">
+        <el-aside
+          width="200px"
+          style="background: #f5f7fa; padding: 20px;"
+        >
           <el-menu
             :default-active="$route.path"
             router

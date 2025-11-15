@@ -2,19 +2,30 @@
   <div class="public-dashboard">
     <div class="header">
       <h1>Live Challenge Status</h1>
-      <p class="subtitle">{{ conference.name }}</p>
+      <p class="subtitle">
+        {{ conference.name }}
+      </p>
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="loading-container">
-      <el-icon class="is-loading" :size="40">
+    <div
+      v-if="loading"
+      class="loading-container"
+    >
+      <el-icon
+        class="is-loading"
+        :size="40"
+      >
         <Loading />
       </el-icon>
       <p>Loading challenges...</p>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="error-container">
+    <div
+      v-else-if="error"
+      class="error-container"
+    >
       <el-alert
         title="Error Loading Challenges"
         :description="error"
@@ -33,12 +44,29 @@
           </div>
         </template>
 
-        <el-table :data="challenges" style="width: 100%" stripe>
-          <el-table-column prop="name" label="Challenge Name" min-width="180" />
+        <el-table
+          :data="challenges"
+          style="width: 100%"
+          stripe
+        >
+          <el-table-column
+            prop="name"
+            label="Challenge Name"
+            min-width="180"
+          />
 
-          <el-table-column prop="modulation" label="Modulation" width="120">
+          <el-table-column
+            prop="modulation"
+            label="Modulation"
+            width="120"
+          >
             <template #default="scope">
-              <el-tag size="small" type="info">{{ scope.row.modulation.toUpperCase() }}</el-tag>
+              <el-tag
+                size="small"
+                type="info"
+              >
+                {{ scope.row.modulation.toUpperCase() }}
+              </el-tag>
             </template>
           </el-table-column>
 
@@ -51,7 +79,10 @@
               <span v-if="scope.row.frequency_display">
                 {{ scope.row.frequency_display }}
               </span>
-              <span v-else class="hidden-field">—</span>
+              <span
+                v-else
+                class="hidden-field"
+              >—</span>
             </template>
           </el-table-column>
 
@@ -64,7 +95,10 @@
               <span v-if="scope.row.last_tx_time">
                 {{ formatTime(scope.row.last_tx_time) }}
               </span>
-              <span v-else class="no-data">Never</span>
+              <span
+                v-else
+                class="no-data"
+              >Never</span>
             </template>
           </el-table-column>
 
@@ -82,14 +116,27 @@
                   {{ scope.row.is_active ? 'ACTIVE' : 'IDLE' }}
                 </el-tag>
               </span>
-              <span v-else class="hidden-field">—</span>
+              <span
+                v-else
+                class="hidden-field"
+              >—</span>
             </template>
           </el-table-column>
 
-          <el-table-column label="Transmissions" width="130" align="center">
+          <el-table-column
+            label="Transmissions"
+            width="130"
+            align="center"
+          >
             <template #default="scope">
-              <el-badge :value="scope.row.transmission_count" :max="999" class="badge-count">
-                <el-icon :size="20"><Promotion /></el-icon>
+              <el-badge
+                :value="scope.row.transmission_count"
+                :max="999"
+                class="badge-count"
+              >
+                <el-icon :size="20">
+                  <Promotion />
+                </el-icon>
               </el-badge>
             </template>
           </el-table-column>
@@ -104,10 +151,18 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="empty-state">
+    <div
+      v-else
+      class="empty-state"
+    >
       <el-empty description="No active challenges at this time">
         <template #image>
-          <el-icon :size="100" color="#909399"><Warning /></el-icon>
+          <el-icon
+            :size="100"
+            color="#909399"
+          >
+            <Warning />
+          </el-icon>
         </template>
       </el-empty>
     </div>

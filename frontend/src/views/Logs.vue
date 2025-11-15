@@ -4,22 +4,48 @@
 
     <div style="margin-bottom: 20px">
       <el-space>
-        <el-select v-model="levelFilter" placeholder="Filter by level" style="width: 150px">
-          <el-option label="All" value="" />
-          <el-option label="DEBUG" value="DEBUG" />
-          <el-option label="INFO" value="INFO" />
-          <el-option label="WARNING" value="WARNING" />
-          <el-option label="ERROR" value="ERROR" />
+        <el-select
+          v-model="levelFilter"
+          placeholder="Filter by level"
+          style="width: 150px"
+        >
+          <el-option
+            label="All"
+            value=""
+          />
+          <el-option
+            label="DEBUG"
+            value="DEBUG"
+          />
+          <el-option
+            label="INFO"
+            value="INFO"
+          />
+          <el-option
+            label="WARNING"
+            value="WARNING"
+          />
+          <el-option
+            label="ERROR"
+            value="ERROR"
+          />
         </el-select>
 
-        <el-button @click="clearLogs">Clear</el-button>
+        <el-button @click="clearLogs">
+          Clear
+        </el-button>
 
-        <el-checkbox v-model="autoScroll">Auto-scroll</el-checkbox>
+        <el-checkbox v-model="autoScroll">
+          Auto-scroll
+        </el-checkbox>
       </el-space>
     </div>
 
     <el-card>
-      <div ref="logContainer" class="log-container">
+      <div
+        ref="logContainer"
+        class="log-container"
+      >
         <div
           v-for="(log, index) in filteredLogs"
           :key="index"
@@ -31,7 +57,10 @@
           <span class="log-message">{{ log.message }}</span>
         </div>
 
-        <div v-if="filteredLogs.length === 0" class="log-empty">
+        <div
+          v-if="filteredLogs.length === 0"
+          class="log-empty"
+        >
           No logs yet. Waiting for events...
         </div>
       </div>
