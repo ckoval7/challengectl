@@ -15,6 +15,7 @@ server:
 
   # API keys for runner authentication
   # Each runner should have a unique API key
+  # Generate secure keys with: python3 generate-api-key.py --count 4
   # Format: runner_id: api_key
   api_keys:
     # Runner API keys

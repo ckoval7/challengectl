@@ -11,6 +11,7 @@ runner:
   server_url: "https://192.168.1.100:8443"
 
   # API key for authentication (must match server-config.yml)
+  # Generate with: python3 generate-api-key.py
   api_key: "CHANGE-THIS-runner-1-key-abc123"
 
   # TLS/SSL Configuration

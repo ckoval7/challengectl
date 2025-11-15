@@ -10,11 +10,16 @@ This branch adds a distributed architecture to challengectl, enabling multiple S
 # Install dependencies
 pip install -r requirements-server.txt
 
+# Generate API keys
+python3 generate-api-key.py --count 4
+
 # Generate default config
 cd server
 python server.py
 
-# Edit server-config.yml with your settings
+# Edit server-config.yml with your settings:
+#   - Replace all API keys with generated ones
+#   - Configure challenges
 # Then start the server
 python server.py
 ```

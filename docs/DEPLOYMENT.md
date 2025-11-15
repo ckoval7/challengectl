@@ -66,10 +66,23 @@ cd server
 
 # Copy example config
 cp ../server-config.example.yml server-config.yml
-
-# Edit configuration (change all API keys, configure challenges, set conference details)
-# Use your preferred text editor
 ```
+
+Generate API keys for runners and admin access:
+
+```bash
+# Generate API keys (run from challengectl root directory)
+python3 generate-api-key.py --count 4
+
+# This generates 4 keys:
+# - One for admin (WebUI access)
+# - Three for runners (or however many you need)
+```
+
+Edit server-config.yml:
+- Replace all API keys with newly generated keys
+- Configure challenges
+- Set conference details
 
 ### Install Dependencies
 
