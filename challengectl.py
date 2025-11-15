@@ -215,10 +215,12 @@ def get_antenna_and_print(device_id):
     Returns:
         str: Antenna string (or empty string if not configured)
     """
+    global verbose
     antenna = get_device_antenna(device_id)
     if antenna:
         logging.debug(f"Device {device_id} using antenna: {antenna}")
-        print(f"Using antenna: {antenna}")
+        if verbose:
+            print(f"Using antenna: {antenna}")
     else:
         logging.debug(f"Device {device_id} has no antenna configured")
     return antenna
@@ -229,7 +231,9 @@ class transmitter:
     # flag_args:chal_id,flag,modopt1,modopt2,minwait,maxwait,freq1
 
     def fire_ask(self, device_id, flag_q, device_q, *flag_args):
-        print("\nTransmitting ASK\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting ASK\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         flag = flag_args[1]
@@ -246,10 +250,13 @@ class transmitter:
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_cw(self, device_id, flag_q, device_q, *flag_args):
-        print("\nTransmitting CW\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting CW\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
-        print(device)
+        if verbose:
+            print(device)
         flag = flag_args[1]
         speed = int(flag_args[2])
         freq = int(flag_args[6]) * 1000
@@ -278,6 +285,7 @@ class transmitter:
         Call the ssb_tx flow graph to transmit Lower Sideband (LSB)
         or Upper Sideband (USB) modulated signals.
         """
+        global verbose
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         wav_src = str(flag_args[1])
@@ -295,7 +303,8 @@ class transmitter:
             mode = 'usb'  # default to USB
             wav_rate = int(mode_or_rate) if mode_or_rate else 48000
 
-        print(f"\nTransmitting SSB ({mode.upper()})\n")
+        if verbose:
+            print(f"\nTransmitting SSB ({mode.upper()})\n")
 
         freq = int(flag_args[6]) * 1000
         antenna = get_antenna_and_print(device_id)
@@ -324,7 +333,9 @@ class transmitter:
         """
         Calls the nbfm flow graph to transmit Narrow Band FM modulated signals
         """
-        print("\nTransmitting NBFM\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting NBFM\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         wav_src = str(flag_args[1])
@@ -356,7 +367,9 @@ class transmitter:
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_pocsag(self, device_id, flag_q, device_q, *flag_args):
-        print("\nTransmitting POCSAG\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting POCSAG\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         flag = flag_args[1]
@@ -379,14 +392,17 @@ class transmitter:
         # Call main in pocsagtx_osmocom, passing in pocsagopts options array
         pocsagtx_osmocom.main(options=pocsagopts)
 
-        print("Finished TX POCSAG, sleeping for 3sec before returning device")
+        if verbose:
+            print("Finished TX POCSAG, sleeping for 3sec before returning device")
         sleep(3)
         logging.info("POCSAG transmission complete")
         disable_bladerf_biastee(device)
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
     def fire_lrs(self, device_id, flag_q, device_q, *flag_args):
-        print("\nTransmitting LRS\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting LRS\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
         flag = flag_args[1]
@@ -422,15 +438,19 @@ class transmitter:
         # Delete pager bin file from /tmp/
         os.remove(outfile)
         logging.debug(f"Removed temporary file: {outfile}")
-        print("Removed outfile")
+        if verbose:
+            print("Removed outfile")
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
-        print("Returned flag to pool")
+        if verbose:
+            print("Returned flag to pool")
 
     def fire_fhss(self, device_id, flag_q, device_q, *flag_args):
         """
         Call the fhss_tx flow graph to transmit Frequency Hopping Spread Spectrum signals
         """
-        print("\nTransmitting FHSS\n")
+        global verbose
+        if verbose:
+            print("\nTransmitting FHSS\n")
         flag_args = flag_args[0]
         device = fetch_device(device_id)
 
@@ -823,9 +843,9 @@ def main(options=None):
         options = argument_parser().parse_args()
 
     args = options
-    verbose = args.verbose
     test = args.test
-    global conference, device_registry
+    global conference, device_registry, verbose
+    verbose = args.verbose
 
     # Configure logging with user-specified or default log level
     # Rotate existing log file with timestamp before starting new log
@@ -948,11 +968,12 @@ def main(options=None):
 
             # Paint waterfall every time during the CTF, or only once when testing
             if(test != True or challenges_transmitted == 0):
-                print(f"\nPainting Waterfall on {txfreq_khz} kHz\n")
+                if verbose:
+                    print(f"\nPainting Waterfall on {txfreq_khz} kHz\n")
                 logging.info(f"Painting waterfall on {txfreq_khz} kHz using device {dev_available}")
                 device = fetch_device(dev_available)
                 antenna = get_device_antenna(dev_available)
-                if antenna:
+                if antenna and verbose:
                     print(f"Using antenna: {antenna}")
 
                 p = Process(target=spectrum_paint.main, args=(txfreq, device, antenna))
@@ -965,7 +986,8 @@ def main(options=None):
                     serialarg = '*:serial={}'.format(bladeserial)
                     subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
 
-            print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
+            if verbose:
+                print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
             logging.info(f"Starting challenge '{cc_name}' ({cc_module}) on {txfreq_khz} kHz with device {dev_available}")
 
             # Create list of challenge module arguments
