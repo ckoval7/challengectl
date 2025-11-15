@@ -24,7 +24,7 @@ from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pag
 LOG_FILE = 'challengectl.log'
 if os.path.exists(LOG_FILE):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    archived_log = f'{LOG_FILE}.{timestamp}'
+    archived_log = f'challengectl.{timestamp}.log'
     os.rename(LOG_FILE, archived_log)
 
 logging.basicConfig(filename=LOG_FILE,
