@@ -20,18 +20,8 @@ from datetime import datetime
 from challenges import (ask, cw, nbfm, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx,
                         freedv_tx, ssb_tx, fhss_tx)
 
-# Rotate existing log file with timestamp before starting new log
+# Log file configuration - actual setup happens in main() after parsing args
 LOG_FILE = 'challengectl.log'
-if os.path.exists(LOG_FILE):
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    archived_log = f'challengectl.{timestamp}.log'
-    os.rename(LOG_FILE, archived_log)
-
-logging.basicConfig(filename=LOG_FILE,
-                    filemode='w',
-                    level=logging.DEBUG,
-                    format='%(asctime)s challengectl[%(process)d]: %(levelname)s: %(message)s',
-                    datefmt='%b %d %H:%M:%S')
 
 # def build_database(flagfile, devicefile):
 #     """Create sqlite database based on flags file and devices file.
@@ -612,6 +602,10 @@ def argument_parser():
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-t", "--test", help="Run each challenge once to test flags.", action="store_true")
     parser.add_argument("-d", "--dump-config", help="Display parsed devices and challenges without running anything.", action="store_true", dest="dump_config")
+    parser.add_argument("--log-level",
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        default='INFO',
+                        help="Set logging level (default: INFO)")
     return parser
 
 
@@ -832,6 +826,24 @@ def main(options=None):
     verbose = args.verbose
     test = args.test
     global conference, device_registry
+
+    # Configure logging with user-specified or default log level
+    # Rotate existing log file with timestamp before starting new log
+    if os.path.exists(LOG_FILE):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archived_log = f'challengectl.{timestamp}.log'
+        os.rename(LOG_FILE, archived_log)
+
+    # Convert log level string to logging constant
+    log_level = getattr(logging, args.log_level)
+
+    logging.basicConfig(filename=LOG_FILE,
+                        filemode='w',
+                        level=log_level,
+                        format='%(asctime)s challengectl[%(process)d]: %(levelname)s: %(message)s',
+                        datefmt='%b %d %H:%M:%S')
+
+    logging.info(f"Logging initialized at {args.log_level} level")
 
     # Create thread safe FIFO queues for devices and flags
     device_Q = Queue()
