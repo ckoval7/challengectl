@@ -986,8 +986,7 @@ def main(options=None):
                     serialarg = '*:serial={}'.format(bladeserial)
                     subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
 
-            if verbose:
-                print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
+            print(f"\nStarting {cc_name} on {txfreq_khz} kHz ({cc_module})")
             logging.info(f"Starting challenge '{cc_name}' ({cc_module}) on {txfreq_khz} kHz with device {dev_available}")
 
             # Create list of challenge module arguments
