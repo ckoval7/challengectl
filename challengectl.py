@@ -654,6 +654,7 @@ def argument_parser():
     parser.add_argument('configfile', help="YAML Configuration File", default='config.yml')
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-t", "--test", help="Run each challenge once to test flags.", action="store_true")
+    parser.add_argument("-d", "--dump-config", help="Display parsed devices and challenges without running anything.", action="store_true", dest="dump_config")
     return parser
 
 
@@ -806,6 +807,62 @@ def parse_yaml(configfile) -> dict:
     return config
 
 
+def dump_config(device_list, challenges_list, config):
+    """
+    Display parsed devices and challenges without running anything
+    """
+    print("\n" + "="*80)
+    print("CONFIGURATION DUMP")
+    print("="*80)
+
+    # Display conference info
+    conference_config = config.get('conference', {})
+    print(f"\nConference: {conference_config.get('name', 'N/A')}")
+    print(f"Start: {conference_config.get('start', 'N/A')}")
+    print(f"Stop: {conference_config.get('stop', 'N/A')}")
+
+    # Display devices
+    print("\n" + "-"*80)
+    print(f"DEVICES ({len(device_list)} configured)")
+    print("-"*80)
+
+    for dev_id, dev_string, dev_config, model_defaults in device_list:
+        print(f"\nDevice {dev_id}:")
+        print(f"  Model: {dev_config.get('model', 'N/A')}")
+        print(f"  Name/Serial: {dev_config.get('name', 'N/A')}")
+        print(f"  Device String: {dev_string}")
+        antenna = dev_config.get('antenna', model_defaults.get('antenna', ''))
+        if antenna:
+            print(f"  Antenna: {antenna}")
+        bias_t = dev_config.get('bias_t', model_defaults.get('bias_t'))
+        if bias_t:
+            print(f"  Bias-T: {bias_t}")
+
+    # Display challenges
+    print("\n" + "-"*80)
+    print(f"CHALLENGES ({len(challenges_list)} enabled)")
+    print("-"*80)
+
+    for idx, challenge in enumerate(challenges_list):
+        print(f"\n[{idx+1}] {challenge.get('name', 'N/A')}")
+        print(f"    Modulation: {challenge.get('modulation', 'N/A')}")
+        print(f"    Flag: {challenge.get('flag', 'N/A')}")
+        print(f"    Frequency: {challenge.get('frequency', 'N/A')} Hz")
+        print(f"    Delays: {challenge.get('min_delay', 'N/A')}s - {challenge.get('max_delay', 'N/A')}s")
+
+        # Display modulation-specific parameters
+        mod_params = {}
+        for key in ['speed', 'capcode', 'mode', 'wav_samplerate', 'seed', 'hop_rate', 'hop_time', 'channel_spacing', 'text']:
+            if key in challenge and challenge[key] is not None:
+                mod_params[key] = challenge[key]
+
+        if mod_params:
+            print(f"    Parameters: {', '.join([f'{k}={v}' for k, v in mod_params.items()])}")
+
+    print("\n" + "="*80)
+    print(f"Total: {len(device_list)} devices, {len(challenges_list)} challenges")
+    print("="*80 + "\n")
+
 
 def main(options=None):
     if options is None:
@@ -850,6 +907,11 @@ def main(options=None):
         logging.error("No enabled challenges found. Exiting.")
         print("Error: No enabled challenges found in YAML file.")
         return 1
+
+    # If dump_config flag is set, display configuration and exit
+    if args.dump_config:
+        dump_config(device_list, challenges_list, config)
+        return 0
 
     # Randomize order of challenges except when testing flags
     if test != True:
