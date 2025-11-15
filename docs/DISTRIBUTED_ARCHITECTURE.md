@@ -243,7 +243,7 @@ radios:
 - `POST /api/challenges/{id}/trigger` - Trigger challenge now
 - `POST /api/control/pause` - Pause system
 - `POST /api/control/resume` - Resume system
-- `POST /api/control/emergency-stop` - Emergency stop
+- `POST /api/control/stop` - Stop all transmissions
 
 ### WebSocket Events
 
@@ -323,9 +323,9 @@ Runner maintains cache in local `cache/` directory (configurable):
 2. Click "Trigger Now" next to challenge
 3. Next available runner will execute it
 
-### Emergency Stop
+### Stop All Transmissions
 
-1. Click "Emergency Stop" in WebUI header
+1. Click "Stop" in WebUI header
 2. All runners stop polling for tasks
 3. All assigned challenges requeued
 4. System marked as paused
@@ -440,7 +440,7 @@ For larger deployments (>20 runners), consider:
 5. Stop one runner
    - Verify marked offline after 90s
    - Assignments requeued
-6. Test emergency stop
+6. Test stop function
    - Verify all transmissions halt
 
 ### Integration Testing

@@ -58,7 +58,7 @@ Open browser to `http://<server-ip>:8443`
 ✅ **File Sync** - Automatic WAV/file distribution
 ✅ **Live Logs** - Real-time log streaming
 ✅ **Manual Triggers** - Force challenge transmission
-✅ **Emergency Stop** - Instant shutdown
+✅ **Stop** - Instant shutdown of all transmissions
 
 ## Architecture
 

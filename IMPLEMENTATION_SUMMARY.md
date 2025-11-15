@@ -146,7 +146,7 @@ Vue.js 3 single-page application:
 
 ### ✅ Operational Controls
 - Pause/Resume system
-- Emergency stop
+- Stop all transmissions
 - Manual challenge triggers
 - Enable/disable challenges
 - Reload configuration

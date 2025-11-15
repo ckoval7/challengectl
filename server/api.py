@@ -479,10 +479,10 @@ class ChallengeCtlAPI:
 
             return jsonify({'status': 'resumed'}), 200
 
-        @self.app.route('/api/control/emergency-stop', methods=['POST'])
+        @self.app.route('/api/control/stop', methods=['POST'])
         @self.require_api_key
-        def emergency_stop():
-            """Emergency stop all operations."""
+        def stop_system():
+            """Stop all operations."""
             self.db.set_system_state('paused', 'true')
 
             # Requeue all assigned challenges
@@ -498,11 +498,11 @@ class ChallengeCtlAPI:
                 conn.commit()
 
             self.broadcast_event('system_control', {
-                'action': 'emergency_stop',
+                'action': 'stop',
                 'timestamp': datetime.now().isoformat()
             })
 
-            return jsonify({'status': 'emergency_stopped'}), 200
+            return jsonify({'status': 'stopped'}), 200
 
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])

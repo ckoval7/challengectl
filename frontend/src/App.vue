@@ -33,9 +33,9 @@
         </el-button>
         <el-button
           type="danger"
-          @click="emergencyStop"
+          @click="stopSystem"
         >
-          Emergency Stop
+          Stop
         </el-button>
       </el-header>
 
@@ -139,11 +139,11 @@ export default {
       }
     }
 
-    const emergencyStop = async () => {
+    const stopSystem = async () => {
       try {
         await ElMessageBox.confirm(
           'This will stop all transmissions immediately. Continue?',
-          'Emergency Stop',
+          'Stop All Transmissions',
           {
             confirmButtonText: 'Stop All',
             cancelButtonText: 'Cancel',
@@ -151,12 +151,12 @@ export default {
           }
         )
 
-        await api.post('/api/control/emergency-stop')
+        await api.post('/api/control/stop')
         systemPaused.value = true
-        ElMessage.success('Emergency stop activated')
+        ElMessage.success('All transmissions stopped')
       } catch (error) {
         if (error !== 'cancel') {
-          ElMessage.error('Emergency stop failed')
+          ElMessage.error('Stop failed')
         }
       }
     }
@@ -169,7 +169,7 @@ export default {
       toggleTheme,
       pauseSystem,
       resumeSystem,
-      emergencyStop
+      stopSystem
     }
   }
 }
