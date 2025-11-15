@@ -432,6 +432,67 @@ class transmitter:
             flag_q.put(flag_args[0])
         print("Returned flag to pool")
 
+    def fire_fhss(self, device_id, flag_q, device_q, *flag_args):
+        """
+        Call the fhss_tx flow graph to transmit Frequency Hopping Spread Spectrum signals
+        """
+        print("\nTransmitting FHSS\n")
+        flag_args = flag_args[0]
+        device = fetch_device(device_id)
+
+        # Extract parameters from flag_args
+        wav_src = str(flag_args[1])
+        if not os.path.isfile(wav_src):
+            print("Unable to find wav file {}".format(wav_src))
+            exit(1)
+
+        # modopt1 contains FHSS-specific parameters as a dict
+        fhss_params = flag_args[2] if isinstance(flag_args[2], dict) else {}
+        channel_spacing = fhss_params.get('channel_spacing', 10000)  # Hz
+        hop_rate = fhss_params.get('hop_rate', 10)  # hops per second
+        hop_time = fhss_params.get('hop_time', 60)  # seconds
+        seed = fhss_params.get('seed', 'RFHS')  # RNG seed
+
+        # modopt2 contains wav_samplerate
+        wav_rate = int(flag_args[3]) if flag_args[3] else 48000
+
+        freq = int(flag_args[6]) * 1000
+        mintime = flag_args[4]
+        maxtime = flag_args[5]
+        antenna = get_device_antenna(device_id)
+        if antenna:
+            print(f"Using antenna: {antenna}")
+
+        # Configure options for fhss_tx flowgraph
+        fhss_opts = fhss_tx.argument_parser().parse_args('')
+        fhss_opts.dev = device
+        fhss_opts.freq = freq
+        fhss_opts.file = wav_src
+        fhss_opts.wav_rate = wav_rate
+        fhss_opts.channel_spacing = int(channel_spacing)
+        fhss_opts.hop_rate = int(hop_rate)
+        fhss_opts.hop_time = float(hop_time)
+        fhss_opts.seed = str(seed)
+        fhss_opts.antenna = antenna
+
+        # Call fhss_tx main with options
+        fhss_tx.main(options=fhss_opts)
+
+        sleep(3)
+        # Turn off biastee if the device is a bladerf with the biastee enabled
+        if device and device.find("bladerf") != -1 and device.find("biastee=1") != -1:
+            bladeserial = parse_bladerf_ser(device)
+            serialarg = '*:serial={}'.format(bladeserial)
+            subprocess.run(['bladeRF-cli', '-d', serialarg, 'set', 'biastee', 'tx', 'off'])
+
+        device_q.put(device_id)
+        norandsleep = flag_args[8]
+        if(norandsleep == False):
+            sleep(randint(mintime, maxtime))
+        replaceinqueue = flag_args[7]
+        if(replaceinqueue != False):
+            flag_q.put(flag_args[0])
+
 
 def select_freq(band):
     """Read from frequencies text file, select row that starts with band argument.
@@ -842,8 +903,18 @@ def main(options=None):
             cc_freq1 = challenge.get('frequency')
 
             # Extract modulation-specific options
-            cc_modopt1 = challenge.get('speed') or challenge.get('capcode') or challenge.get('mode') or challenge.get('wav_samplerate', '')
-            cc_modopt2 = challenge.get('wav_samplerate', '')
+            if cc_module == 'fhss':
+                # For FHSS, pack multiple parameters into modopt1 as a dict
+                cc_modopt1 = {
+                    'channel_spacing': challenge.get('channel_spacing', 10000),
+                    'hop_rate': challenge.get('hop_rate', 10),
+                    'hop_time': challenge.get('hop_time', 60),
+                    'seed': challenge.get('seed', 'RFHS')
+                }
+                cc_modopt2 = challenge.get('wav_samplerate', 48000)
+            else:
+                cc_modopt1 = challenge.get('speed') or challenge.get('capcode') or challenge.get('mode') or challenge.get('wav_samplerate', '')
+                cc_modopt2 = challenge.get('wav_samplerate', '')
 
             # Determine frequency (could be numeric or named range)
             try:

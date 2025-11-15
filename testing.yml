@@ -134,7 +134,7 @@ challenges:
     max_delay: 90
     enabled: True # Whether or not this flag is transmitted. Optional. Default: True
 
-# Freq Hopper Example (DISABLED - not fully implemented yet)
+# Freq Hopper Example
   - name: FREQHOP_1
     # Frequency is now in Hertz, or can be a named range
     frequency: 146550000
@@ -149,7 +149,7 @@ challenges:
     wav_samplerate: 48000
     min_delay: 60
     max_delay: 90
-    enabled: False # DISABLED: fhss not fully implemented yet
+    enabled: True # Whether or not this flag is transmitted. Optional. Default: True
 
 #LRS Example
   - name: LRS_FLAG_1
