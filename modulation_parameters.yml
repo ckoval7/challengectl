@@ -63,3 +63,8 @@ fhss:
     - channel_spacing
   optional:
     - wav_samplerate
+
+# Spectrum Paint (image in spectrum)
+paint:
+  mandatory: []
+  optional: []

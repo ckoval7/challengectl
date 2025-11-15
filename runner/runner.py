@@ -19,7 +19,7 @@ from datetime import datetime
 
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, pocsagtx_osmocom, lrs_pager, lrs_tx  # noqa: E402
+from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -307,7 +307,7 @@ class ChallengeCtlRunner:
 
         try:
             # Resolve file paths if needed
-            if modulation in ['nbfm', 'ssb', 'fhss', 'freedv']:
+            if modulation in ['nbfm', 'ssb', 'fhss', 'freedv', 'paint']:
                 flag_path = self.resolve_file_path(flag)
                 if not flag_path or not os.path.exists(flag_path):
                     logger.error(f"Flag file not found: {flag}")
@@ -371,6 +371,22 @@ class ChallengeCtlRunner:
                 fhss_tx.main(options=fhss_opts)
                 success = True
 
+            elif modulation == 'freedv':
+                mode = config.get('mode', 'usb')
+                wav_rate = config.get('wav_samplerate', 48000)
+                text = config.get('text', '')
+
+                freedv_opts = freedv_tx.argument_parser().parse_args('')
+                freedv_opts.dev = device_string
+                freedv_opts.freq = frequency
+                freedv_opts.wav_file = flag
+                freedv_opts.wav_samp_rate = wav_rate
+                freedv_opts.mode = mode
+                freedv_opts.text = text
+                # Note: freedv_tx doesn't support antenna parameter yet
+                freedv_tx.main(options=freedv_opts)
+                success = True
+
             elif modulation == 'pocsag':
                 capcode = config.get('capcode', 0)
                 pocsag_opts = pocsagtx_osmocom.argument_parser().parse_args('')
@@ -401,6 +417,13 @@ class ChallengeCtlRunner:
 
                 os.remove(outfile)
                 success = True
+
+            elif modulation == 'paint':
+                from multiprocessing import Process
+                p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             else:
                 logger.error(f"Unknown modulation type: {modulation}")

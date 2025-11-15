@@ -131,5 +131,26 @@ challenges:
     max_delay: 90
     enabled: true
 
+  # Spectrum Paint Example
+  - name: PAINT_FLAG_1
+    frequency: 147000000  # Hz (147.000 MHz)
+    modulation: paint
+    flag: challenges/rfhs.bin  # Binary file for spectrum painting
+    min_delay: 120
+    max_delay: 180
+    enabled: true
+
+  # FreeDV Digital Voice Example
+  - name: FREEDV_FLAG_1
+    frequency: 147100000  # Hz (147.100 MHz)
+    modulation: freedv
+    mode: usb
+    flag: challenges/examples/example_voice.wav
+    text: 'FreeDV text message flag'  # Optional text transmission
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
 # Note: Challenge files (WAV, etc.) should be placed in the server's files directory
 # or referenced with relative paths from the server directory
