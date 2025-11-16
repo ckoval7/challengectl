@@ -80,6 +80,7 @@ class ChallengeCtlRunner:
         self.cache_dir = self.config['runner'].get('cache_dir', 'cache')
         self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
+        self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', True)
 
         # TLS configuration
         self.ca_cert = self.config['runner'].get('ca_cert')
@@ -316,6 +317,33 @@ class ChallengeCtlRunner:
             parent_dir = os.path.join(os.path.dirname(__file__), '..')
             return os.path.join(parent_dir, flag_value)
 
+    def run_spectrum_paint(self, frequency: int, device_string: str, antenna: str) -> bool:
+        """
+        Run spectrum paint before a challenge.
+        This matches the behavior of the original challengectl.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Running spectrum paint on {frequency} Hz before challenge")
+            from multiprocessing import Process
+            p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
+            p.start()
+            p.join()
+            success = (p.exitcode == 0)
+
+            if success:
+                logger.info("Spectrum paint completed successfully")
+            else:
+                logger.warning("Spectrum paint failed")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error running spectrum paint: {e}", exc_info=True)
+            return False
+
     def execute_challenge(self, task: Dict) -> tuple:
         """
         Execute a challenge task.
@@ -344,6 +372,10 @@ class ChallengeCtlRunner:
         antenna = device['antenna']
 
         try:
+            # Run spectrum paint before challenge if configured
+            if self.spectrum_paint_before_challenge and modulation != 'paint':
+                logger.info("Spectrum paint before challenge is enabled")
+                self.run_spectrum_paint(frequency, device_string, antenna)
             # Resolve file paths if needed
             if modulation in ['nbfm', 'ssb', 'fhss', 'freedv', 'paint']:
                 flag_path = self.resolve_file_path(flag)
