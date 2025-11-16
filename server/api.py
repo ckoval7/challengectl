@@ -166,7 +166,7 @@ class ChallengeCtlAPI:
     def setup_websocket_logging(self):
         """Add WebSocket handler to root logger to broadcast all logs."""
         ws_handler = WebSocketHandler(self.socketio, self.log_buffer, self.buffer_lock)
-        ws_handler.setLevel(logging.INFO)
+        ws_handler.setLevel(logging.DEBUG)  # Forward all log levels, filtering happens in UI
         # Don't format here - we send structured data
         logging.root.addHandler(ws_handler)
 

@@ -41,7 +41,7 @@ class ServerLogHandler(logging.Handler):
     def __init__(self, runner_instance):
         super().__init__()
         self.runner = runner_instance
-        self.setLevel(logging.INFO)  # Only forward INFO and above
+        self.setLevel(logging.DEBUG)  # Forward all log levels
 
     def emit(self, record):
         """Send log record to server."""
