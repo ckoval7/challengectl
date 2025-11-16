@@ -75,8 +75,21 @@ class ChallengeCtlAPI:
         # Store frontend directory path
         self.frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/dist'))
 
-        # Enable CORS for development with credentials support (for httpOnly cookies)
-        CORS(self.app, supports_credentials=True)
+        # Enable CORS with restricted origins (SECURITY: prevents CSRF attacks)
+        # Allow only localhost and configured origins when using credentials
+        allowed_origins = [
+            'http://localhost:5173',  # Vite dev server
+            'http://localhost:5000',  # Flask dev server
+            'http://127.0.0.1:5173',
+            'http://127.0.0.1:5000'
+        ]
+        CORS(
+            self.app,
+            supports_credentials=True,
+            origins=allowed_origins,
+            allow_headers=['Content-Type', 'X-CSRF-Token'],  # Allow CSRF token header
+            methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+        )
 
         # Initialize SocketIO for real-time updates
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
@@ -180,6 +193,36 @@ class ChallengeCtlAPI:
 
             # Add runner_id to request context
             request.runner_id = runner_id
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    def generate_csrf_token(self) -> str:
+        """Generate a random CSRF token."""
+        return secrets.token_urlsafe(32)
+
+    def require_csrf(self, f):
+        """Decorator to require CSRF token validation for state-changing operations."""
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Skip CSRF check for GET, HEAD, OPTIONS (safe methods)
+            if request.method in ['GET', 'HEAD', 'OPTIONS']:
+                return f(*args, **kwargs)
+
+            # Get CSRF token from header
+            csrf_header = request.headers.get('X-CSRF-Token')
+            # Get CSRF token from cookie
+            csrf_cookie = request.cookies.get('csrf_token')
+
+            # Both must be present and match
+            if not csrf_header or not csrf_cookie:
+                logger.warning(f"CSRF token missing from {request.remote_addr} for {request.path}")
+                return jsonify({'error': 'CSRF token missing'}), 403
+
+            if csrf_header != csrf_cookie:
+                logger.warning(f"CSRF token mismatch from {request.remote_addr} for {request.path}")
+                return jsonify({'error': 'CSRF token invalid'}), 403
 
             return f(*args, **kwargs)
 
@@ -321,13 +364,16 @@ class ChallengeCtlAPI:
                 # Create session (not yet TOTP verified)
                 session_token = self.create_session(username, totp_verified=False)
 
+                # Generate CSRF token for this session
+                csrf_token = self.generate_csrf_token()
+
                 # Set httpOnly cookie for security (prevents XSS attacks)
                 response = make_response(jsonify({
                     'totp_required': True,
                     'username': username
                 }), 200)
 
-                # Set secure httpOnly cookie
+                # Set secure httpOnly cookie for session token
                 response.set_cookie(
                     'session_token',
                     session_token,
@@ -337,10 +383,23 @@ class ChallengeCtlAPI:
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
+                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
+                response.set_cookie(
+                    'csrf_token',
+                    csrf_token,
+                    httponly=False,  # JavaScript can read to send in header
+                    secure=False,    # Set to True in production with HTTPS
+                    samesite='Lax',  # CSRF protection
+                    max_age=86400    # 24 hours
+                )
+
                 return response
             else:
                 # No TOTP configured - complete login immediately
                 session_token = self.create_session(username, totp_verified=True)
+
+                # Generate CSRF token for this session
+                csrf_token = self.generate_csrf_token()
 
                 # Update last login timestamp
                 self.db.update_last_login(username)
@@ -358,7 +417,7 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
-                # Set secure httpOnly cookie
+                # Set secure httpOnly cookie for session token
                 response.set_cookie(
                     'session_token',
                     session_token,
@@ -366,6 +425,16 @@ class ChallengeCtlAPI:
                     secure=False,   # Set to True in production with HTTPS
                     samesite='Lax', # CSRF protection
                     max_age=86400   # 24 hours (matches session expiry)
+                )
+
+                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
+                response.set_cookie(
+                    'csrf_token',
+                    csrf_token,
+                    httponly=False,  # JavaScript can read to send in header
+                    secure=False,    # Set to True in production with HTTPS
+                    samesite='Lax',  # CSRF protection
+                    max_age=86400    # 24 hours
                 )
 
                 return response
@@ -441,6 +510,7 @@ class ChallengeCtlAPI:
             }), 200
 
         @self.app.route('/api/auth/logout', methods=['POST'])
+        @self.require_csrf
         def logout():
             """Logout and destroy session."""
             # Get session token from httpOnly cookie
@@ -449,14 +519,16 @@ class ChallengeCtlAPI:
             if session_token:
                 self.destroy_session(session_token)
 
-            # Clear the session cookie
+            # Clear both session and CSRF cookies
             response = make_response(jsonify({'status': 'logged out'}), 200)
             response.set_cookie('session_token', '', expires=0, httponly=True, samesite='Lax')
+            response.set_cookie('csrf_token', '', expires=0, httponly=False, samesite='Lax')
 
             return response
 
         @self.app.route('/api/auth/change-password', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def change_own_password():
             """Change logged-in user's password."""
             data = request.json
@@ -519,6 +591,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/users', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def create_user_endpoint():
             """Create a new user."""
             data = request.json
@@ -567,6 +640,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/users/<username>', methods=['PUT'])
         @self.require_admin_auth
+        @self.require_csrf
         def update_user_endpoint(username):
             """Update user (enable/disable)."""
             data = request.json
@@ -603,6 +677,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/users/<username>', methods=['DELETE'])
         @self.require_admin_auth
+        @self.require_csrf
         def delete_user_endpoint(username):
             """Delete a user."""
             # Don't allow deleting yourself
@@ -624,6 +699,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/users/<username>/reset-totp', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def reset_user_totp(username):
             """Reset TOTP secret for a user."""
             # Check user exists
@@ -658,6 +734,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/users/<username>/reset-password', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def reset_user_password(username):
             """Reset a user's password (admin only)."""
             data = request.json
@@ -1022,6 +1099,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>', methods=['DELETE'])
         @self.require_admin_auth
+        @self.require_csrf
         def kick_runner(runner_id):
             """Remove/kick a runner."""
             success = self.db.mark_runner_offline(runner_id)
@@ -1056,6 +1134,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/challenges/<challenge_id>', methods=['PUT'])
         @self.require_admin_auth
+        @self.require_csrf
         def update_challenge(challenge_id):
             """Update challenge configuration."""
             data = request.json
@@ -1081,6 +1160,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/challenges/<challenge_id>/enable', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def enable_challenge(challenge_id):
             """Enable or disable a challenge."""
             data = request.json
@@ -1097,6 +1177,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/challenges/<challenge_id>/trigger', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def trigger_challenge(challenge_id):
             """Manually trigger a challenge to transmit immediately."""
             challenge = self.db.get_challenge(challenge_id)
@@ -1122,6 +1203,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/challenges/reload', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def reload_challenges():
             """Reload challenges from configuration file."""
             try:
@@ -1153,6 +1235,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/control/pause', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def pause_system():
             """Pause all transmissions."""
             self.db.set_system_state('paused', 'true')
@@ -1166,6 +1249,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/control/resume', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def resume_system():
             """Resume transmissions."""
             self.db.set_system_state('paused', 'false')
@@ -1179,6 +1263,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/control/stop', methods=['POST'])
         @self.require_admin_auth
+        @self.require_csrf
         def stop_system():
             """Stop all operations."""
             self.db.set_system_state('paused', 'true')

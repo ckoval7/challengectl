@@ -8,10 +8,25 @@ const api = axios.create({
   withCredentials: true  // Required to send httpOnly cookies with requests
 })
 
-// Request interceptor for logging
-// Note: Session token is now sent automatically via httpOnly cookie (more secure than localStorage)
+// Helper function to get CSRF token from cookie
+function getCsrfToken() {
+  const match = document.cookie.match(/csrf_token=([^;]+)/)
+  return match ? match[1] : null
+}
+
+// Request interceptor for logging and CSRF token
+// Note: Session token is sent automatically via httpOnly cookie (XSS protection)
+// CSRF token is read from non-httpOnly cookie and sent in header (CSRF protection)
 api.interceptors.request.use(
   config => {
+    // Add CSRF token to header for state-changing requests
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method.toUpperCase())) {
+      const csrfToken = getCsrfToken()
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
+    }
+
     console.log(`API Request: ${config.method.toUpperCase()} ${config.url}`)
     return config
   },
