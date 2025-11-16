@@ -3,16 +3,15 @@
     <h1>Live Logs</h1>
 
     <div style="margin-bottom: 20px">
-      <el-space>
+      <el-space wrap>
         <el-select
           v-model="levelFilter"
           placeholder="Filter by level"
-          style="width: 150px"
+          style="width: 200px"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
         >
-          <el-option
-            label="All"
-            value=""
-          />
           <el-option
             label="DEBUG"
             value="DEBUG"
@@ -29,7 +28,22 @@
             label="ERROR"
             value="ERROR"
           />
+          <el-option
+            label="CRITICAL"
+            value="CRITICAL"
+          />
         </el-select>
+
+        <el-input
+          v-model="searchFilter"
+          placeholder="Search logs..."
+          style="width: 250px"
+          clearable
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
 
         <el-button @click="clearLogs">
           Clear
@@ -74,24 +88,42 @@
 
 <script>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { Search } from '@element-plus/icons-vue'
 import { websocket } from '../websocket'
 import { api } from '../api'
 import { formatTime } from '../utils/time'
 
 export default {
   name: 'Logs',
+  components: {
+    Search
+  },
   setup() {
     const logs = ref([])
-    const levelFilter = ref('')
+    const levelFilter = ref([])
+    const searchFilter = ref('')
     const autoScroll = ref(true)
     const logContainer = ref(null)
     const loading = ref(false)
 
     const filteredLogs = computed(() => {
-      if (!levelFilter.value) {
-        return logs.value
+      let result = logs.value
+
+      // Filter by log levels
+      if (levelFilter.value && levelFilter.value.length > 0) {
+        result = result.filter(log => levelFilter.value.includes(log.level))
       }
-      return logs.value.filter(log => log.level === levelFilter.value)
+
+      // Filter by search text
+      if (searchFilter.value && searchFilter.value.trim()) {
+        const search = searchFilter.value.toLowerCase()
+        result = result.filter(log =>
+          log.message.toLowerCase().includes(search) ||
+          log.source.toLowerCase().includes(search)
+        )
+      }
+
+      return result
     })
 
     const fetchLogs = async () => {
@@ -158,6 +190,7 @@ export default {
       logs,
       filteredLogs,
       levelFilter,
+      searchFilter,
       autoScroll,
       logContainer,
       loading,
@@ -181,6 +214,59 @@ export default {
   background: #f5f7fa;
   padding: 10px;
   border-radius: 4px;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .log-container {
+    background: #1a1a1a;
+  }
+
+  .log-entry {
+    border-bottom-color: #333 !important;
+  }
+
+  .log-timestamp {
+    color: #8a8a8a !important;
+  }
+
+  .log-source {
+    color: #b0b0b0 !important;
+  }
+
+  .log-message {
+    color: #d0d0d0 !important;
+  }
+
+  .log-empty {
+    color: #8a8a8a !important;
+  }
+
+  /* Dark theme log level colors */
+  .log-level-debug {
+    background: #2a2a2a !important;
+    color: #909399 !important;
+  }
+
+  .log-level-info {
+    background: #1a3a5a !important;
+    color: #66b3ff !important;
+  }
+
+  .log-level-warning {
+    background: #3a2e1a !important;
+    color: #f0c040 !important;
+  }
+
+  .log-level-error {
+    background: #3a1a1a !important;
+    color: #ff8888 !important;
+  }
+
+  .log-level-critical {
+    background: #4a0000 !important;
+    color: #ffaaaa !important;
+  }
 }
 
 .log-entry {
@@ -228,6 +314,11 @@ export default {
 .log-level-error {
   background: #fef0f0;
   color: #f56c6c;
+}
+
+.log-level-critical {
+  background: #f0e0e0;
+  color: #c03030;
 }
 
 .log-message {

@@ -38,6 +38,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class ServerLogHandler(logging.Handler):
+    """Custom logging handler that forwards logs to the server."""
+
+    def __init__(self, runner_instance):
+        super().__init__()
+        self.runner = runner_instance
+        self.setLevel(logging.INFO)  # Only forward INFO and above
+
+    def emit(self, record):
+        """Send log record to server."""
+        if self.runner and hasattr(self.runner, 'send_log'):
+            try:
+                # Don't forward logs about log sending failures (avoid recursion)
+                if 'Failed to send log to server' not in record.getMessage():
+                    self.runner.send_log(record.levelname, record.getMessage())
+            except Exception:
+                # Silently ignore errors to prevent recursion
+                pass
+
+
 class ChallengeCtlRunner:
     """Runner client for executing challenges on SDR devices."""
 
@@ -162,10 +182,10 @@ class ChallengeCtlRunner:
             )
 
             if response.status_code == 200:
-                logger.info(f"Successfully registered with server as {self.runner_id}")
+                logger.info(f"Registered as {self.runner_id}")
                 return True
             else:
-                logger.error(f"Registration failed: {response.status_code} - {response.text}")
+                logger.error(f"Registration failed: HTTP {response.status_code}")
                 return False
 
         except Exception as e:
@@ -234,7 +254,7 @@ class ChallengeCtlRunner:
 
         # Download file
         try:
-            logger.info(f"Downloading file {file_hash[:8]}...")
+            logger.info(f"Downloading {file_hash[:8]}...")
 
             response = self.session.get(
                 f"{self.server_url}/api/files/{file_hash}",
@@ -254,13 +274,13 @@ class ChallengeCtlRunner:
                     downloaded_hash = hashlib.sha256(f.read()).hexdigest()
 
                 if downloaded_hash != file_hash:
-                    logger.error("Hash mismatch for downloaded file")
+                    logger.error(f"Hash mismatch: {file_hash[:8]}")
                     os.remove(temp_path)
                     return None
 
                 # Move to final location
                 os.rename(temp_path, cache_path)
-                logger.info("File downloaded successfully")
+                logger.debug(f"Downloaded {file_hash[:8]}")
                 return cache_path
 
             else:
@@ -511,7 +531,7 @@ class ChallengeCtlRunner:
 
     def task_loop(self):
         """Main task execution loop."""
-        logger.info("Task loop started")
+        logger.debug("Task loop started")
 
         while self.running:
             try:
@@ -543,17 +563,18 @@ class ChallengeCtlRunner:
 
     def start(self):
         """Start the runner."""
-        logger.info("="*60)
-        logger.info(f"ChallengeCtl Runner Starting: {self.runner_id}")
-        logger.info("="*60)
-        logger.info(f"Server: {self.server_url}")
-        logger.info(f"Devices: {len(self.devices)}")
-        logger.info("="*60)
+        logger.info(f"Runner {self.runner_id} starting")
+        logger.info(f"Server: {self.server_url}, Devices: {len(self.devices)}")
 
         # Register with server
         if not self.register():
             logger.error("Failed to register with server. Exiting.")
             sys.exit(1)
+
+        # Add server log handler to forward logs
+        server_handler = ServerLogHandler(self)
+        logging.root.addHandler(server_handler)
+        logger.info("Log forwarding to server enabled")
 
         self.running = True
 
