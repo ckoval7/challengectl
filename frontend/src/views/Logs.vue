@@ -184,6 +184,7 @@ export default {
     }
 
     const handleLogEvent = (event) => {
+      console.debug('handleLogEvent called:', event)
       logs.value.unshift({
         timestamp: event.timestamp || new Date().toISOString(),
         source: event.source || 'server',
