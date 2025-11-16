@@ -41,7 +41,10 @@ class WebSocketManager {
     })
 
     this.socket.on('event', (data) => {
-      console.log('WebSocket event:', data.type, data)
+      // Only log non-log events to avoid console spam
+      if (data.type !== 'log') {
+        console.log('WebSocket event:', data.type, data)
+      }
 
       // Emit to listeners
       if (this.listeners[data.type]) {

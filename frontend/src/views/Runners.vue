@@ -144,24 +144,28 @@ export default {
     }
 
     const handleWebSocketEvent = (event) => {
-      console.log('Runners page received event:', event.type)
+      console.log('Runners page received runner_status event:', event)
 
-      if (event.type === 'runner_status') {
-        const runner = runners.value.find(r => r.runner_id === event.runner_id)
+      const runner = runners.value.find(r => r.runner_id === event.runner_id)
 
-        if (event.status === 'online') {
-          if (!runner) {
-            // New runner registered, reload full list to get all details
-            loadRunners()
-          } else {
-            // Update existing runner status
-            runner.status = 'online'
+      if (event.status === 'online') {
+        if (!runner) {
+          // New runner registered, reload full list to get all details
+          console.log('New runner detected, reloading list')
+          loadRunners()
+        } else {
+          // Update existing runner status
+          console.log('Updating runner to online:', event.runner_id)
+          runner.status = 'online'
+          if (event.last_heartbeat) {
+            runner.last_heartbeat = event.last_heartbeat
           }
-        } else if (event.status === 'offline') {
-          if (runner) {
-            // Mark runner as offline
-            runner.status = 'offline'
-          }
+        }
+      } else if (event.status === 'offline') {
+        if (runner) {
+          // Mark runner as offline
+          console.log('Updating runner to offline:', event.runner_id)
+          runner.status = 'offline'
         }
       }
     }
