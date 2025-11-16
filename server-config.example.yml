@@ -6,6 +6,22 @@ server:
   bind: "0.0.0.0"
   port: 8443
 
+  # CORS allowed origins for web UI access (SECURITY CRITICAL)
+  # List all domains that should be allowed to make authenticated requests
+  # Leave empty or comment out to use localhost defaults (development only)
+  # Examples:
+  #   - Production: https://challengectl.example.com
+  #   - Multiple origins for load balancers or CDNs
+  # NEVER use wildcards (*) with credentials - major security risk!
+  cors_origins:
+    - "https://challengectl.example.com"    # Production domain
+    - "https://www.challengectl.example.com" # WWW alias
+    # - "http://localhost:5173"  # Uncomment for local development
+    # - "http://localhost:5000"
+
+  # Alternative: Set via environment variable
+  # CHALLENGECTL_CORS_ORIGINS="https://challengectl.example.com,https://www.challengectl.example.com"
+
   # API keys for runner authentication
   # Each runner should have a unique API key
   # Generate secure keys with: python3 generate-api-key.py --count 4

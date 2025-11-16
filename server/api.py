@@ -76,13 +76,28 @@ class ChallengeCtlAPI:
         self.frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/dist'))
 
         # Enable CORS with restricted origins (SECURITY: prevents CSRF attacks)
-        # Allow only localhost and configured origins when using credentials
-        allowed_origins = [
-            'http://localhost:5173',  # Vite dev server
-            'http://localhost:5000',  # Flask dev server
-            'http://127.0.0.1:5173',
-            'http://127.0.0.1:5000'
-        ]
+        # Allow only configured origins when using credentials
+        # Configuration priority: 1) config file, 2) environment variable, 3) localhost defaults
+        allowed_origins = self.config.get('server', {}).get('cors_origins')
+
+        # Fallback to environment variable if not in config
+        if not allowed_origins:
+            cors_origins_env = os.environ.get('CHALLENGECTL_CORS_ORIGINS')
+            if cors_origins_env:
+                allowed_origins = [origin.strip() for origin in cors_origins_env.split(',')]
+
+        # Fallback to localhost defaults for development
+        if not allowed_origins:
+            allowed_origins = [
+                'http://localhost:5173',  # Vite dev server
+                'http://localhost:5000',  # Flask dev server
+                'http://127.0.0.1:5173',
+                'http://127.0.0.1:5000'
+            ]
+            logger.warning("No CORS origins configured. Using localhost defaults for development only!")
+
+        logger.info(f"CORS allowed origins: {allowed_origins}")
+
         CORS(
             self.app,
             supports_credentials=True,
