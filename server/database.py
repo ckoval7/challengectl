@@ -438,6 +438,7 @@ class Database:
 
                 conn.commit()
 
+                status = 'success' if success else 'failed'
                 logger.info(f"Challenge {challenge_id} completed by {runner_id}: {status}")
                 return config
 
