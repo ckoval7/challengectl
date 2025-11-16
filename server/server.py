@@ -11,6 +11,7 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 import signal
 from datetime import datetime
+import yaml
 
 from api import ChallengeCtlAPI
 from database import Database
@@ -155,8 +156,20 @@ class ChallengeCtlServer:
         logger.info("Server stopped")
 
 
-def argument_parser():
-    """Parse command line arguments."""
+def argument_parser(config=None):
+    """Parse command line arguments.
+
+    Args:
+        config: Optional dict of configuration values to use as defaults
+    """
+    # Extract defaults from config if provided
+    if config:
+        default_host = config.get('server', {}).get('bind', '0.0.0.0')
+        default_port = config.get('server', {}).get('port', 8443)
+    else:
+        default_host = '0.0.0.0'
+        default_port = 8443
+
     parser = argparse.ArgumentParser(
         description="ChallengeCtl Server - Distributed SDR challenge coordinator"
     )
@@ -181,15 +194,15 @@ def argument_parser():
 
     parser.add_argument(
         '--host',
-        default='0.0.0.0',
-        help='Host to bind to (default: 0.0.0.0)'
+        default=default_host,
+        help=f'Host to bind to (default: {default_host} from config or 0.0.0.0)'
     )
 
     parser.add_argument(
         '-p', '--port',
         type=int,
-        default=8443,
-        help='Port to listen on (default: 8443)'
+        default=default_port,
+        help=f'Port to listen on (default: {default_port} from config or 8443)'
     )
 
     parser.add_argument(
@@ -210,7 +223,21 @@ def argument_parser():
 
 def main():
     """Main entry point."""
+    # First pass: parse only to get config path
     parser = argument_parser()
+    args, _ = parser.parse_known_args()
+
+    # Load configuration file (if it exists) to use for defaults
+    config = None
+    if os.path.exists(args.config):
+        try:
+            with open(args.config, 'r') as f:
+                config = yaml.safe_load(f)
+        except Exception as e:
+            logger.warning(f"Could not load config for defaults: {e}")
+
+    # Second pass: re-parse with config-based defaults
+    parser = argument_parser(config)
     args = parser.parse_args()
 
     # Configure logging with file output and rotation (like standalone challengectl)
