@@ -259,124 +259,21 @@ export default {
   font-size: 13px;
   padding: 10px;
   border-radius: 4px;
+  background: #f5f7fa;
 }
 
-/* Light theme (default) */
-@media (prefers-color-scheme: light), (prefers-color-scheme: no-preference) {
-  .log-container {
-    background: #f5f7fa !important;
-  }
-
-  .log-entry {
-    border-bottom-color: #e4e7ed !important;
-  }
-
-  .log-timestamp {
-    color: #909399 !important;
-  }
-
-  .log-source {
-    color: #606266 !important;
-  }
-
-  .log-message {
-    color: #303133 !important;
-  }
-
-  .log-empty {
-    color: #909399 !important;
-  }
-
-  /* Light theme log level colors */
-  .log-level-debug {
-    background: #e4e7ed !important;
-    color: #606266 !important;
-  }
-
-  .log-level-info {
-    background: #d9ecff !important;
-    color: #409eff !important;
-  }
-
-  .log-level-warning {
-    background: #fdf6ec !important;
-    color: #e6a23c !important;
-  }
-
-  .log-level-error {
-    background: #fef0f0 !important;
-    color: #f56c6c !important;
-  }
-
-  .log-level-critical {
-    background: #f0e0e0 !important;
-    color: #c03030 !important;
-  }
-}
-
-/* Dark theme support */
-@media (prefers-color-scheme: dark) {
-  .log-container {
-    background: #1a1a1a !important;
-  }
-
-  .log-entry {
-    border-bottom-color: #333 !important;
-  }
-
-  .log-timestamp {
-    color: #8a8a8a !important;
-  }
-
-  .log-source {
-    color: #b0b0b0 !important;
-  }
-
-  .log-message {
-    color: #d0d0d0 !important;
-  }
-
-  .log-empty {
-    color: #8a8a8a !important;
-  }
-
-  /* Dark theme log level colors */
-  .log-level-debug {
-    background: #2a2a2a !important;
-    color: #909399 !important;
-  }
-
-  .log-level-info {
-    background: #1a3a5a !important;
-    color: #66b3ff !important;
-  }
-
-  .log-level-warning {
-    background: #3a2e1a !important;
-    color: #f0c040 !important;
-  }
-
-  .log-level-error {
-    background: #3a1a1a !important;
-    color: #ff8888 !important;
-  }
-
-  .log-level-critical {
-    background: #4a0000 !important;
-    color: #ffaaaa !important;
-  }
-}
-
-/* Base styles - structural only, no colors */
 .log-entry {
   padding: 4px 0;
+  border-bottom: 1px solid #e4e7ed;
 }
 
 .log-timestamp {
+  color: #909399;
   margin-right: 10px;
 }
 
 .log-source {
+  color: #606266;
   margin-right: 10px;
   font-weight: bold;
 }
@@ -392,8 +289,88 @@ export default {
   font-weight: bold;
 }
 
+.log-level-debug {
+  background: #e4e7ed;
+  color: #606266;
+}
+
+.log-level-info {
+  background: #d9ecff;
+  color: #409eff;
+}
+
+.log-level-warning {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+
+.log-level-error {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.log-level-critical {
+  background: #f0e0e0;
+  color: #c03030;
+}
+
+.log-message {
+  color: #303133;
+}
+
 .log-empty {
   text-align: center;
   padding: 40px;
+  color: #909399;
+}
+
+/* Dark theme overrides */
+:global(html.dark) .log-container {
+  background: #1a1a1a;
+}
+
+:global(html.dark) .log-entry {
+  border-bottom-color: #333;
+}
+
+:global(html.dark) .log-timestamp {
+  color: #8a8a8a;
+}
+
+:global(html.dark) .log-source {
+  color: #b0b0b0;
+}
+
+:global(html.dark) .log-message {
+  color: #d0d0d0;
+}
+
+:global(html.dark) .log-empty {
+  color: #8a8a8a;
+}
+
+:global(html.dark) .log-level-debug {
+  background: #2a2a2a;
+  color: #909399;
+}
+
+:global(html.dark) .log-level-info {
+  background: #1a3a5a;
+  color: #66b3ff;
+}
+
+:global(html.dark) .log-level-warning {
+  background: #3a2e1a;
+  color: #f0c040;
+}
+
+:global(html.dark) .log-level-error {
+  background: #3a1a1a;
+  color: #ff8888;
+}
+
+:global(html.dark) .log-level-critical {
+  background: #4a0000;
+  color: #ffaaaa;
 }
 </style>
