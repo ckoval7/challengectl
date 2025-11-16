@@ -240,7 +240,9 @@ class ChallengeCtlServer:
     def shutdown(self):
         """Graceful shutdown."""
         logger.info("Shutting down server...")
-        self.scheduler.shutdown(wait=False)
+        # Only shutdown scheduler if it's running
+        if self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
         logger.info("Server stopped")
 
 
