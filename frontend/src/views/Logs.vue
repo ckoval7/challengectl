@@ -61,8 +61,8 @@
           </template>
         </el-input>
 
-        <el-button @click="clearLogs">
-          Clear
+        <el-button @click="clearFilters">
+          Clear Filters
         </el-button>
 
         <el-checkbox v-model="autoScroll">
@@ -96,8 +96,13 @@
       </div>
     </el-card>
 
-    <div style="margin-top: 10px; color: #909399; font-size: 12px">
-      Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
+    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center">
+      <div style="color: #909399; font-size: 12px">
+        Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
+      </div>
+      <el-button @click="clearLogs" type="danger" plain>
+        Clear Logs
+      </el-button>
     </div>
   </div>
 </template>
@@ -205,6 +210,12 @@ export default {
       logs.value = []
     }
 
+    const clearFilters = () => {
+      levelFilter.value = []
+      sourceFilter.value = []
+      searchFilter.value = ''
+    }
+
     onMounted(async () => {
       // Fetch historical logs first
       await fetchLogs()
@@ -229,6 +240,7 @@ export default {
       logContainer,
       loading,
       clearLogs,
+      clearFilters,
       formatTime
     }
   }
