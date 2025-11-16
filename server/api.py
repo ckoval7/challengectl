@@ -902,6 +902,13 @@ class ChallengeCtlAPI:
             with self.transmission_lock:
                 recent_transmissions = list(self.transmission_buffer)
 
+                # Calculate success rate from in-memory transmissions
+                if recent_transmissions:
+                    successful = sum(1 for t in recent_transmissions if t.get('status') == 'success')
+                    stats['success_rate'] = (successful / len(recent_transmissions)) * 100
+                else:
+                    stats['success_rate'] = 0
+
             # Parse runner devices JSON
             runners = [self._parse_runner_devices(r) for r in runners]
 

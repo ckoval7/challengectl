@@ -418,14 +418,6 @@ class Database:
                 config = json.loads(row['config'])
                 min_delay = config.get('min_delay', 60)
                 max_delay = config.get('max_delay', 90)
-                frequency = config.get('frequency', 0)
-
-                # Record transmission in database for statistics
-                status = 'success' if success else 'failed'
-                cursor.execute('''
-                    INSERT INTO transmissions (challenge_id, runner_id, device_id, frequency, started_at, completed_at, status, error_message)
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
-                ''', (challenge_id, runner_id, '', frequency, status, error_message))
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
@@ -724,22 +716,6 @@ class Database:
             stats['challenges_queued'] = row['queued']
             stats['challenges_assigned'] = row['assigned']
             stats['total_transmissions'] = row['total_transmissions'] or 0
-
-            # Recent transmission success rate
-            cursor.execute('''
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as successful
-                FROM transmissions
-                WHERE started_at > datetime('now', '-1 hour')
-            ''')
-            row = cursor.fetchone()
-            if row['total'] > 0:
-                stats['success_rate'] = (row['successful'] / row['total']) * 100
-                stats['transmissions_last_hour'] = row['total']
-            else:
-                stats['success_rate'] = 0
-                stats['transmissions_last_hour'] = 0
 
             # System state
             stats['paused'] = self.get_system_state('paused', 'false') == 'true'
