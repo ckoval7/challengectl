@@ -24,16 +24,32 @@ python server.py
 python server.py
 ```
 
-### 2. Create Admin User
+### 2. First Login (Default Admin)
 
-```bash
-# Create your first admin user with TOTP 2FA
-python3 manage-users.py create admin
+On first startup, the server automatically creates a default admin user:
 
-# You'll be prompted for:
-#   - Password (minimum 8 characters)
-#   - Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
+**Username:** `admin`
+**Password:** `changeme`
+
+The TOTP secret will be displayed in the server logs. Look for:
+
 ```
+================================================================================
+DEFAULT ADMIN USER CREATED
+================================================================================
+Username: admin
+Password: changeme
+TOTP Secret: XXXXX...
+Provisioning URI: otpauth://totp/...
+================================================================================
+```
+
+**Setup Steps:**
+1. Copy the TOTP provisioning URI or secret from the logs
+2. Scan it with your authenticator app (Google Authenticator, Authy, etc.)
+3. Log in at `http://server-ip:8443/login`
+4. You'll be **forced to change the password** immediately
+5. Create additional users through the web UI (Users page)
 
 Server runs on `http://0.0.0.0:8443`
 
@@ -148,6 +164,14 @@ radios:
 - Auto-scroll
 - Color-coded
 
+### Users
+- **Web-based user management** - Create and manage users from the UI
+- Create new admin users with auto-generated TOTP
+- Enable/disable user accounts
+- Reset TOTP secrets (QR code displayed)
+- Delete users
+- View user login history
+
 ## Security
 
 - **Two-Factor Authentication** - Admin users use username/password + TOTP (Google Authenticator, Authy, etc.)
@@ -161,7 +185,19 @@ radios:
 
 ## User Management
 
-Use the `manage-users.py` script to manage admin users:
+### Web UI (Recommended)
+
+The easiest way to manage users is through the **Users** page in the web interface:
+
+1. Log in to the admin interface
+2. Click "Users" in the sidebar
+3. Create, enable/disable, or delete users
+4. Reset TOTP secrets with automatic QR code generation
+5. View user status and login history
+
+### Command Line (Alternative)
+
+You can also use the `manage-users.py` script:
 
 ```bash
 # Create a new admin user
@@ -184,10 +220,10 @@ python3 manage-users.py reset-totp <username>
 ```
 
 **Setting up TOTP:**
-1. Create a user with `manage-users.py create <username>`
+1. Create a user (web UI or CLI)
 2. Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.)
-3. Enter a test code to verify it's working
-4. Save your TOTP secret securely (displayed during user creation)
+3. Save credentials securely and share with the user
+4. User can change their password after first login
 
 ## Compatibility
 

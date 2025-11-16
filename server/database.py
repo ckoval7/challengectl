@@ -124,10 +124,42 @@ class Database:
                     password_hash TEXT NOT NULL,
                     totp_secret TEXT,
                     enabled BOOLEAN DEFAULT 1,
+                    password_change_required BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP
                 )
             ''')
+
+            # Create default admin user if no users exist
+            cursor.execute('SELECT COUNT(*) as count FROM users')
+            user_count = cursor.fetchone()['count']
+
+            if user_count == 0:
+                import bcrypt
+                import pyotp
+
+                # Create default admin with temporary password
+                default_password = "changeme"
+                password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                totp_secret = pyotp.random_base32()
+
+                cursor.execute('''
+                    INSERT INTO users (username, password_hash, totp_secret, password_change_required)
+                    VALUES (?, ?, ?, 1)
+                ''', ('admin', password_hash, totp_secret))
+
+                logger.warning("=" * 80)
+                logger.warning("DEFAULT ADMIN USER CREATED")
+                logger.warning("=" * 80)
+                logger.warning(f"Username: admin")
+                logger.warning(f"Password: {default_password}")
+                logger.warning(f"TOTP Secret: {totp_secret}")
+                logger.warning("")
+                logger.warning("IMPORTANT: Change the password immediately after first login!")
+                logger.warning("Scan this TOTP secret with your authenticator app:")
+                logger.warning(f"  Manual entry: {totp_secret}")
+                logger.warning(f"  Provisioning URI: otpauth://totp/ChallengeCtl:admin?secret={totp_secret}&issuer=ChallengeCtl")
+                logger.warning("=" * 80)
 
             # Create indexes
             cursor.execute('''
@@ -599,15 +631,38 @@ class Database:
             return cursor.rowcount > 0
 
     def get_all_users(self) -> List[Dict]:
-        """Get all users (excluding password hashes)."""
+        """Get all users (excluding password hashes and TOTP secrets)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT username, enabled, created_at, last_login
+                SELECT username, enabled, password_change_required, created_at, last_login
                 FROM users
                 ORDER BY username
             ''')
             return [dict(row) for row in cursor.fetchall()]
+
+    def clear_password_change_required(self, username: str) -> bool:
+        """Clear password change requirement flag."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET password_change_required = 0
+                WHERE username = ?
+            ''', (username,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_user(self, username: str) -> bool:
+        """Delete a user account."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM users
+                WHERE username = ?
+            ''', (username,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get statistics for the dashboard."""

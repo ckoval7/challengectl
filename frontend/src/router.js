@@ -4,8 +4,10 @@ import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import Challenges from './views/Challenges.vue'
 import Logs from './views/Logs.vue'
+import Users from './views/Users.vue'
 import PublicDashboard from './views/PublicDashboard.vue'
 import Login from './views/Login.vue'
+import ChangePassword from './views/ChangePassword.vue'
 
 const routes = [
   {
@@ -21,6 +23,12 @@ const routes = [
     path: '/public',
     name: 'PublicDashboard',
     component: PublicDashboard
+  },
+  {
+    path: '/change-password',
+    name: 'ChangePassword',
+    component: ChangePassword,
+    meta: { requiresAuth: true }
   },
   {
     path: '/admin',
@@ -44,6 +52,12 @@ const routes = [
     path: '/logs',
     name: 'Logs',
     component: Logs,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/users',
+    name: 'Users',
+    component: Users,
     meta: { requiresAuth: true }
   }
 ]

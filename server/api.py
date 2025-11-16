@@ -356,9 +356,14 @@ class ChallengeCtlAPI:
 
             logger.info(f"User {username} logged in successfully")
 
+            # Check if password change is required
+            password_change_required = user.get('password_change_required', False)
+
             return jsonify({
                 'status': 'authenticated',
-                'session_token': session_token
+                'session_token': session_token,
+                'password_change_required': bool(password_change_required),
+                'username': username
             }), 200
 
         @self.app.route('/api/auth/logout', methods=['POST'])
@@ -371,6 +376,238 @@ class ChallengeCtlAPI:
                 self.destroy_session(session_token)
 
             return jsonify({'status': 'logged out'}), 200
+
+        @self.app.route('/api/auth/change-password', methods=['POST'])
+        @self.require_admin_auth
+        def change_own_password():
+            """Change logged-in user's password."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            current_password = data.get('current_password')
+            new_password = data.get('new_password')
+
+            if not current_password or not new_password:
+                return jsonify({'error': 'Missing current_password or new_password'}), 400
+
+            if len(new_password) < 8:
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+            username = request.admin_username
+
+            # Get user
+            user = self.db.get_user(username)
+
+            if not user:
+                return jsonify({'error': 'User not found'}), 401
+
+            # Verify current password
+            try:
+                password_hash = user['password_hash']
+                if not bcrypt.checkpw(current_password.encode('utf-8'), password_hash.encode('utf-8')):
+                    return jsonify({'error': 'Current password is incorrect'}), 401
+            except Exception as e:
+                logger.error(f"Password verification error: {e}")
+                return jsonify({'error': 'Authentication failed'}), 500
+
+            # Hash new password
+            new_password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            # Update password
+            if not self.db.change_password(username, new_password_hash):
+                return jsonify({'error': 'Failed to update password'}), 500
+
+            # Clear password change requirement
+            self.db.clear_password_change_required(username)
+
+            logger.info(f"User {username} changed their password")
+
+            return jsonify({'status': 'password changed'}), 200
+
+        # User management endpoints (admin only)
+        @self.app.route('/api/users', methods=['GET'])
+        @self.require_admin_auth
+        def get_users():
+            """Get all users."""
+            users = self.db.get_all_users()
+            return jsonify({'users': users}), 200
+
+        @self.app.route('/api/users', methods=['POST'])
+        @self.require_admin_auth
+        def create_user_endpoint():
+            """Create a new user."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            username = data.get('username')
+            password = data.get('password')
+
+            if not username or not password:
+                return jsonify({'error': 'Missing username or password'}), 400
+
+            if len(password) < 8:
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+            # Generate TOTP secret
+            totp_secret = pyotp.random_base32()
+
+            # Hash password
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            # Create user
+            if not self.db.create_user(username, password_hash, totp_secret):
+                return jsonify({'error': 'User already exists'}), 409
+
+            # Generate TOTP provisioning URI
+            totp = pyotp.TOTP(totp_secret)
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+
+            logger.info(f"User {username} created by {request.admin_username}")
+
+            return jsonify({
+                'status': 'created',
+                'username': username,
+                'totp_secret': totp_secret,
+                'provisioning_uri': provisioning_uri
+            }), 201
+
+        @self.app.route('/api/users/<username>', methods=['PUT'])
+        @self.require_admin_auth
+        def update_user_endpoint(username):
+            """Update user (enable/disable)."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            enabled = data.get('enabled')
+
+            if enabled is None:
+                return jsonify({'error': 'Missing enabled field'}), 400
+
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Don't allow disabling yourself
+            if username == request.admin_username and not enabled:
+                return jsonify({'error': 'Cannot disable your own account'}), 400
+
+            # Update user
+            if enabled:
+                success = self.db.enable_user(username)
+            else:
+                success = self.db.disable_user(username)
+
+            if not success:
+                return jsonify({'error': 'Failed to update user'}), 500
+
+            logger.info(f"User {username} {'enabled' if enabled else 'disabled'} by {request.admin_username}")
+
+            return jsonify({'status': 'updated'}), 200
+
+        @self.app.route('/api/users/<username>', methods=['DELETE'])
+        @self.require_admin_auth
+        def delete_user_endpoint(username):
+            """Delete a user."""
+            # Don't allow deleting yourself
+            if username == request.admin_username:
+                return jsonify({'error': 'Cannot delete your own account'}), 400
+
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Delete user
+            if not self.db.delete_user(username):
+                return jsonify({'error': 'Failed to delete user'}), 500
+
+            logger.info(f"User {username} deleted by {request.admin_username}")
+
+            return jsonify({'status': 'deleted'}), 200
+
+        @self.app.route('/api/users/<username>/reset-totp', methods=['POST'])
+        @self.require_admin_auth
+        def reset_user_totp(username):
+            """Reset TOTP secret for a user."""
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Generate new TOTP secret
+            totp_secret = pyotp.random_base32()
+
+            # Update user
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users
+                    SET totp_secret = ?
+                    WHERE username = ?
+                ''', (totp_secret, username))
+                conn.commit()
+
+            # Generate TOTP provisioning URI
+            totp = pyotp.TOTP(totp_secret)
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+
+            logger.info(f"TOTP reset for user {username} by {request.admin_username}")
+
+            return jsonify({
+                'status': 'totp_reset',
+                'totp_secret': totp_secret,
+                'provisioning_uri': provisioning_uri
+            }), 200
+
+        @self.app.route('/api/users/<username>/reset-password', methods=['POST'])
+        @self.require_admin_auth
+        def reset_user_password(username):
+            """Reset a user's password (admin only)."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            new_password = data.get('new_password')
+
+            if not new_password:
+                return jsonify({'error': 'Missing new_password'}), 400
+
+            if len(new_password) < 8:
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Hash new password
+            password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            # Update password
+            if not self.db.change_password(username, password_hash):
+                return jsonify({'error': 'Failed to update password'}), 500
+
+            # Mark password change as required on next login
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users
+                    SET password_change_required = 1
+                    WHERE username = ?
+                ''', (username,))
+                conn.commit()
+
+            logger.info(f"Password reset for user {username} by {request.admin_username}")
+
+            return jsonify({'status': 'password_reset'}), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])

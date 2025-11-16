@@ -205,10 +205,17 @@ export default {
           totp_code: form.value.totpCode
         })
 
-        // Save the authenticated session token and redirect
+        // Save the authenticated session token
         login(response.data.session_token)
-        ElMessage.success('Login successful')
-        router.push('/admin')
+
+        // Check if password change is required
+        if (response.data.password_change_required) {
+          ElMessage.warning('Password change required')
+          router.push('/change-password')
+        } else {
+          ElMessage.success('Login successful')
+          router.push('/admin')
+        }
       } catch (error) {
         if (error.response?.status === 401) {
           ElMessage.error('Invalid TOTP code. Please try again.')
