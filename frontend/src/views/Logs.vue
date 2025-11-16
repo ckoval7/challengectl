@@ -324,52 +324,55 @@ export default {
   color: #909399;
 }
 
-/* Dark theme overrides */
-:global(html.dark) .log-container {
+</style>
+
+<style>
+/* Dark theme overrides - unscoped to access html.dark class */
+html.dark .log-container {
   background: #1a1a1a;
 }
 
-:global(html.dark) .log-entry {
+html.dark .log-entry {
   border-bottom-color: #333;
 }
 
-:global(html.dark) .log-timestamp {
+html.dark .log-timestamp {
   color: #8a8a8a;
 }
 
-:global(html.dark) .log-source {
+html.dark .log-source {
   color: #b0b0b0;
 }
 
-:global(html.dark) .log-message {
+html.dark .log-message {
   color: #d0d0d0;
 }
 
-:global(html.dark) .log-empty {
+html.dark .log-empty {
   color: #8a8a8a;
 }
 
-:global(html.dark) .log-level-debug {
+html.dark .log-level-debug {
   background: #2a2a2a;
   color: #909399;
 }
 
-:global(html.dark) .log-level-info {
+html.dark .log-level-info {
   background: #1a3a5a;
   color: #66b3ff;
 }
 
-:global(html.dark) .log-level-warning {
+html.dark .log-level-warning {
   background: #3a2e1a;
   color: #f0c040;
 }
 
-:global(html.dark) .log-level-error {
+html.dark .log-level-error {
   background: #3a1a1a;
   color: #ff8888;
 }
 
-:global(html.dark) .log-level-critical {
+html.dark .log-level-critical {
   background: #4a0000;
   color: #ffaaaa;
 }
