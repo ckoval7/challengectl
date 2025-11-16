@@ -154,7 +154,7 @@ export default {
 
     const pauseSystem = async () => {
       try {
-        await api.post('/api/control/pause')
+        await api.post('/control/pause')
         systemPaused.value = true
         ElMessage.success('System paused')
       } catch (error) {
@@ -164,7 +164,7 @@ export default {
 
     const resumeSystem = async () => {
       try {
-        await api.post('/api/control/resume')
+        await api.post('/control/resume')
         systemPaused.value = false
         ElMessage.success('System resumed')
       } catch (error) {
@@ -184,7 +184,7 @@ export default {
           }
         )
 
-        await api.post('/api/control/stop')
+        await api.post('/control/stop')
         systemPaused.value = true
         ElMessage.success('All transmissions stopped')
       } catch (error) {
