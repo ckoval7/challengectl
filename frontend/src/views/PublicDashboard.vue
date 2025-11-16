@@ -180,14 +180,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { io } from 'socket.io-client'
 import { api } from '../api'
 import config from '../config'
-import { Loading, Refresh, Warning, Moon, Sunny } from '@element-plus/icons-vue'
+import { Loading, Warning, Moon, Sunny } from '@element-plus/icons-vue'
 import { formatTime } from '../utils/time'
 
 export default {
   name: 'PublicDashboard',
   components: {
     Loading,
-    Refresh,
     Warning
   },
   setup() {
