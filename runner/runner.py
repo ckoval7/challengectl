@@ -25,9 +25,6 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx  # noqa: E402
 
-# Log file configuration
-LOG_FILE = 'challengectl.runner.log'
-
 # Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
     level=logging.INFO,
@@ -620,17 +617,40 @@ def argument_parser():
     return parser
 
 
+def get_runner_id_from_config(config_path: str) -> str:
+    """Load runner_id from config file."""
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            return config.get('runner', {}).get('runner_id', 'runner')
+    except Exception:
+        return 'runner'
+
+
 def main():
     """Main entry point."""
     parser = argument_parser()
     args = parser.parse_args()
 
-    # Configure logging with file output and rotation (like standalone challengectl)
+    # Check if config exists
+    if not os.path.exists(args.config):
+        logger.error(f"Configuration file not found: {args.config}")
+        logger.info("Creating default configuration...")
+        create_default_config(args.config)
+        logger.info(f"Default configuration created at {args.config}")
+        logger.info("Please edit the configuration file and restart")
+        sys.exit(1)
+
+    # Get runner_id from config to use in log filename
+    runner_id = get_runner_id_from_config(args.config)
+    log_file = f'challengectl-{runner_id}.log'
+
+    # Configure logging with file output and rotation
     # Rotate existing log file with timestamp before starting new log
-    if os.path.exists(LOG_FILE):
+    if os.path.exists(log_file):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        archived_log = f'challengectl.runner.{timestamp}.log'
-        os.rename(LOG_FILE, archived_log)
+        archived_log = f'challengectl-{runner_id}.{timestamp}.log'
+        os.rename(log_file, archived_log)
 
     # Convert log level string to logging constant
     log_level = getattr(logging, args.log_level)
@@ -641,23 +661,14 @@ def main():
         logging.root.removeHandler(handler)
 
     logging.basicConfig(
-        filename=LOG_FILE,
+        filename=log_file,
         filemode='w',
         level=log_level,
-        format='%(asctime)s challengectl-runner[%(process)d]: %(levelname)s: %(message)s',
+        format=f'%(asctime)s challengectl-{runner_id}[%(process)d]: %(levelname)s: %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
 
     logging.info(f"Logging initialized at {args.log_level} level")
-
-    # Check if config exists
-    if not os.path.exists(args.config):
-        logger.error(f"Configuration file not found: {args.config}")
-        logger.info("Creating default configuration...")
-        create_default_config(args.config)
-        logger.info(f"Default configuration created at {args.config}")
-        logger.info("Please edit the configuration file and restart")
-        sys.exit(1)
 
     # Create and start runner
     runner = ChallengeCtlRunner(args.config)
