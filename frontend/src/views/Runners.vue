@@ -102,6 +102,7 @@
 <script>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
+import { websocket } from '../websocket'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 
@@ -142,12 +143,39 @@ export default {
       }
     }
 
+    const handleWebSocketEvent = (event) => {
+      console.log('Runners page received event:', event.type)
+
+      if (event.type === 'runner_status') {
+        const runner = runners.value.find(r => r.runner_id === event.runner_id)
+
+        if (event.status === 'online') {
+          if (!runner) {
+            // New runner registered, reload full list to get all details
+            loadRunners()
+          } else {
+            // Update existing runner status
+            runner.status = 'online'
+          }
+        } else if (event.status === 'offline') {
+          if (runner) {
+            // Mark runner as offline
+            runner.status = 'offline'
+          }
+        }
+      }
+    }
+
     onMounted(() => {
       loadRunners()
 
-      // Refresh periodically
-      const interval = setInterval(loadRunners, 10000)
-      onUnmounted(() => clearInterval(interval))
+      // Connect WebSocket for real-time updates
+      websocket.connect()
+      websocket.on('runner_status', handleWebSocketEvent)
+    })
+
+    onUnmounted(() => {
+      websocket.off('runner_status', handleWebSocketEvent)
     })
 
     return {
