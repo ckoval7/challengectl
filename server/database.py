@@ -418,6 +418,14 @@ class Database:
                 config = json.loads(row['config'])
                 min_delay = config.get('min_delay', 60)
                 max_delay = config.get('max_delay', 90)
+                frequency = config.get('frequency', 0)
+
+                # Record transmission in database for statistics
+                status = 'success' if success else 'failed'
+                cursor.execute('''
+                    INSERT INTO transmissions (challenge_id, runner_id, device_id, frequency, started_at, completed_at, status, error_message)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
+                ''', (challenge_id, runner_id, '', frequency, status, error_message))
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
@@ -438,7 +446,6 @@ class Database:
 
                 conn.commit()
 
-                status = 'success' if success else 'failed'
                 logger.info(f"Challenge {challenge_id} completed by {runner_id}: {status}")
                 return config
 
