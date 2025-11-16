@@ -622,6 +622,43 @@ class ChallengeCtlAPI:
                 'username': username
             }), 200
 
+        @self.app.route('/api/auth/session', methods=['GET'])
+        def check_session():
+            """Check if current session is valid (for page refresh and router guards)."""
+            # Get session token from httpOnly cookie
+            session_token = request.cookies.get('session_token')
+
+            if not session_token:
+                return jsonify({'authenticated': False, 'error': 'No session token'}), 401
+
+            # Check session validity (from database)
+            session = self.db.get_session(session_token)
+
+            if not session:
+                return jsonify({'authenticated': False, 'error': 'Invalid session'}), 401
+
+            # Check if session is expired
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                self.db.delete_session(session_token)
+                return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
+
+            # Check if TOTP was verified (required for full authentication)
+            if not session.get('totp_verified', False):
+                return jsonify({'authenticated': False, 'error': 'TOTP verification required'}), 401
+
+            # Session is valid
+            username = session['username']
+            user = self.db.get_user(username)
+
+            if not user or not user.get('enabled'):
+                return jsonify({'authenticated': False, 'error': 'Account disabled'}), 401
+
+            return jsonify({
+                'authenticated': True,
+                'username': username
+            }), 200
+
         @self.app.route('/api/auth/logout', methods=['POST'])
         @self.require_csrf
         def logout():

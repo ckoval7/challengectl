@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { checkAuth } from './auth'
+import { checkAuth, validateSession, isSessionChecked } from './auth'
 import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import Challenges from './views/Challenges.vue'
@@ -75,15 +75,41 @@ const router = createRouter({
 })
 
 // Navigation guard for authentication
-router.beforeEach((to, from, next) => {
+// Validates session with backend on first navigation or page refresh
+router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
 
-  if (requiresAuth && !checkAuth()) {
+  // If already authenticated in memory, fast path
+  if (checkAuth()) {
+    if (to.path === '/login') {
+      // Already logged in, redirect to admin dashboard
+      next('/admin')
+    } else {
+      next()
+    }
+    return
+  }
+
+  // If not authenticated in memory but haven't checked session yet,
+  // validate with backend (handles page refresh)
+  if (!isSessionChecked()) {
+    const isValid = await validateSession()
+
+    if (isValid) {
+      // Session is valid, allow navigation
+      if (to.path === '/login') {
+        next('/admin')
+      } else {
+        next()
+      }
+      return
+    }
+  }
+
+  // Not authenticated and session is invalid
+  if (requiresAuth) {
     // Redirect to login if trying to access protected route
     next('/login')
-  } else if (to.path === '/login' && checkAuth()) {
-    // Redirect to admin dashboard if already logged in
-    next('/admin')
   } else {
     next()
   }
