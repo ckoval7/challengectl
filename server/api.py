@@ -854,6 +854,7 @@ class ChallengeCtlAPI:
                 'runner_id': runner_id,
                 'challenge_id': challenge_id,
                 'challenge_name': challenge_name,
+                'frequency': config.get('frequency', 0),
                 'status': 'success' if success else 'failed',
                 'error_message': error_message,
                 'timestamp': timestamp

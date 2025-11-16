@@ -228,7 +228,7 @@ export default {
           runner_id: event.runner_id,
           challenge_name: event.challenge_name,
           status: event.status,
-          frequency: 0
+          frequency: event.frequency
         })
 
         // Keep only last 20
