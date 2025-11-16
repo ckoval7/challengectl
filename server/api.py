@@ -25,6 +25,7 @@ import bcrypt
 import pyotp
 
 from database import Database
+from crypto import encrypt_totp_secret
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,10 @@ class ChallengeCtlAPI:
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             return {}
+
+    def get_conference_name(self) -> str:
+        """Get the conference name from config."""
+        return self.config.get('conference', {}).get('name', 'ChallengeCtl')
 
     def check_config_sync(self) -> Dict:
         """Check if database challenges are in sync with config file.
@@ -722,9 +727,25 @@ class ChallengeCtlAPI:
                 self.destroy_session(session_token)
 
             # Clear both session and CSRF cookies
+            # NOTE: Cookie attributes must match exactly how they were set during login
+            # Otherwise browsers won't delete them
             response = make_response(jsonify({'status': 'logged out'}), 200)
-            response.set_cookie('session_token', '', expires=0, httponly=True, samesite=None)
-            response.set_cookie('csrf_token', '', expires=0, httponly=False, samesite=None)
+            response.set_cookie(
+                'session_token',
+                '',
+                httponly=True,
+                secure=False,    # Must match login cookie setting
+                samesite=None,
+                max_age=0        # Use max_age=0 to delete cookie (matches login style)
+            )
+            response.set_cookie(
+                'csrf_token',
+                '',
+                httponly=False,
+                secure=False,    # Must match login cookie setting
+                samesite=None,
+                max_age=0        # Use max_age=0 to delete cookie (matches login style)
+            )
 
             return response
 
@@ -829,7 +850,8 @@ class ChallengeCtlAPI:
 
             # Generate TOTP provisioning URI
             totp = pyotp.TOTP(totp_secret)
-            provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+            conference_name = self.get_conference_name()
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
             logger.info(f"User {username} created by {request.admin_username}")
 
@@ -912,6 +934,9 @@ class ChallengeCtlAPI:
             # Generate new TOTP secret
             totp_secret = pyotp.random_base32()
 
+            # Encrypt TOTP secret before storing
+            encrypted_totp_secret = encrypt_totp_secret(totp_secret)
+
             # Update user
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
@@ -919,12 +944,13 @@ class ChallengeCtlAPI:
                     UPDATE users
                     SET totp_secret = ?
                     WHERE username = ?
-                ''', (totp_secret, username))
+                ''', (encrypted_totp_secret, username))
                 conn.commit()
 
             # Generate TOTP provisioning URI
             totp = pyotp.TOTP(totp_secret)
-            provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+            conference_name = self.get_conference_name()
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
             logger.info(f"TOTP reset for user {username} by {request.admin_username}")
 
