@@ -47,7 +47,7 @@ class WebSocketHandler(logging.Handler):
                 'source': 'server',
                 'level': record.levelname,
                 'message': record.getMessage(),
-                'timestamp': datetime.fromtimestamp(record.created).isoformat()
+                'timestamp': datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
             }
 
             # Add to buffer for historical retrieval
@@ -1207,7 +1207,7 @@ class ChallengeCtlAPI:
                 'source': runner_id,
                 'level': log_entry.get('level', 'INFO'),
                 'message': log_entry.get('message', ''),
-                'timestamp': log_entry.get('timestamp', datetime.now().isoformat())
+                'timestamp': log_entry.get('timestamp', datetime.now(timezone.utc).isoformat())
             }
 
             # Add to log buffer
@@ -1635,7 +1635,7 @@ class ChallengeCtlAPI:
             stats = self.db.get_dashboard_stats()
             emit('initial_state', {
                 'stats': stats,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
         @self.socketio.on('disconnect')
