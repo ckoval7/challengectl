@@ -489,7 +489,9 @@ class ChallengeCtlAPI:
             # Mark initial setup as complete if this is being done during initial setup
             if self.db.get_system_state('initial_setup_required', 'false') == 'true':
                 self.db.set_system_state('initial_setup_required', 'false')
-                logger.info("Initial setup completed")
+                # Disable the default admin account for security
+                self.db.disable_user('admin')
+                logger.info("Initial setup completed - default admin account disabled")
 
             # Generate TOTP provisioning URI
             totp = pyotp.TOTP(totp_secret)
