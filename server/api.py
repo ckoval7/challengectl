@@ -826,9 +826,8 @@ class ChallengeCtlAPI:
             challenge = self.db.get_challenge(challenge_id)
             challenge_name = challenge['name'] if challenge else challenge_id
 
-            # Record transmission in history
-            if success:
-                self.db.complete_challenge(challenge_id, runner_id, success, error_message)
+            # Record transmission in history and requeue challenge
+            self.db.complete_challenge(challenge_id, runner_id, success, error_message)
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
