@@ -1,36 +1,29 @@
 import { ref, computed } from 'vue'
 import { websocket } from './websocket'
 
-// Authentication state
-const apiKey = ref(localStorage.getItem('apiKey') || null)
-const isAuthenticated = computed(() => !!apiKey.value)
+// Authentication state (tracked in-memory, actual session in httpOnly cookie)
+// Note: Session token is stored in httpOnly cookie (not accessible to JavaScript)
+// This prevents XSS attacks from stealing the session token
+const isAuthenticatedFlag = ref(false)
+const isAuthenticated = computed(() => isAuthenticatedFlag.value)
 
 /**
- * Login with API key
- * @param {string} key - Admin API key
+ * Mark user as authenticated (called after successful login)
+ * Note: Actual session token is in httpOnly cookie, not localStorage
  */
-export function login(key) {
-  apiKey.value = key
-  localStorage.setItem('apiKey', key)
+export function login() {
+  isAuthenticatedFlag.value = true
 }
 
 /**
  * Logout and clear authentication
+ * Note: Backend will clear the httpOnly cookie
  */
 export function logout() {
-  apiKey.value = null
-  localStorage.removeItem('apiKey')
+  isAuthenticatedFlag.value = false
 
   // Disconnect WebSocket
   websocket.disconnect()
-}
-
-/**
- * Get current API key
- * @returns {string|null}
- */
-export function getApiKey() {
-  return apiKey.value
 }
 
 /**

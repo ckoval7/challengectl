@@ -4,7 +4,7 @@ REST API server for challengectl using Flask and Flask-SocketIO.
 Handles runner communication, challenge distribution, and WebUI serving.
 """
 
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -75,8 +75,8 @@ class ChallengeCtlAPI:
         # Store frontend directory path
         self.frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/dist'))
 
-        # Enable CORS for development
-        CORS(self.app)
+        # Enable CORS for development with credentials support (for httpOnly cookies)
+        CORS(self.app, supports_credentials=True)
 
         # Initialize SocketIO for real-time updates
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
@@ -189,12 +189,11 @@ class ChallengeCtlAPI:
         """Decorator to require admin session authentication."""
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            auth_header = request.headers.get('Authorization')
+            # Get session token from httpOnly cookie (more secure than localStorage)
+            session_token = request.cookies.get('session_token')
 
-            if not auth_header or not auth_header.startswith('Bearer '):
-                return jsonify({'error': 'Missing or invalid authorization header'}), 401
-
-            session_token = auth_header[7:]  # Remove 'Bearer ' prefix
+            if not session_token:
+                return jsonify({'error': 'Missing or invalid session'}), 401
 
             # Check session validity (from database)
             session = self.db.get_session(session_token)
@@ -322,12 +321,23 @@ class ChallengeCtlAPI:
                 # Create session (not yet TOTP verified)
                 session_token = self.create_session(username, totp_verified=False)
 
-                # Return session token and TOTP requirement
-                return jsonify({
-                    'session_token': session_token,
+                # Set httpOnly cookie for security (prevents XSS attacks)
+                response = make_response(jsonify({
                     'totp_required': True,
                     'username': username
-                }), 200
+                }), 200)
+
+                # Set secure httpOnly cookie
+                response.set_cookie(
+                    'session_token',
+                    session_token,
+                    httponly=True,  # Prevents JavaScript access (XSS protection)
+                    secure=False,   # Set to True in production with HTTPS
+                    samesite='Lax', # CSRF protection
+                    max_age=86400   # 24 hours (matches session expiry)
+                )
+
+                return response
             else:
                 # No TOTP configured - complete login immediately
                 session_token = self.create_session(username, totp_verified=True)
@@ -340,13 +350,25 @@ class ChallengeCtlAPI:
 
                 logger.info(f"User {username} logged in (no TOTP configured)")
 
-                return jsonify({
+                # Set httpOnly cookie for security (prevents XSS attacks)
+                response = make_response(jsonify({
                     'status': 'authenticated',
-                    'session_token': session_token,
                     'totp_required': False,
                     'initial_setup_required': initial_setup_required,
                     'username': username
-                }), 200
+                }), 200)
+
+                # Set secure httpOnly cookie
+                response.set_cookie(
+                    'session_token',
+                    session_token,
+                    httponly=True,  # Prevents JavaScript access (XSS protection)
+                    secure=False,   # Set to True in production with HTTPS
+                    samesite='Lax', # CSRF protection
+                    max_age=86400   # 24 hours (matches session expiry)
+                )
+
+                return response
 
         @self.app.route('/api/auth/verify-totp', methods=['POST'])
         @self.limiter.limit("5 per 15 minutes")
@@ -357,11 +379,12 @@ class ChallengeCtlAPI:
             if not data:
                 return jsonify({'error': 'Missing request body'}), 400
 
-            session_token = data.get('session_token')
+            # Get session token from httpOnly cookie (set during login)
+            session_token = request.cookies.get('session_token')
             totp_code = data.get('totp_code')
 
             if not session_token or not totp_code:
-                return jsonify({'error': 'Missing session_token or totp_code'}), 400
+                return jsonify({'error': 'Missing session or totp_code'}), 400
 
             # Get session from database
             session = self.db.get_session(session_token)
@@ -409,9 +432,10 @@ class ChallengeCtlAPI:
             # Check if password change is required
             password_change_required = user.get('password_change_required', False)
 
+            # Session token already in httpOnly cookie (set during login)
+            # No need to return it in response (security: prevents XSS)
             return jsonify({
                 'status': 'authenticated',
-                'session_token': session_token,
                 'password_change_required': bool(password_change_required),
                 'username': username
             }), 200
@@ -419,13 +443,17 @@ class ChallengeCtlAPI:
         @self.app.route('/api/auth/logout', methods=['POST'])
         def logout():
             """Logout and destroy session."""
-            auth_header = request.headers.get('Authorization')
+            # Get session token from httpOnly cookie
+            session_token = request.cookies.get('session_token')
 
-            if auth_header and auth_header.startswith('Bearer '):
-                session_token = auth_header[7:]
+            if session_token:
                 self.destroy_session(session_token)
 
-            return jsonify({'status': 'logged out'}), 200
+            # Clear the session cookie
+            response = make_response(jsonify({'status': 'logged out'}), 200)
+            response.set_cookie('session_token', '', expires=0, httponly=True, samesite='Lax')
+
+            return response
 
         @self.app.route('/api/auth/change-password', methods=['POST'])
         @self.require_admin_auth

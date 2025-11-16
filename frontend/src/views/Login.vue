@@ -150,7 +150,6 @@ export default {
     })
     const loading = ref(false)
     const showTotpStep = ref(false)
-    const sessionToken = ref(null)
 
     const handleLogin = async () => {
       if (!formRef.value) return
@@ -172,13 +171,13 @@ export default {
 
         // Check if TOTP is required
         if (response.data.totp_required) {
-          // Save session token and move to TOTP step
-          sessionToken.value = response.data.session_token
+          // Move to TOTP step (session token is in httpOnly cookie)
           showTotpStep.value = true
           ElMessage.success('Password verified. Please enter your TOTP code.')
         } else {
           // No TOTP required - user logged in directly
-          login(response.data.session_token)
+          // Session token is in httpOnly cookie (managed by browser)
+          login()
 
           // Check if initial setup is required
           if (response.data.initial_setup_required) {
@@ -214,14 +213,13 @@ export default {
       loading.value = true
 
       try {
-        // Step 2: Verify TOTP code
+        // Step 2: Verify TOTP code (session token sent via httpOnly cookie)
         const response = await api.post('/auth/verify-totp', {
-          session_token: sessionToken.value,
           totp_code: form.value.totpCode
         })
 
-        // Save the authenticated session token
-        login(response.data.session_token)
+        // Mark user as authenticated (session token in httpOnly cookie)
+        login()
 
         // Check if password change is required
         if (response.data.password_change_required) {
@@ -248,7 +246,6 @@ export default {
 
     const goBackToLogin = () => {
       showTotpStep.value = false
-      sessionToken.value = null
       form.value.totpCode = ''
     }
 

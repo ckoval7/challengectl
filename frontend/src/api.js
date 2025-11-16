@@ -1,21 +1,17 @@
 import axios from 'axios'
 import config from './config'
-import { getApiKey, logout } from './auth'
+import { logout } from './auth'
 
 // API client configuration
 const api = axios.create({
-  baseURL: config.api.baseURL || '/api'
+  baseURL: config.api.baseURL || '/api',
+  withCredentials: true  // Required to send httpOnly cookies with requests
 })
 
-// Request interceptor to add auth header and logging
+// Request interceptor for logging
+// Note: Session token is now sent automatically via httpOnly cookie (more secure than localStorage)
 api.interceptors.request.use(
   config => {
-    // Add Authorization header if API key is available
-    const apiKey = getApiKey()
-    if (apiKey) {
-      config.headers['Authorization'] = `Bearer ${apiKey}`
-    }
-
     console.log(`API Request: ${config.method.toUpperCase()} ${config.url}`)
     return config
   },
