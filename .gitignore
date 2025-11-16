@@ -26,6 +26,10 @@ server-config.yml
 runner-config.yml
 *-config.local.yml
 
+# Encryption keys (CRITICAL - must not be committed)
+.encryption_key
+server/.encryption_key
+
 # Cache and files
 /server/files/
 files/

@@ -11,14 +11,32 @@ import getpass
 import bcrypt
 import pyotp
 import qrcode
+import yaml
 
 # Add server directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'server'))
 
 from database import Database
+from crypto import encrypt_totp_secret
 
 
-def create_user(db: Database, username: str, password: str = None):
+def load_config(config_path: str) -> dict:
+    """Load server configuration from YAML file."""
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            return config
+    except Exception as e:
+        print(f"Warning: Could not load config file {config_path}: {e}")
+        return {}
+
+
+def get_conference_name(config: dict) -> str:
+    """Get the conference name from config."""
+    return config.get('conference', {}).get('name', 'ChallengeCtl')
+
+
+def create_user(db: Database, username: str, password: str = None, conference_name: str = "ChallengeCtl"):
     """Create a new admin user with TOTP secret."""
     # Check if user already exists
     existing_user = db.get_user(username)
@@ -55,7 +73,7 @@ def create_user(db: Database, username: str, password: str = None):
 
         # Generate QR code
         totp = pyotp.TOTP(totp_secret)
-        provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+        provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
         print("\n QR Code:")
         qr = qrcode.QRCode()
@@ -154,7 +172,7 @@ def change_password(db: Database, username: str, new_password: str = None):
         return 1
 
 
-def reset_totp(db: Database, username: str):
+def reset_totp(db: Database, username: str, conference_name: str = "ChallengeCtl"):
     """Reset TOTP secret for a user."""
     # Check if user exists
     user = db.get_user(username)
@@ -164,6 +182,9 @@ def reset_totp(db: Database, username: str):
 
     # Generate new TOTP secret
     totp_secret = pyotp.random_base32()
+
+    # Encrypt TOTP secret before storing
+    encrypted_totp_secret = encrypt_totp_secret(totp_secret)
 
     # Update user (reuse password_hash from existing user)
     password_hash = user['password_hash']
@@ -176,7 +197,7 @@ def reset_totp(db: Database, username: str):
             UPDATE users
             SET totp_secret = ?
             WHERE username = ?
-        ''', (totp_secret, username))
+        ''', (encrypted_totp_secret, username))
         conn.commit()
 
     print(f"\nTOTP secret reset successfully for user '{username}'!")
@@ -187,7 +208,7 @@ def reset_totp(db: Database, username: str):
 
     # Generate QR code
     totp = pyotp.TOTP(totp_secret)
-    provisioning_uri = totp.provisioning_uri(name=username, issuer_name="ChallengeCtl")
+    provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
     print("\nQR Code:")
     qr = qrcode.QRCode()
@@ -208,6 +229,12 @@ def main():
         '--db',
         default='challengectl.db',
         help='Path to database file (default: challengectl.db)'
+    )
+
+    parser.add_argument(
+        '--config',
+        default='server-config.yml',
+        help='Path to server config file (default: server-config.yml)'
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
@@ -246,9 +273,13 @@ def main():
     # Initialize database
     db = Database(args.db)
 
+    # Load config and get conference name
+    config = load_config(args.config)
+    conference_name = get_conference_name(config)
+
     # Execute command
     if args.command == 'create':
-        return create_user(db, args.username, args.password)
+        return create_user(db, args.username, args.password, conference_name)
     elif args.command == 'list':
         return list_users(db)
     elif args.command == 'disable':
@@ -258,7 +289,7 @@ def main():
     elif args.command == 'change-password':
         return change_password(db, args.username, args.password)
     elif args.command == 'reset-totp':
-        return reset_totp(db, args.username)
+        return reset_totp(db, args.username, conference_name)
     else:
         parser.print_help()
         return 1

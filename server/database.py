@@ -12,6 +12,8 @@ from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import threading
 
+from crypto import encrypt_totp_secret, decrypt_totp_secret
+
 logger = logging.getLogger(__name__)
 
 
@@ -638,10 +640,13 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
+                # Encrypt TOTP secret before storing
+                encrypted_totp_secret = encrypt_totp_secret(totp_secret)
+
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, totp_secret)
                     VALUES (?, ?, ?)
-                ''', (username, password_hash, totp_secret))
+                ''', (username, password_hash, encrypted_totp_secret))
                 conn.commit()
                 logger.info(f"Created user: {username}")
                 return True
@@ -659,7 +664,18 @@ class Database:
             cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
             row = cursor.fetchone()
             if row:
-                return dict(row)
+                user_dict = dict(row)
+                # Decrypt TOTP secret if present
+                if user_dict.get('totp_secret'):
+                    decrypted_secret = decrypt_totp_secret(user_dict['totp_secret'])
+                    # Handle legacy unencrypted secrets
+                    if decrypted_secret is None:
+                        # If decryption fails, assume it's a legacy unencrypted secret
+                        logger.warning(f"User {username} has legacy unencrypted TOTP secret")
+                        # Keep the original value for now (will be migrated later)
+                    else:
+                        user_dict['totp_secret'] = decrypted_secret
+                return user_dict
             return None
 
     def update_last_login(self, username: str) -> bool:
