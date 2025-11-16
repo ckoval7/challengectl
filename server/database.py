@@ -156,6 +156,7 @@ class Database:
                     VALUES ('initial_setup_required', 'true')
                 ''')
 
+                # Log to file
                 logger.warning("=" * 80)
                 logger.warning("DEFAULT ADMIN USER CREATED")
                 logger.warning("=" * 80)
@@ -166,6 +167,18 @@ class Database:
                 logger.warning("You will be prompted to create a new user with TOTP 2FA on first login.")
                 logger.warning("After setup, you can delete this default admin account.")
                 logger.warning("=" * 80)
+
+                # Also print to stdout so it's visible in terminal
+                print("\n" + "=" * 80, flush=True)
+                print("DEFAULT ADMIN USER CREATED", flush=True)
+                print("=" * 80, flush=True)
+                print(f"Username: admin", flush=True)
+                print(f"Password: {default_password}", flush=True)
+                print("", flush=True)
+                print("IMPORTANT: Log in with these credentials to create your admin account.", flush=True)
+                print("You will be prompted to create a new user with TOTP 2FA on first login.", flush=True)
+                print("After setup, you can delete this default admin account.", flush=True)
+                print("=" * 80 + "\n", flush=True)
 
             # Create indexes
             cursor.execute('''
