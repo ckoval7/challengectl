@@ -1075,9 +1075,17 @@ class ChallengeCtlAPI:
             if request.runner_id != runner_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            success = self.db.update_heartbeat(runner_id)
+            success, previous_status = self.db.update_heartbeat(runner_id)
 
             if success:
+                # Broadcast status change if runner came back online
+                if previous_status == 'offline':
+                    self.broadcast_event('runner_status', {
+                        'runner_id': runner_id,
+                        'status': 'online',
+                        'timestamp': datetime.now().isoformat()
+                    })
+
                 return jsonify({'status': 'ok'}), 200
             else:
                 return jsonify({'error': 'Runner not found'}), 404

@@ -254,21 +254,31 @@ class Database:
                 logger.error(f"Error registering runner {runner_id}: {e}")
                 return False
 
-    def update_heartbeat(self, runner_id: str) -> bool:
-        """Update runner heartbeat timestamp."""
+    def update_heartbeat(self, runner_id: str) -> tuple[bool, str]:
+        """Update runner heartbeat timestamp.
+
+        Returns:
+            tuple: (success: bool, previous_status: str)
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
+                # Get previous status
+                cursor.execute('SELECT status FROM runners WHERE runner_id = ?', (runner_id,))
+                row = cursor.fetchone()
+                previous_status = row['status'] if row else 'offline'
+
+                # Update heartbeat and status
                 cursor.execute('''
                     UPDATE runners
                     SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
                     WHERE runner_id = ?
                 ''', (datetime.now(), runner_id))
                 conn.commit()
-                return cursor.rowcount > 0
+                return (cursor.rowcount > 0, previous_status)
             except Exception as e:
                 logger.error(f"Error updating heartbeat for {runner_id}: {e}")
-                return False
+                return (False, 'offline')
 
     def get_runner(self, runner_id: str) -> Optional[Dict]:
         """Get runner details."""
