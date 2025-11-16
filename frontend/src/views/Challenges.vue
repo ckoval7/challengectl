@@ -42,7 +42,7 @@
       >
         <template #default="scope">
           <el-tag
-            :type="!scope.row.enabled ? 'info' : (scope.row.status === 'queued' ? 'success' : (scope.row.status === 'assigned' ? 'warning' : 'info'))"
+            :type="getStatusType(scope.row)"
             size="small"
           >
             {{ !scope.row.enabled ? 'disabled' : scope.row.status }}
@@ -162,6 +162,16 @@ export default {
       return (hz / 1e6).toFixed(3) + ' MHz'
     }
 
+    const getStatusType = (challenge) => {
+      if (!challenge.enabled) return 'info'
+      switch (challenge.status) {
+        case 'queued': return 'success'  // Green - ready
+        case 'waiting': return 'warning' // Orange - delay timer
+        case 'assigned': return ''       // Default - transmitting
+        default: return 'info'
+      }
+    }
+
     onMounted(() => {
       loadChallenges()
 
@@ -176,7 +186,8 @@ export default {
       toggleChallenge,
       triggerChallenge,
       formatTimestamp,
-      formatFrequency
+      formatFrequency,
+      getStatusType
     }
   }
 }

@@ -66,7 +66,7 @@ class Database:
             ''')
 
             # Challenges table
-            # status can be: 'queued' (ready for assignment), 'assigned' (being transmitted)
+            # status: 'queued' (ready), 'waiting' (delay timer), 'assigned' (transmitting)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS challenges (
                     challenge_id TEXT PRIMARY KEY,
@@ -364,10 +364,10 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
-                # Find next available challenge
+                # Find next available challenge (queued or waiting with expired delay)
                 cursor.execute('''
                     SELECT * FROM challenges
-                    WHERE status = 'queued'
+                    WHERE status IN ('queued', 'waiting')
                       AND enabled = 1
                     ORDER BY priority DESC
                 ''')
@@ -386,6 +386,13 @@ class Database:
                         # Challenge is ready if no next_tx set or next_tx has passed
                         if next_tx is None or next_tx <= now:
                             row = r
+                            # Update waiting -> queued if delay has passed
+                            if row['status'] == 'waiting':
+                                cursor.execute('''
+                                    UPDATE challenges
+                                    SET status = 'queued'
+                                    WHERE challenge_id = ?
+                                ''', (cid,))
                             break
 
                 if row:
@@ -450,10 +457,10 @@ class Database:
                         'next_tx': next_tx
                     }
 
-                # Update challenge status (no timing fields in DB)
+                # Update challenge status to waiting (delay timer active)
                 cursor.execute('''
                     UPDATE challenges
-                    SET status = 'queued',
+                    SET status = 'waiting',
                         assigned_to = NULL,
                         assigned_at = NULL,
                         assignment_expires = NULL,
@@ -479,7 +486,7 @@ class Database:
 
             cursor.execute('''
                 UPDATE challenges
-                SET status = 'queued',
+                SET status = 'waiting',
                     assigned_to = NULL,
                     assigned_at = NULL,
                     assignment_expires = NULL
@@ -732,6 +739,7 @@ class Database:
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) as queued,
+                    SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) as waiting,
                     SUM(CASE WHEN status='assigned' THEN 1 ELSE 0 END) as assigned,
                     SUM(transmission_count) as total_transmissions
                 FROM challenges
@@ -740,6 +748,7 @@ class Database:
             row = cursor.fetchone()
             stats['challenges_total'] = row['total']
             stats['challenges_queued'] = row['queued']
+            stats['challenges_waiting'] = row['waiting']
             stats['challenges_assigned'] = row['assigned']
             stats['total_transmissions'] = row['total_transmissions'] or 0
 

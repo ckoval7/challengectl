@@ -162,9 +162,10 @@ radios:
 - Reload from config
 
 **Challenge Status Values:**
-- **queued** - Challenge is ready and waiting to be assigned to a runner
-- **assigned** - Challenge is currently assigned to a runner and being transmitted
-- **disabled** - Challenge is disabled (not in transmission queue)
+- **queued** - Challenge is ready and waiting to be assigned to a runner (green)
+- **waiting** - Challenge is in delay period after previous transmission (orange)
+- **assigned** - Challenge is currently assigned to a runner and being transmitted (gray)
+- **disabled** - Challenge is disabled, not in transmission queue (gray)
 
 ### Logs
 - Live log streaming
