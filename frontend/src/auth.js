@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { websocket } from './websocket'
 
 // Authentication state
 const apiKey = ref(localStorage.getItem('apiKey') || null)
@@ -19,6 +20,9 @@ export function login(key) {
 export function logout() {
   apiKey.value = null
   localStorage.removeItem('apiKey')
+
+  // Disconnect WebSocket
+  websocket.disconnect()
 }
 
 /**

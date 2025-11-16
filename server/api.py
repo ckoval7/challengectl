@@ -92,6 +92,10 @@ class ChallengeCtlAPI:
         self.log_buffer = deque(maxlen=500)
         self.buffer_lock = threading.Lock()
 
+        # In-memory transmission buffer for recent transmissions (last 50)
+        self.transmission_buffer = deque(maxlen=50)
+        self.transmission_lock = threading.Lock()
+
         # Session management for admin authentication
         # Format: {session_token: {'username': str, 'expires': datetime, 'totp_verified': bool}}
         self.sessions = {}
@@ -822,12 +826,28 @@ class ChallengeCtlAPI:
             # device_id = data.get('device_id', '')
             # frequency = data.get('frequency', 0)
 
-            # Get challenge name for broadcast
+            # Get challenge info and requeue
             challenge = self.db.get_challenge(challenge_id)
             challenge_name = challenge['name'] if challenge else challenge_id
 
-            # Record transmission in history and requeue challenge
-            self.db.complete_challenge(challenge_id, runner_id, success, error_message)
+            config = self.db.complete_challenge(challenge_id, runner_id, success, error_message)
+            if not config:
+                return jsonify({'error': 'Challenge not found'}), 404
+
+            # Add to in-memory transmission buffer
+            timestamp = datetime.now().isoformat()
+            transmission = {
+                'started_at': timestamp,
+                'runner_id': runner_id,
+                'challenge_id': challenge_id,
+                'challenge_name': challenge_name,
+                'frequency': config.get('frequency', 0),
+                'status': 'success' if success else 'failed',
+                'error_message': error_message
+            }
+
+            with self.transmission_lock:
+                self.transmission_buffer.appendleft(transmission)
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
@@ -836,7 +856,7 @@ class ChallengeCtlAPI:
                 'challenge_name': challenge_name,
                 'status': 'success' if success else 'failed',
                 'error_message': error_message,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': timestamp
             })
 
             return jsonify({'status': 'recorded'}), 200
@@ -876,7 +896,10 @@ class ChallengeCtlAPI:
             """Get dashboard statistics and data."""
             stats = self.db.get_dashboard_stats()
             runners = self.db.get_all_runners()
-            recent_transmissions = self.db.get_recent_transmissions(limit=20)
+
+            # Get recent transmissions from in-memory buffer
+            with self.transmission_lock:
+                recent_transmissions = list(self.transmission_buffer)
 
             # Parse runner devices JSON
             runners = [self._parse_runner_devices(r) for r in runners]

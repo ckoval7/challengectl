@@ -196,7 +196,6 @@ export default {
     const stats = ref({})
     const runners = ref([])
     const recentTransmissions = ref([])
-    const refreshInterval = ref(null)
 
     const loadDashboard = async () => {
       try {
@@ -251,15 +250,9 @@ export default {
       websocket.connect()
       websocket.on('runner_status', handleWebSocketEvent)
       websocket.on('transmission_complete', handleWebSocketEvent)
-
-      // Refresh dashboard periodically
-      refreshInterval.value = setInterval(loadDashboard, 30000)  // Every 30 seconds
     })
 
     onUnmounted(() => {
-      if (refreshInterval.value) {
-        clearInterval(refreshInterval.value)
-      }
       websocket.off('runner_status', handleWebSocketEvent)
       websocket.off('transmission_complete', handleWebSocketEvent)
     })

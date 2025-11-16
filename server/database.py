@@ -403,8 +403,8 @@ class Database:
                 return None
 
     def complete_challenge(self, challenge_id: str, runner_id: str, success: bool,
-                           error_message: Optional[str] = None) -> bool:
-        """Mark challenge as completed and requeue it."""
+                           error_message: Optional[str] = None) -> Optional[Dict]:
+        """Mark challenge as completed and requeue it. Returns challenge config."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
@@ -413,19 +413,11 @@ class Database:
                 cursor.execute('SELECT config FROM challenges WHERE challenge_id = ?', (challenge_id,))
                 row = cursor.fetchone()
                 if not row:
-                    return False
+                    return None
 
                 config = json.loads(row['config'])
                 min_delay = config.get('min_delay', 60)
                 max_delay = config.get('max_delay', 90)
-                frequency = config.get('frequency', 0)
-
-                # Record transmission in history
-                status = 'success' if success else 'failed'
-                cursor.execute('''
-                    INSERT INTO transmissions (challenge_id, runner_id, device_id, frequency, started_at, completed_at, status, error_message)
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
-                ''', (challenge_id, runner_id, '', frequency, status, error_message))
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
@@ -446,13 +438,14 @@ class Database:
 
                 conn.commit()
 
+                status = 'success' if success else 'failed'
                 logger.info(f"Challenge {challenge_id} completed by {runner_id}: {status}")
-                return True
+                return config
 
             except Exception as e:
                 conn.rollback()
                 logger.error(f"Error completing challenge {challenge_id}: {e}")
-                return False
+                return None
 
     def cleanup_stale_assignments(self, timeout_minutes: int = 5) -> int:
         """Requeue challenges that have been assigned but not completed within timeout."""
