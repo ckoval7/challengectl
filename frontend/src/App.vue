@@ -1,6 +1,10 @@
 <template>
   <div id="app">
-    <el-container style="height: 100vh">
+    <!-- Admin layout (only shown for authenticated routes) -->
+    <el-container
+      v-if="showAdminLayout"
+      style="height: 100vh"
+    >
       <el-header
         height="60px"
         style="background: #409EFF; color: white; display: flex; align-items: center; padding: 0 20px;"
@@ -33,9 +37,15 @@
         </el-button>
         <el-button
           type="danger"
+          style="margin-right: 10px"
           @click="stopSystem"
         >
           Stop
+        </el-button>
+        <el-button
+          @click="handleLogout"
+        >
+          Logout
         </el-button>
       </el-header>
 
@@ -49,7 +59,7 @@
             router
             class="sidebar-menu"
           >
-            <el-menu-item index="/">
+            <el-menu-item index="/admin">
               <el-icon><Monitor /></el-icon>
               <span>Dashboard</span>
             </el-menu-item>
@@ -73,13 +83,18 @@
         </el-main>
       </el-container>
     </el-container>
+
+    <!-- Public/unauthenticated layout (just the router view) -->
+    <router-view v-else />
   </div>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Document, Notebook, Moon, Sunny } from '@element-plus/icons-vue'
 import { api } from './api'
+import { logout, checkAuth } from './auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 export default {
@@ -93,8 +108,15 @@ export default {
     Sunny
   },
   setup() {
+    const route = useRoute()
+    const router = useRouter()
     const systemPaused = ref(false)
     const isDark = ref(true) // Default to dark theme
+
+    // Show admin layout for authenticated routes
+    const showAdminLayout = computed(() => {
+      return checkAuth() && route.meta.requiresAuth
+    })
 
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
@@ -117,6 +139,12 @@ export default {
       isDark.value = !isDark.value
       localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
       applyTheme()
+    }
+
+    const handleLogout = () => {
+      logout()
+      ElMessage.success('Logged out successfully')
+      router.push('/public')
     }
 
     const pauseSystem = async () => {
@@ -162,11 +190,13 @@ export default {
     }
 
     return {
+      showAdminLayout,
       systemPaused,
       isDark,
       Moon,
       Sunny,
       toggleTheme,
+      handleLogout,
       pauseSystem,
       resumeSystem,
       stopSystem

@@ -5,12 +5,21 @@
       <p class="subtitle">
         {{ conference.name }}
       </p>
-      <el-button
-        circle
-        :icon="isDark ? Moon : Sunny"
-        class="theme-toggle"
-        @click="toggleTheme"
-      />
+      <div class="header-controls">
+        <el-button
+          type="primary"
+          class="login-button"
+          @click="goToLogin"
+        >
+          Admin Login
+        </el-button>
+        <el-button
+          circle
+          :icon="isDark ? Moon : Sunny"
+          class="theme-toggle"
+          @click="toggleTheme"
+        />
+      </div>
     </div>
 
     <!-- Loading State -->
@@ -177,6 +186,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { Loading, Refresh, Warning, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
 
@@ -191,6 +201,7 @@ export default {
     Sunny
   },
   setup() {
+    const router = useRouter()
     const challenges = ref([])
     const loading = ref(true)
     const error = ref(null)
@@ -203,6 +214,10 @@ export default {
     const conference = ref({
       name: 'RF CTF Challenge Status'
     })
+
+    const goToLogin = () => {
+      router.push('/login')
+    }
 
     // Initialize theme from localStorage or default to dark
     const initTheme = () => {
@@ -312,7 +327,8 @@ export default {
       isDark,
       Moon,
       Sunny,
-      toggleTheme
+      toggleTheme,
+      goToLogin
     }
   }
 }
@@ -333,10 +349,21 @@ export default {
   position: relative;
 }
 
-.theme-toggle {
+.header-controls {
   position: absolute;
   top: 20px;
   right: 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.login-button {
+  /* Additional styling if needed */
+}
+
+.theme-toggle {
+  /* Theme toggle is now within header-controls */
 }
 
 .header h1 {
