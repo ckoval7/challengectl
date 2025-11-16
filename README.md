@@ -48,13 +48,13 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
 - [ ] Add support for multiple TX frontends per device
 - [ ] Add frequency limits and device args per TX frontend for different amp/filter/antenna setups
 - [ ] Implement WebUI
-  - [ ] Admin Status Page
-  - [ ] Public Status Page
+  - [x] Admin Status Page
+  - [x] Public Status Page
   - [ ] Challenge Editor
-  - [ ] Log Viewer
-- [ ] Create a multihost mode with a runner that can query a controller
-  - [ ] Create "API" to communicate between runner and controller
-  - [ ] Sync flags and wav files from controller to runner
+  - [x] Log Viewer
+- [x] Create a multihost mode with a runner that can query a controller
+  - [x] Create "API" to communicate between runner and controller
+  - [x] Sync flags and wav files from controller to runner
 
 # challengectl
 Queues challenges and gr-osmosdr radios to transmit for the RFCTF
