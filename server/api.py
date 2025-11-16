@@ -69,6 +69,12 @@ class ChallengeCtlAPI:
 
     def __init__(self, config_path: str, db: Database, files_dir: str):
         # Don't use Flask's static file serving - we'll handle it manually for SPA routing
+        # Configuration
+        self.config_path = config_path
+        self.config = self.load_config(config_path)
+        self.api_keys = self.config.get('server', {}).get('api_keys', {})
+        self.files_dir = files_dir
+
         self.app = Flask(__name__)
         self.app.config['SECRET_KEY'] = os.urandom(24)
 
@@ -121,11 +127,11 @@ class ChallengeCtlAPI:
         # Use provided database instance
         self.db = db
 
-        # Configuration
-        self.config_path = config_path
-        self.config = self.load_config(config_path)
-        self.api_keys = self.config.get('server', {}).get('api_keys', {})
-        self.files_dir = files_dir
+        # # Configuration
+        # self.config_path = config_path
+        # self.config = self.load_config(config_path)
+        # self.api_keys = self.config.get('server', {}).get('api_keys', {})
+        # self.files_dir = files_dir
 
         # In-memory log buffer for recent logs (last 500)
         self.log_buffer = deque(maxlen=500)
