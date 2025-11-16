@@ -10,23 +10,34 @@ This branch adds a distributed architecture to challengectl, enabling multiple S
 # Install dependencies
 pip install -r requirements-server.txt
 
-# Generate API keys
-python3 generate-api-key.py --count 4
+# Generate runner API keys
+python3 generate-api-key.py --count 3
 
 # Generate default config
 cd server
 python server.py
 
 # Edit server-config.yml with your settings:
-#   - Replace all API keys with generated ones
+#   - Replace all runner API keys with generated ones
 #   - Configure challenges
 # Then start the server
 python server.py
 ```
 
+### 2. Create Admin User
+
+```bash
+# Create your first admin user with TOTP 2FA
+python3 manage-users.py create admin
+
+# You'll be prompted for:
+#   - Password (minimum 8 characters)
+#   - Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
+```
+
 Server runs on `http://0.0.0.0:8443`
 
-### 2. Start Runner(s)
+### 3. Start Runner(s)
 
 On each SDR host:
 
@@ -48,11 +59,15 @@ python runner.py
 python runner.py
 ```
 
-### 3. Access WebUI
+### 4. Access WebUI
 
 Open browser to `http://<server-ip>:8443`
 
-**Default admin API key:** `change-this-admin-key-xyz999` (change in `server-config.yml`)
+**Authentication:**
+- Public dashboard (no auth required): `http://<server-ip>:8443/public`
+- Admin login: `http://<server-ip>:8443/login`
+  - Login with the username/password you created
+  - Enter the 6-digit TOTP code from your authenticator app
 
 ## Features
 
@@ -82,7 +97,8 @@ server:
   api_keys:
     runner-1: "unique-key-1"
     runner-2: "unique-key-2"
-    admin: "admin-key"
+    # Note: API keys are only for runners
+    # Admin users authenticate via username/password/TOTP
 
 challenges:
   - name: NBFM_FLAG_1
@@ -134,10 +150,44 @@ radios:
 
 ## Security
 
+- **Two-Factor Authentication** - Admin users use username/password + TOTP (Google Authenticator, Authy, etc.)
 - **API Key Authentication** - Each runner has unique key
+- **Separate Auth Domains** - Runners use API keys, admins use TOTP
+- **Session Management** - 24-hour session expiry with TOTP verification
+- **Password Hashing** - bcrypt for secure password storage
 - **TLS Support** - Use nginx reverse proxy for HTTPS
 - **Database Locking** - Prevents race conditions
 - **Timeout Protection** - Auto-recovery from failures
+
+## User Management
+
+Use the `manage-users.py` script to manage admin users:
+
+```bash
+# Create a new admin user
+python3 manage-users.py create <username>
+
+# List all users
+python3 manage-users.py list
+
+# Disable a user account
+python3 manage-users.py disable <username>
+
+# Enable a user account
+python3 manage-users.py enable <username>
+
+# Change user password
+python3 manage-users.py change-password <username>
+
+# Reset TOTP secret (if user loses access to authenticator app)
+python3 manage-users.py reset-totp <username>
+```
+
+**Setting up TOTP:**
+1. Create a user with `manage-users.py create <username>`
+2. Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.)
+3. Enter a test code to verify it's working
+4. Save your TOTP secret securely (displayed during user creation)
 
 ## Compatibility
 
@@ -148,8 +198,7 @@ radios:
 ## Limitations
 
 - SQLite suitable for 2-10 runners (tested with 2-3)
-- No built-in TLS (use nginx)
-- Simple API key auth (consider mTLS for production)
+- No built-in TLS (use nginx for HTTPS)
 
 ## Migration from Standalone
 

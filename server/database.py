@@ -117,6 +117,18 @@ class Database:
                 )
             ''')
 
+            # Users table (for admin authentication)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY,
+                    password_hash TEXT NOT NULL,
+                    totp_secret TEXT,
+                    enabled BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP
+                )
+            ''')
+
             # Create indexes
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_challenges_status
@@ -507,6 +519,95 @@ class Database:
             if row:
                 return row['value']
             return default
+
+    # User management
+    def create_user(self, username: str, password_hash: str, totp_secret: str) -> bool:
+        """Create a new admin user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO users (username, password_hash, totp_secret)
+                    VALUES (?, ?, ?)
+                ''', (username, password_hash, totp_secret))
+                conn.commit()
+                logger.info(f"Created user: {username}")
+                return True
+            except sqlite3.IntegrityError:
+                logger.warning(f"User {username} already exists")
+                return False
+            except Exception as e:
+                logger.error(f"Error creating user {username}: {e}")
+                return False
+
+    def get_user(self, username: str) -> Optional[Dict]:
+        """Get user details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def update_last_login(self, username: str) -> bool:
+        """Update user's last login timestamp."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET last_login = CURRENT_TIMESTAMP
+                WHERE username = ?
+            ''', (username,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def disable_user(self, username: str) -> bool:
+        """Disable a user account."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET enabled = 0
+                WHERE username = ?
+            ''', (username,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def enable_user(self, username: str) -> bool:
+        """Enable a user account."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET enabled = 1
+                WHERE username = ?
+            ''', (username,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def change_password(self, username: str, new_password_hash: str) -> bool:
+        """Change user password."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET password_hash = ?
+                WHERE username = ?
+            ''', (new_password_hash, username))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_all_users(self) -> List[Dict]:
+        """Get all users (excluding password hashes)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT username, enabled, created_at, last_login
+                FROM users
+                ORDER BY username
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get statistics for the dashboard."""

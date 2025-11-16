@@ -7,23 +7,40 @@
         </div>
       </template>
 
+      <!-- Step 1: Username and Password -->
       <el-form
+        v-if="!showTotpStep"
         ref="formRef"
         :model="form"
         label-position="top"
         @submit.prevent="handleLogin"
       >
         <el-form-item
-          label="Admin API Key"
-          prop="apiKey"
+          label="Username"
+          prop="username"
           :rules="[
-            { required: true, message: 'Please enter your API key', trigger: 'blur' }
+            { required: true, message: 'Please enter your username', trigger: 'blur' }
           ]"
         >
           <el-input
-            v-model="form.apiKey"
+            v-model="form.username"
+            placeholder="Enter your username"
+            size="large"
+            @keyup.enter="handleLogin"
+          />
+        </el-form-item>
+
+        <el-form-item
+          label="Password"
+          prop="password"
+          :rules="[
+            { required: true, message: 'Please enter your password', trigger: 'blur' }
+          ]"
+        >
+          <el-input
+            v-model="form.password"
             type="password"
-            placeholder="Enter your admin API key"
+            placeholder="Enter your password"
             show-password
             size="large"
             @keyup.enter="handleLogin"
@@ -38,7 +55,65 @@
             :loading="loading"
             @click="handleLogin"
           >
+            Continue
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <!-- Step 2: TOTP Verification -->
+      <el-form
+        v-else
+        ref="totpFormRef"
+        :model="form"
+        label-position="top"
+        @submit.prevent="handleVerifyTotp"
+      >
+        <el-alert
+          type="info"
+          :closable="false"
+          style="margin-bottom: 20px"
+        >
+          <template #title>
+            Enter the 6-digit code from your authenticator app
+          </template>
+        </el-alert>
+
+        <el-form-item
+          label="TOTP Code"
+          prop="totpCode"
+          :rules="[
+            { required: true, message: 'Please enter your TOTP code', trigger: 'blur' },
+            { pattern: /^\d{6}$/, message: 'TOTP code must be 6 digits', trigger: 'blur' }
+          ]"
+        >
+          <el-input
+            v-model="form.totpCode"
+            placeholder="000000"
+            maxlength="6"
+            size="large"
+            @keyup.enter="handleVerifyTotp"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button
+            type="primary"
+            size="large"
+            style="width: 100%"
+            :loading="loading"
+            @click="handleVerifyTotp"
+          >
             Login
+          </el-button>
+        </el-form-item>
+
+        <el-form-item>
+          <el-button
+            size="large"
+            style="width: 100%"
+            @click="goBackToLogin"
+          >
+            Back
           </el-button>
         </el-form-item>
       </el-form>
@@ -67,10 +142,15 @@ export default {
   setup() {
     const router = useRouter()
     const formRef = ref(null)
+    const totpFormRef = ref(null)
     const form = ref({
-      apiKey: ''
+      username: '',
+      password: '',
+      totpCode: ''
     })
     const loading = ref(false)
+    const showTotpStep = ref(false)
+    const sessionToken = ref(null)
 
     const handleLogin = async () => {
       if (!formRef.value) return
@@ -84,19 +164,21 @@ export default {
       loading.value = true
 
       try {
-        // Test the API key by making a request
-        const testApi = api.create()
-        testApi.defaults.headers.common['Authorization'] = `Bearer ${form.value.apiKey}`
+        // Step 1: Login with username and password
+        const response = await api.post('/auth/login', {
+          username: form.value.username,
+          password: form.value.password
+        })
 
-        await testApi.get('/dashboard')
-
-        // If successful, save the API key and redirect
-        login(form.value.apiKey)
-        ElMessage.success('Login successful')
-        router.push('/')
+        // Save session token and move to TOTP step
+        sessionToken.value = response.data.session_token
+        showTotpStep.value = true
+        ElMessage.success('Password verified. Please enter your TOTP code.')
       } catch (error) {
         if (error.response?.status === 401) {
-          ElMessage.error('Invalid API key')
+          ElMessage.error('Invalid username or password')
+        } else if (error.response?.status === 403) {
+          ElMessage.error('Account disabled')
         } else {
           ElMessage.error('Login failed. Please try again.')
         }
@@ -105,15 +187,59 @@ export default {
       }
     }
 
+    const handleVerifyTotp = async () => {
+      if (!totpFormRef.value) return
+
+      try {
+        await totpFormRef.value.validate()
+      } catch (error) {
+        return
+      }
+
+      loading.value = true
+
+      try {
+        // Step 2: Verify TOTP code
+        const response = await api.post('/auth/verify-totp', {
+          session_token: sessionToken.value,
+          totp_code: form.value.totpCode
+        })
+
+        // Save the authenticated session token and redirect
+        login(response.data.session_token)
+        ElMessage.success('Login successful')
+        router.push('/admin')
+      } catch (error) {
+        if (error.response?.status === 401) {
+          ElMessage.error('Invalid TOTP code. Please try again.')
+          form.value.totpCode = '' // Clear the code field
+        } else {
+          ElMessage.error('TOTP verification failed. Please try again.')
+        }
+      } finally {
+        loading.value = false
+      }
+    }
+
+    const goBackToLogin = () => {
+      showTotpStep.value = false
+      sessionToken.value = null
+      form.value.totpCode = ''
+    }
+
     const goToPublicDashboard = () => {
       router.push('/public')
     }
 
     return {
       formRef,
+      totpFormRef,
       form,
       loading,
+      showTotpStep,
       handleLogin,
+      handleVerifyTotp,
+      goBackToLogin,
       goToPublicDashboard
     }
   }

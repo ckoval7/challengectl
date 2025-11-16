@@ -13,11 +13,14 @@ import os
 import hashlib
 import yaml
 import json
-from datetime import datetime
-from typing import Dict, Any, List
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
 import uuid
 from collections import deque
 import threading
+import secrets
+import bcrypt
+import pyotp
 
 from database import Database
 
@@ -88,6 +91,11 @@ class ChallengeCtlAPI:
         self.log_buffer = deque(maxlen=500)
         self.buffer_lock = threading.Lock()
 
+        # Session management for admin authentication
+        # Format: {session_token: {'username': str, 'expires': datetime, 'totp_verified': bool}}
+        self.sessions = {}
+        self.sessions_lock = threading.Lock()
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -136,7 +144,7 @@ class ChallengeCtlAPI:
         return runner
 
     def require_api_key(self, f):
-        """Decorator to require API key authentication."""
+        """Decorator to require API key authentication (for runners only)."""
         @wraps(f)
         def decorated_function(*args, **kwargs):
             auth_header = request.headers.get('Authorization')
@@ -146,7 +154,7 @@ class ChallengeCtlAPI:
 
             api_key = auth_header[7:]  # Remove 'Bearer ' prefix
 
-            # Find runner_id or role for this API key
+            # Find runner_id for this API key
             runner_id = None
             for rid, key in self.api_keys.items():
                 if key == api_key:
@@ -163,6 +171,81 @@ class ChallengeCtlAPI:
 
         return decorated_function
 
+    def require_admin_auth(self, f):
+        """Decorator to require admin session authentication."""
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            auth_header = request.headers.get('Authorization')
+
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'Missing or invalid authorization header'}), 401
+
+            session_token = auth_header[7:]  # Remove 'Bearer ' prefix
+
+            # Check session validity
+            with self.sessions_lock:
+                session = self.sessions.get(session_token)
+
+                if not session:
+                    return jsonify({'error': 'Invalid or expired session'}), 401
+
+                # Check if session is expired
+                if datetime.now() > session['expires']:
+                    del self.sessions[session_token]
+                    return jsonify({'error': 'Session expired'}), 401
+
+                # Check if TOTP was verified
+                if not session.get('totp_verified', False):
+                    return jsonify({'error': 'TOTP verification required'}), 401
+
+                # Add username to request context
+                request.admin_username = session['username']
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    def create_session(self, username: str, totp_verified: bool = False) -> str:
+        """Create a new session token for a user."""
+        session_token = secrets.token_urlsafe(32)
+        expires = datetime.now() + timedelta(hours=24)
+
+        with self.sessions_lock:
+            self.sessions[session_token] = {
+                'username': username,
+                'expires': expires,
+                'totp_verified': totp_verified
+            }
+
+        return session_token
+
+    def update_session_totp(self, session_token: str) -> bool:
+        """Mark session as TOTP verified."""
+        with self.sessions_lock:
+            if session_token in self.sessions:
+                self.sessions[session_token]['totp_verified'] = True
+                return True
+            return False
+
+    def destroy_session(self, session_token: str) -> bool:
+        """Destroy a session."""
+        with self.sessions_lock:
+            if session_token in self.sessions:
+                del self.sessions[session_token]
+                return True
+            return False
+
+    def cleanup_expired_sessions(self):
+        """Remove expired sessions (called periodically)."""
+        now = datetime.now()
+        with self.sessions_lock:
+            expired = [token for token, session in self.sessions.items()
+                       if session['expires'] < now]
+            for token in expired:
+                del self.sessions[token]
+            if expired:
+                logger.info(f"Cleaned up {len(expired)} expired session(s)")
+
     def register_routes(self):
         """Register all API routes."""
 
@@ -173,6 +256,121 @@ class ChallengeCtlAPI:
                 'status': 'ok',
                 'timestamp': datetime.now().isoformat()
             })
+
+        # Authentication endpoints
+        @self.app.route('/api/auth/login', methods=['POST'])
+        def login():
+            """Authenticate with username and password, return session token."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            username = data.get('username')
+            password = data.get('password')
+
+            if not username or not password:
+                return jsonify({'error': 'Missing username or password'}), 400
+
+            # Get user from database
+            user = self.db.get_user(username)
+
+            if not user:
+                return jsonify({'error': 'Invalid credentials'}), 401
+
+            if not user.get('enabled'):
+                return jsonify({'error': 'Account disabled'}), 403
+
+            # Verify password
+            try:
+                password_hash = user['password_hash']
+                if not bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
+                    return jsonify({'error': 'Invalid credentials'}), 401
+            except Exception as e:
+                logger.error(f"Password verification error: {e}")
+                return jsonify({'error': 'Authentication failed'}), 500
+
+            # Create session (not yet TOTP verified)
+            session_token = self.create_session(username, totp_verified=False)
+
+            # Return session token and TOTP requirement
+            return jsonify({
+                'session_token': session_token,
+                'totp_required': True,
+                'username': username
+            }), 200
+
+        @self.app.route('/api/auth/verify-totp', methods=['POST'])
+        def verify_totp():
+            """Verify TOTP code and fully authenticate the session."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            session_token = data.get('session_token')
+            totp_code = data.get('totp_code')
+
+            if not session_token or not totp_code:
+                return jsonify({'error': 'Missing session_token or totp_code'}), 400
+
+            # Get session
+            with self.sessions_lock:
+                session = self.sessions.get(session_token)
+
+                if not session:
+                    return jsonify({'error': 'Invalid or expired session'}), 401
+
+                if datetime.now() > session['expires']:
+                    del self.sessions[session_token]
+                    return jsonify({'error': 'Session expired'}), 401
+
+                username = session['username']
+
+            # Get user's TOTP secret
+            user = self.db.get_user(username)
+
+            if not user:
+                return jsonify({'error': 'User not found'}), 401
+
+            totp_secret = user.get('totp_secret')
+
+            if not totp_secret:
+                return jsonify({'error': 'TOTP not configured for this user'}), 500
+
+            # Verify TOTP code
+            try:
+                totp = pyotp.TOTP(totp_secret)
+                if not totp.verify(totp_code, valid_window=1):
+                    return jsonify({'error': 'Invalid TOTP code'}), 401
+            except Exception as e:
+                logger.error(f"TOTP verification error: {e}")
+                return jsonify({'error': 'TOTP verification failed'}), 500
+
+            # Mark session as TOTP verified
+            if not self.update_session_totp(session_token):
+                return jsonify({'error': 'Failed to update session'}), 500
+
+            # Update last login timestamp
+            self.db.update_last_login(username)
+
+            logger.info(f"User {username} logged in successfully")
+
+            return jsonify({
+                'status': 'authenticated',
+                'session_token': session_token
+            }), 200
+
+        @self.app.route('/api/auth/logout', methods=['POST'])
+        def logout():
+            """Logout and destroy session."""
+            auth_header = request.headers.get('Authorization')
+
+            if auth_header and auth_header.startswith('Bearer '):
+                session_token = auth_header[7:]
+                self.destroy_session(session_token)
+
+            return jsonify({'status': 'logged out'}), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])
@@ -400,7 +598,7 @@ class ChallengeCtlAPI:
 
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_dashboard():
             """Get dashboard statistics and data."""
             stats = self.db.get_dashboard_stats()
@@ -417,7 +615,7 @@ class ChallengeCtlAPI:
             }), 200
 
         @self.app.route('/api/logs', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_logs():
             """Get recent log entries from in-memory buffer."""
             limit = request.args.get('limit', 500, type=int)
@@ -437,7 +635,7 @@ class ChallengeCtlAPI:
             }), 200
 
         @self.app.route('/api/runners', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_runners():
             """Get all registered runners."""
             runners = self.db.get_all_runners()
@@ -448,7 +646,7 @@ class ChallengeCtlAPI:
             return jsonify({'runners': runners}), 200
 
         @self.app.route('/api/runners/<runner_id>', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_runner_details(runner_id):
             """Get details for a specific runner."""
             runner = self.db.get_runner(runner_id)
@@ -460,7 +658,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Runner not found'}), 404
 
         @self.app.route('/api/runners/<runner_id>', methods=['DELETE'])
-        @self.require_api_key
+        @self.require_admin_auth
         def kick_runner(runner_id):
             """Remove/kick a runner."""
             success = self.db.mark_runner_offline(runner_id)
@@ -476,14 +674,14 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Runner not found'}), 404
 
         @self.app.route('/api/challenges', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_challenges():
             """Get all challenges."""
             challenges = self.db.get_all_challenges()
             return jsonify({'challenges': challenges}), 200
 
         @self.app.route('/api/challenges/<challenge_id>', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_challenge_details(challenge_id):
             """Get challenge details."""
             challenge = self.db.get_challenge(challenge_id)
@@ -494,7 +692,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
         @self.app.route('/api/challenges/<challenge_id>', methods=['PUT'])
-        @self.require_api_key
+        @self.require_admin_auth
         def update_challenge(challenge_id):
             """Update challenge configuration."""
             data = request.json
@@ -519,7 +717,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
         @self.app.route('/api/challenges/<challenge_id>/enable', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def enable_challenge(challenge_id):
             """Enable or disable a challenge."""
             data = request.json
@@ -533,7 +731,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
         @self.app.route('/api/challenges/<challenge_id>/trigger', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def trigger_challenge(challenge_id):
             """Manually trigger a challenge to transmit immediately."""
             # Update next_tx_time to now
@@ -554,7 +752,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
         @self.app.route('/api/challenges/reload', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def reload_challenges():
             """Reload challenges from configuration file."""
             try:
@@ -577,7 +775,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': str(e)}), 500
 
         @self.app.route('/api/transmissions', methods=['GET'])
-        @self.require_api_key
+        @self.require_admin_auth
         def get_transmissions():
             """Get transmission history."""
             limit = request.args.get('limit', 50, type=int)
@@ -585,7 +783,7 @@ class ChallengeCtlAPI:
             return jsonify({'transmissions': transmissions}), 200
 
         @self.app.route('/api/control/pause', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def pause_system():
             """Pause all transmissions."""
             self.db.set_system_state('paused', 'true')
@@ -598,7 +796,7 @@ class ChallengeCtlAPI:
             return jsonify({'status': 'paused'}), 200
 
         @self.app.route('/api/control/resume', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def resume_system():
             """Resume transmissions."""
             self.db.set_system_state('paused', 'false')
@@ -611,7 +809,7 @@ class ChallengeCtlAPI:
             return jsonify({'status': 'resumed'}), 200
 
         @self.app.route('/api/control/stop', methods=['POST'])
-        @self.require_api_key
+        @self.require_admin_auth
         def stop_system():
             """Stop all operations."""
             self.db.set_system_state('paused', 'true')
