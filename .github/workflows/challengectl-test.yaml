@@ -2,6 +2,9 @@ name: Challengectl test
 
 on:
   push:
+    branches:
+      - master
+      - challengectl-v2
 
 jobs:
   challengectl-test:

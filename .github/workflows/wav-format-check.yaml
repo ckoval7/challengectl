@@ -2,6 +2,8 @@ name: WAV format check
 
 on:
   push:
+    branches:
+      - master
     paths:
       - 'flags-archive/**'
 jobs:

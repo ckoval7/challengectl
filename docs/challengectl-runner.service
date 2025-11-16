@@ -1,0 +1,40 @@
+[Unit]
+Description=ChallengeCtl Runner - SDR Challenge Execution Client
+Documentation=https://github.com/ckoval7/challengectl
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=challengectl
+Group=plugdev
+
+# Working directory
+WorkingDirectory=/opt/challengectl/runner
+
+# Start runner
+ExecStart=/usr/bin/python3 /opt/challengectl/runner/runner.py \
+    --config /etc/challengectl/runner-config.yml
+
+# Restart policy
+Restart=always
+RestartSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=challengectl-runner
+
+# Security hardening (less restrictive due to SDR hardware access)
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+# Environment (if needed for GNU Radio)
+Environment="PYTHONUNBUFFERED=1"
+# Environment="GR_CONF_CONTROLPORT_ON=False"
+
+[Install]
+WantedBy=multi-user.target

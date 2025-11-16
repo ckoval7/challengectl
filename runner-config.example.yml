@@ -1,0 +1,92 @@
+---
+# ChallengeCtl Runner Configuration Example
+# Copy this file to runner-config.yml and customize for each runner
+
+runner:
+  # Unique identifier for this runner
+  # Must match an entry in server-config.yml api_keys
+  runner_id: "runner-1"
+
+  # Server URL (use HTTPS in production)
+  server_url: "https://192.168.1.100:8443"
+
+  # API key for authentication (must match server-config.yml)
+  # Generate with: python3 generate-api-key.py
+  api_key: "CHANGE-THIS-runner-1-key-abc123"
+
+  # TLS/SSL Configuration
+  # Path to CA certificate file for server verification
+  # Leave blank to use system CA certificates
+  ca_cert: ""
+
+  # Set to false to disable SSL verification (DEVELOPMENT ONLY!)
+  # In production, always use verify_ssl: true with proper certificates
+  verify_ssl: true
+
+  # Cache directory for downloaded challenge files (relative to runner directory)
+  cache_dir: "cache"
+
+  # Heartbeat interval (seconds) - how often to ping server
+  heartbeat_interval: 30
+
+  # Poll interval (seconds) - how often to request new tasks
+  poll_interval: 10
+
+# Radio/SDR Device Configuration
+# Same format as standalone challengectl-v2
+radios:
+  # Model defaults
+  models:
+  - model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: bladerf
+    rf_gain: 43
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+    # antenna: TX1  # Optional: specify antenna port
+
+  - model: usrp
+    rf_gain: 20
+    bias_t: false
+    rf_samplerate: 2000000
+    ppm: 0
+
+  # Individual device configuration
+  devices:
+  # HackRF Example (by index)
+  - name: 0
+    model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    frequency_limits:
+      - "144000000-148000000"  # 2m ham band
+      - "420000000-450000000"  # 70cm ham band
+
+  # BladeRF Example (by serial number)
+  # - name: "1234567890abcdef"
+  #   model: bladerf
+  #   rf_gain: 43
+  #   bias_t: true
+  #   antenna: TX1
+  #   frequency_limits:
+  #     - "144000000-148000000"
+  #     - "420000000-450000000"
+
+  # USRP Example
+  # - name: "type=b200"
+  #   model: usrp
+  #   rf_gain: 20
+  #   frequency_limits:
+  #     - "70000000-6000000000"  # Full range
+
+# Notes:
+# - Device names can be index numbers (0, 1, 2) or serial numbers/identifiers
+# - frequency_limits are optional - if not set, device can use any frequency
+# - bias_t and antenna settings are device-specific
+# - rf_gain and if_gain values depend on device type and setup

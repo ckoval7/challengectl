@@ -1,0 +1,70 @@
+---
+# Parameter definitions for each modulation type
+# Used to validate challenge configurations
+
+# Parameters that apply to ALL modulation types
+all:
+  mandatory:
+    - flag
+    - frequency
+  optional:
+    - min_delay
+    - max_delay
+
+# Amplitude Shift Keying
+ask:
+  mandatory: []
+  optional: []
+
+# Morse Code / Continuous Wave
+cw:
+  mandatory:
+    - speed
+  optional: []
+
+# Narrowband Frequency Modulation
+nbfm:
+  mandatory: []
+  optional:
+    - wav_samplerate
+
+# Single Sideband (LSB/USB)
+ssb:
+  mandatory:
+    - mode
+  optional:
+    - wav_samplerate
+
+# POCSAG Pager
+pocsag:
+  mandatory:
+    - capcode
+  optional: []
+
+# LRS Pager
+lrs:
+  mandatory: []
+  optional: []
+
+# FreeDV Digital Voice
+freedv:
+  mandatory:
+    - mode
+  optional:
+    - wav_samplerate
+    - text
+
+# Frequency Hopping Spread Spectrum
+fhss:
+  mandatory:
+    - seed
+    - hop_rate
+    - hop_time
+    - channel_spacing
+  optional:
+    - wav_samplerate
+
+# Spectrum Paint (image in spectrum)
+paint:
+  mandatory: []
+  optional: []
