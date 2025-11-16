@@ -66,6 +66,7 @@ class Database:
             ''')
 
             # Challenges table
+            # status can be: 'queued' (ready for assignment), 'assigned' (being transmitted)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS challenges (
                     challenge_id TEXT PRIMARY KEY,

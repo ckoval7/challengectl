@@ -161,6 +161,11 @@ radios:
 - Transmission history
 - Reload from config
 
+**Challenge Status Values:**
+- **queued** - Challenge is ready and waiting to be assigned to a runner
+- **assigned** - Challenge is currently assigned to a runner and being transmitted
+- **disabled** - Challenge is disabled (not in transmission queue)
+
 ### Logs
 - Live log streaming
 - Filter by level
