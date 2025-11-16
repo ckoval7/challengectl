@@ -1078,13 +1078,14 @@ class ChallengeCtlAPI:
             success, previous_status = self.db.update_heartbeat(runner_id)
 
             if success:
-                # Broadcast status change if runner came back online
-                if previous_status == 'offline':
-                    self.broadcast_event('runner_status', {
-                        'runner_id': runner_id,
-                        'status': 'online',
-                        'timestamp': datetime.now().isoformat()
-                    })
+                # Always broadcast heartbeat to update last_heartbeat timestamp in UI
+                heartbeat_time = datetime.now().isoformat()
+                self.broadcast_event('runner_status', {
+                    'runner_id': runner_id,
+                    'status': 'online',
+                    'last_heartbeat': heartbeat_time,
+                    'timestamp': heartbeat_time
+                })
 
                 return jsonify({'status': 'ok'}), 200
             else:

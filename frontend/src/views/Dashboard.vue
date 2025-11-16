@@ -219,6 +219,9 @@ export default {
         const runner = runners.value.find(r => r.runner_id === event.runner_id)
         if (runner) {
           runner.status = event.status
+          if (event.last_heartbeat) {
+            runner.last_heartbeat = event.last_heartbeat
+          }
         } else {
           loadDashboard()  // Reload if new runner
         }
