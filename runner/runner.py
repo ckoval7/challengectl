@@ -17,6 +17,7 @@ import subprocess
 import random
 import string
 import tempfile
+import signal
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
@@ -219,6 +220,26 @@ class ChallengeCtlRunner:
 
         except Exception as e:
             logger.error(f"Error sending heartbeat: {e}")
+
+    def signout(self):
+        """Sign out from server (graceful shutdown)."""
+        try:
+            logger.info(f"Signing out from server...")
+            response = self.session.post(
+                f"{self.server_url}/api/runners/{self.runner_id}/signout",
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                logger.info("Signed out successfully")
+                return True
+            else:
+                logger.warning(f"Signout failed: {response.status_code}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during signout: {e}")
+            return False
 
     def heartbeat_loop(self):
         """Background thread for sending heartbeats."""
@@ -609,6 +630,16 @@ class ChallengeCtlRunner:
         logger.info(f"Runner {self.runner_id} starting")
         logger.info(f"Server: {self.server_url}, Devices: {len(self.devices)}")
 
+        # Set up signal handlers for graceful shutdown
+        def signal_handler(signum, frame):
+            sig_name = signal.Signals(signum).name
+            logger.info(f"Received {sig_name} signal, shutting down...")
+            self.stop()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
         # Register with server
         if not self.register():
             logger.error("Failed to register with server. Exiting.")
@@ -637,6 +668,11 @@ class ChallengeCtlRunner:
         """Stop the runner."""
         logger.info("Stopping runner...")
         self.running = False
+
+        # Sign out from server
+        self.signout()
+
+        # Give threads time to finish
         time.sleep(1)
         logger.info("Runner stopped")
 

@@ -1091,6 +1091,28 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Runner not found'}), 404
 
+        @self.app.route('/api/runners/<runner_id>/signout', methods=['POST'])
+        @self.require_api_key
+        def signout(runner_id):
+            """Runner graceful signout."""
+            if request.runner_id != runner_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Mark runner as offline
+            success = self.db.mark_runner_offline(runner_id)
+
+            if success:
+                # Broadcast offline status
+                self.broadcast_event('runner_status', {
+                    'runner_id': runner_id,
+                    'status': 'offline',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                logger.info(f"Runner {runner_id} signed out gracefully")
+                return jsonify({'status': 'signed_out'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
         @self.app.route('/api/runners/<runner_id>/task', methods=['GET'])
         @self.require_api_key
         def get_task(runner_id):
