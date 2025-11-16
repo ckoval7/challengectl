@@ -138,6 +138,11 @@ class ChallengeCtlAPI:
         # Note: Sessions are now stored persistently in the database (sessions table)
         # This allows sessions to survive server restarts
 
+        # In-memory TOTP code tracking for replay protection
+        # Format: {(username, totp_code): timestamp}
+        self.used_totp_codes = {}
+        self.totp_codes_lock = threading.Lock()
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -319,6 +324,56 @@ class ChallengeCtlAPI:
         """
         return self.db.delete_user_sessions(username, except_token)
 
+    def is_totp_code_used(self, username: str, totp_code: str) -> bool:
+        """
+        Check if a TOTP code has already been used (in-memory tracking).
+
+        Args:
+            username: The username
+            totp_code: The TOTP code to check
+
+        Returns:
+            True if code was already used, False otherwise
+        """
+        with self.totp_codes_lock:
+            key = (username, totp_code)
+            return key in self.used_totp_codes
+
+    def mark_totp_code_used(self, username: str, totp_code: str) -> bool:
+        """
+        Mark a TOTP code as used (in-memory tracking).
+
+        Args:
+            username: The username
+            totp_code: The TOTP code to mark as used
+
+        Returns:
+            True if successfully marked, False if already used
+        """
+        with self.totp_codes_lock:
+            key = (username, totp_code)
+            if key in self.used_totp_codes:
+                return False
+            self.used_totp_codes[key] = datetime.now()
+            return True
+
+    def cleanup_expired_totp_codes(self):
+        """
+        Remove expired TOTP codes from in-memory tracking.
+        TOTP codes are valid for 30 seconds with a window of ±1 period (90 seconds total).
+        This is called periodically by the background scheduler.
+        """
+        with self.totp_codes_lock:
+            # Remove codes older than 2 minutes (well beyond the 90 second validity window)
+            threshold = datetime.now() - timedelta(seconds=120)
+            expired_keys = [key for key, timestamp in self.used_totp_codes.items() if timestamp < threshold]
+
+            for key in expired_keys:
+                del self.used_totp_codes[key]
+
+            if expired_keys:
+                logger.debug(f"Cleaned up {len(expired_keys)} expired TOTP code(s) from memory")
+
     def register_routes(self):
         """Register all API routes."""
 
@@ -495,11 +550,23 @@ class ChallengeCtlAPI:
             if not totp_secret:
                 return jsonify({'error': 'Invalid session'}), 401
 
+            # Check if TOTP code was already used (replay protection)
+            if self.is_totp_code_used(username, totp_code):
+                logger.warning(f"TOTP replay attempt detected for user {username} from {request.remote_addr}")
+                return jsonify({'error': 'Invalid TOTP code'}), 401
+
             # Verify TOTP code
             try:
                 totp = pyotp.TOTP(totp_secret)
                 if not totp.verify(totp_code, valid_window=1):
                     return jsonify({'error': 'Invalid TOTP code'}), 401
+
+                # Mark code as used (only after successful verification)
+                if not self.mark_totp_code_used(username, totp_code):
+                    # This shouldn't happen due to the check above, but handle it anyway
+                    logger.warning(f"TOTP code reuse detected for user {username} from {request.remote_addr}")
+                    return jsonify({'error': 'Invalid TOTP code'}), 401
+
             except Exception as e:
                 logger.error(f"TOTP verification error: {e}")
                 return jsonify({'error': 'TOTP verification failed'}), 500

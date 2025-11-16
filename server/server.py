@@ -84,6 +84,37 @@ class ChallengeCtlServer:
             replace_existing=True
         )
 
+        def cleanup_expired_sessions():
+            """Cleanup task to remove expired sessions from database."""
+            try:
+                self.api.cleanup_expired_sessions()
+            except Exception as e:
+                logger.error(f"Error in cleanup_expired_sessions: {e}")
+
+        def cleanup_expired_totp_codes():
+            """Cleanup task to remove expired TOTP codes from memory."""
+            try:
+                self.api.cleanup_expired_totp_codes()
+            except Exception as e:
+                logger.error(f"Error in cleanup_expired_totp_codes: {e}")
+
+        # Run session and TOTP cleanup every minute
+        self.scheduler.add_job(
+            cleanup_expired_sessions,
+            'interval',
+            seconds=60,
+            id='cleanup_sessions',
+            replace_existing=True
+        )
+
+        self.scheduler.add_job(
+            cleanup_expired_totp_codes,
+            'interval',
+            seconds=60,
+            id='cleanup_totp_codes',
+            replace_existing=True
+        )
+
         logger.info("Background cleanup tasks configured")
 
     def start(self, host='0.0.0.0', port=8443, debug=False):
