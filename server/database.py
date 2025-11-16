@@ -137,6 +137,28 @@ class Database:
                 )
             ''')
 
+            # Sessions table (for persistent session storage)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_token TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    expires TIMESTAMP NOT NULL,
+                    totp_verified BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+                )
+            ''')
+
+            # Create index on username for faster session lookups by user
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username)
+            ''')
+
+            # Create index on expires for faster cleanup of expired sessions
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires)
+            ''')
+
             # Create default admin user if no users exist
             cursor.execute('SELECT COUNT(*) as count FROM users')
             user_count = cursor.fetchone()['count']
@@ -720,6 +742,87 @@ class Database:
             ''', (username,))
             conn.commit()
             return cursor.rowcount > 0
+
+    # Session management methods
+
+    def create_session(self, session_token: str, username: str, expires: str, totp_verified: bool = False) -> bool:
+        """Create a new session in the database."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO sessions (session_token, username, expires, totp_verified)
+                VALUES (?, ?, ?, ?)
+            ''', (session_token, username, expires, 1 if totp_verified else 0))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_session(self, session_token: str) -> Optional[Dict]:
+        """Get a session by token."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT session_token, username, expires, totp_verified, created_at
+                FROM sessions
+                WHERE session_token = ?
+            ''', (session_token,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def update_session_totp(self, session_token: str) -> bool:
+        """Mark a session as TOTP verified."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE sessions
+                SET totp_verified = 1
+                WHERE session_token = ?
+            ''', (session_token,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_session(self, session_token: str) -> bool:
+        """Delete a specific session."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM sessions
+                WHERE session_token = ?
+            ''', (session_token,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_user_sessions(self, username: str, except_token: Optional[str] = None) -> int:
+        """
+        Delete all sessions for a user, optionally excluding one session.
+        Returns the number of sessions deleted.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if except_token:
+                cursor.execute('''
+                    DELETE FROM sessions
+                    WHERE username = ? AND session_token != ?
+                ''', (username, except_token))
+            else:
+                cursor.execute('''
+                    DELETE FROM sessions
+                    WHERE username = ?
+                ''', (username,))
+            conn.commit()
+            return cursor.rowcount
+
+    def cleanup_expired_sessions(self) -> int:
+        """Delete all expired sessions. Returns the number of sessions deleted."""
+        from datetime import datetime
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute('''
+                DELETE FROM sessions
+                WHERE expires < ?
+            ''', (now,))
+            conn.commit()
+            return cursor.rowcount
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get statistics for the dashboard."""

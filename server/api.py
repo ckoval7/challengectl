@@ -107,10 +107,8 @@ class ChallengeCtlAPI:
         self.transmission_buffer = deque(maxlen=50)
         self.transmission_lock = threading.Lock()
 
-        # Session management for admin authentication
-        # Format: {session_token: {'username': str, 'expires': datetime, 'totp_verified': bool}}
-        self.sessions = {}
-        self.sessions_lock = threading.Lock()
+        # Note: Sessions are now stored persistently in the database (sessions table)
+        # This allows sessions to survive server restarts
 
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
@@ -198,73 +196,62 @@ class ChallengeCtlAPI:
 
             session_token = auth_header[7:]  # Remove 'Bearer ' prefix
 
-            # Check session validity
-            with self.sessions_lock:
-                session = self.sessions.get(session_token)
+            # Check session validity (from database)
+            session = self.db.get_session(session_token)
 
-                if not session:
-                    return jsonify({'error': 'Invalid or expired session'}), 401
+            if not session:
+                return jsonify({'error': 'Invalid or expired session'}), 401
 
-                # Check if session is expired
-                if datetime.now() > session['expires']:
-                    del self.sessions[session_token]
-                    return jsonify({'error': 'Session expired'}), 401
+            # Check if session is expired
+            # Note: expires is stored as ISO format string in database
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                self.db.delete_session(session_token)
+                return jsonify({'error': 'Session expired'}), 401
 
-                # Check if TOTP was verified
-                if not session.get('totp_verified', False):
-                    return jsonify({'error': 'TOTP verification required'}), 401
+            # Check if TOTP was verified
+            if not session.get('totp_verified', False):
+                return jsonify({'error': 'TOTP verification required'}), 401
 
-                # Add username to request context
-                request.admin_username = session['username']
+            # Add username to request context
+            request.admin_username = session['username']
 
             return f(*args, **kwargs)
 
         return decorated_function
 
     def create_session(self, username: str, totp_verified: bool = False) -> str:
-        """Create a new session token for a user."""
+        """Create a new session token for a user (stored in database)."""
         session_token = secrets.token_urlsafe(32)
         expires = datetime.now() + timedelta(hours=24)
 
-        with self.sessions_lock:
-            self.sessions[session_token] = {
-                'username': username,
-                'expires': expires,
-                'totp_verified': totp_verified
-            }
+        # Store session in database instead of memory
+        self.db.create_session(
+            session_token=session_token,
+            username=username,
+            expires=expires.isoformat(),
+            totp_verified=totp_verified
+        )
 
         return session_token
 
     def update_session_totp(self, session_token: str) -> bool:
-        """Mark session as TOTP verified."""
-        with self.sessions_lock:
-            if session_token in self.sessions:
-                self.sessions[session_token]['totp_verified'] = True
-                return True
-            return False
+        """Mark session as TOTP verified (in database)."""
+        return self.db.update_session_totp(session_token)
 
     def destroy_session(self, session_token: str) -> bool:
-        """Destroy a session."""
-        with self.sessions_lock:
-            if session_token in self.sessions:
-                del self.sessions[session_token]
-                return True
-            return False
+        """Destroy a session (from database)."""
+        return self.db.delete_session(session_token)
 
     def cleanup_expired_sessions(self):
-        """Remove expired sessions (called periodically)."""
-        now = datetime.now()
-        with self.sessions_lock:
-            expired = [token for token, session in self.sessions.items()
-                       if session['expires'] < now]
-            for token in expired:
-                del self.sessions[token]
-            if expired:
-                logger.info(f"Cleaned up {len(expired)} expired session(s)")
+        """Remove expired sessions from database (called periodically)."""
+        count = self.db.cleanup_expired_sessions()
+        if count > 0:
+            logger.info(f"Cleaned up {count} expired session(s)")
 
     def invalidate_user_sessions(self, username: str, except_token: Optional[str] = None) -> int:
         """
-        Invalidate all sessions for a specific user.
+        Invalidate all sessions for a specific user (in database).
 
         Args:
             username: The username whose sessions should be invalidated
@@ -273,18 +260,7 @@ class ChallengeCtlAPI:
         Returns:
             Number of sessions invalidated
         """
-        with self.sessions_lock:
-            # Find all session tokens for this user
-            tokens_to_invalidate = [
-                token for token, session in self.sessions.items()
-                if session['username'] == username and token != except_token
-            ]
-
-            # Remove them
-            for token in tokens_to_invalidate:
-                del self.sessions[token]
-
-            return len(tokens_to_invalidate)
+        return self.db.delete_user_sessions(username, except_token)
 
     def register_routes(self):
         """Register all API routes."""
@@ -387,18 +363,19 @@ class ChallengeCtlAPI:
             if not session_token or not totp_code:
                 return jsonify({'error': 'Missing session_token or totp_code'}), 400
 
-            # Get session
-            with self.sessions_lock:
-                session = self.sessions.get(session_token)
+            # Get session from database
+            session = self.db.get_session(session_token)
 
-                if not session:
-                    return jsonify({'error': 'Invalid or expired session'}), 401
+            if not session:
+                return jsonify({'error': 'Invalid or expired session'}), 401
 
-                if datetime.now() > session['expires']:
-                    del self.sessions[session_token]
-                    return jsonify({'error': 'Session expired'}), 401
+            # Check if session is expired
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                self.db.delete_session(session_token)
+                return jsonify({'error': 'Session expired'}), 401
 
-                username = session['username']
+            username = session['username']
 
             # Get user's TOTP secret
             user = self.db.get_user(username)
