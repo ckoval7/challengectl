@@ -131,6 +131,8 @@ export default {
           enabled: challenge.enabled
         })
         ElMessage.success(`Challenge ${challenge.enabled ? 'enabled' : 'disabled'}`)
+        // Reload to ensure UI is in sync with database
+        await loadChallenges()
       } catch (error) {
         console.error('Error toggling challenge:', error)
         ElMessage.error('Failed to update challenge')

@@ -83,6 +83,7 @@ class ChallengeCtlAPI:
         self.db = db
 
         # Configuration
+        self.config_path = config_path
         self.config = self.load_config(config_path)
         self.api_keys = self.config.get('server', {}).get('api_keys', {})
         self.files_dir = files_dir
@@ -1024,7 +1025,7 @@ class ChallengeCtlAPI:
         def reload_challenges():
             """Reload challenges from configuration file."""
             try:
-                config = self.load_config('server-config.yml')
+                config = self.load_config(self.config_path)
                 challenges_config = config.get('challenges', [])
 
                 added = 0
