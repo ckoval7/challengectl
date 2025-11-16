@@ -262,6 +262,30 @@ class ChallengeCtlAPI:
             if expired:
                 logger.info(f"Cleaned up {len(expired)} expired session(s)")
 
+    def invalidate_user_sessions(self, username: str, except_token: Optional[str] = None) -> int:
+        """
+        Invalidate all sessions for a specific user.
+
+        Args:
+            username: The username whose sessions should be invalidated
+            except_token: Optional session token to exclude from invalidation (e.g., current session)
+
+        Returns:
+            Number of sessions invalidated
+        """
+        with self.sessions_lock:
+            # Find all session tokens for this user
+            tokens_to_invalidate = [
+                token for token, session in self.sessions.items()
+                if session['username'] == username and token != except_token
+            ]
+
+            # Remove them
+            for token in tokens_to_invalidate:
+                del self.sessions[token]
+
+            return len(tokens_to_invalidate)
+
     def register_routes(self):
         """Register all API routes."""
 
@@ -464,7 +488,12 @@ class ChallengeCtlAPI:
             # Clear password change requirement
             self.db.clear_password_change_required(username)
 
-            logger.info(f"User {username} changed their password")
+            # Invalidate all other sessions except the current one (for security)
+            auth_header = request.headers.get('Authorization')
+            current_token = auth_header[7:] if auth_header and auth_header.startswith('Bearer ') else None
+            invalidated_count = self.invalidate_user_sessions(username, except_token=current_token)
+
+            logger.info(f"User {username} changed their password (invalidated {invalidated_count} other session(s))")
 
             return jsonify({'status': 'password changed'}), 200
 
@@ -654,7 +683,10 @@ class ChallengeCtlAPI:
                 ''', (username,))
                 conn.commit()
 
-            logger.info(f"Password reset for user {username} by {request.admin_username}")
+            # Invalidate ALL sessions for this user (security: admin-initiated password reset)
+            invalidated_count = self.invalidate_user_sessions(username)
+
+            logger.info(f"Password reset for user {username} by {request.admin_username} (invalidated {invalidated_count} session(s))")
 
             return jsonify({'status': 'password_reset'}), 200
 
