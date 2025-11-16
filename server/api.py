@@ -424,6 +424,12 @@ class ChallengeCtlAPI:
             # Return generic error for: user not found, wrong password, OR disabled account
             # This prevents username enumeration
             if not user or not password_valid or not user.get('enabled'):
+                # Log failed login attempt for security monitoring
+                reason = 'user_not_found' if not user else ('wrong_password' if not password_valid else 'account_disabled')
+                logger.warning(
+                    f"SECURITY: Failed login attempt - username='{username}' ip={request.remote_addr} "
+                    f"reason={reason} user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                )
                 return jsonify({'error': 'Invalid credentials'}), 401
 
             # Check if user has TOTP configured
@@ -463,6 +469,12 @@ class ChallengeCtlAPI:
                     max_age=86400    # 24 hours
                 )
 
+                # Log successful password verification
+                logger.info(
+                    f"SECURITY: Password verified - username='{username}' ip={request.remote_addr} "
+                    f"totp_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                )
+
                 return response
             else:
                 # No TOTP configured - complete login immediately
@@ -477,7 +489,11 @@ class ChallengeCtlAPI:
                 # Check if initial setup is required
                 initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
 
-                logger.info(f"User {username} logged in (no TOTP configured)")
+                # Log successful login
+                logger.info(
+                    f"SECURITY: Successful login - username='{username}' ip={request.remote_addr} "
+                    f"totp_required=false user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                )
 
                 # Set httpOnly cookie for security (prevents XSS attacks)
                 response = make_response(jsonify({
@@ -552,19 +568,30 @@ class ChallengeCtlAPI:
 
             # Check if TOTP code was already used (replay protection)
             if self.is_totp_code_used(username, totp_code):
-                logger.warning(f"TOTP replay attempt detected for user {username} from {request.remote_addr}")
+                logger.warning(
+                    f"SECURITY: TOTP replay attempt - username='{username}' ip={request.remote_addr} "
+                    f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                )
                 return jsonify({'error': 'Invalid TOTP code'}), 401
 
             # Verify TOTP code
             try:
                 totp = pyotp.TOTP(totp_secret)
                 if not totp.verify(totp_code, valid_window=1):
+                    # Log failed TOTP verification
+                    logger.warning(
+                        f"SECURITY: Failed TOTP verification - username='{username}' ip={request.remote_addr} "
+                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                    )
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
                 # Mark code as used (only after successful verification)
                 if not self.mark_totp_code_used(username, totp_code):
                     # This shouldn't happen due to the check above, but handle it anyway
-                    logger.warning(f"TOTP code reuse detected for user {username} from {request.remote_addr}")
+                    logger.warning(
+                        f"SECURITY: TOTP code reuse detected - username='{username}' ip={request.remote_addr} "
+                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                    )
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
             except Exception as e:
@@ -578,7 +605,11 @@ class ChallengeCtlAPI:
             # Update last login timestamp
             self.db.update_last_login(username)
 
-            logger.info(f"User {username} logged in successfully")
+            # Log successful TOTP verification and login
+            logger.info(
+                f"SECURITY: Successful TOTP verification - username='{username}' ip={request.remote_addr} "
+                f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+            )
 
             # Check if password change is required
             password_change_required = user.get('password_change_required', False)
