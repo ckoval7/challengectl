@@ -47,9 +47,23 @@ class ServerLogHandler(logging.Handler):
         """Send log record to server."""
         if self.runner and hasattr(self.runner, 'send_log'):
             try:
+                msg = record.getMessage()
+
                 # Don't forward logs about log sending failures (avoid recursion)
-                if 'Failed to send log to server' not in record.getMessage():
-                    self.runner.send_log(record.levelname, record.getMessage())
+                if 'Failed to send log to server' in msg:
+                    return
+
+                # Filter out noisy HTTP request logs from urllib3/requests
+                if record.name in ('urllib3.connectionpool', 'requests'):
+                    return
+
+                # Filter out debug logs from our own HTTP operations
+                if 'Starting new HTTPS connection' in msg or \
+                   'Starting new HTTP connection' in msg or \
+                   'Resetting dropped connection' in msg:
+                    return
+
+                self.runner.send_log(record.levelname, msg)
             except Exception:
                 # Silently ignore errors to prevent recursion
                 pass
