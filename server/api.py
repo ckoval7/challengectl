@@ -1042,15 +1042,19 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         def trigger_challenge(challenge_id):
             """Manually trigger a challenge to transmit immediately."""
-            # Update next_tx_time to now
             challenge = self.db.get_challenge(challenge_id)
 
             if challenge:
+                # Clear timing so it's immediately available
+                with self.db.timing_lock:
+                    if challenge_id in self.db.challenge_timing:
+                        self.db.challenge_timing[challenge_id]['next_tx'] = datetime.now()
+
+                # Update status to queued
                 with self.db.get_connection() as conn:
                     conn.execute('''
                         UPDATE challenges
-                        SET next_tx_time = CURRENT_TIMESTAMP,
-                            status = 'queued'
+                        SET status = 'queued'
                         WHERE challenge_id = ?
                     ''', (challenge_id,))
                     conn.commit()

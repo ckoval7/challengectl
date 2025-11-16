@@ -21,6 +21,12 @@ class Database:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._local = threading.local()
+
+        # In-memory challenge transmission timing
+        # Format: {challenge_id: {'last_tx': datetime, 'next_tx': datetime}}
+        self.challenge_timing = {}
+        self.timing_lock = threading.Lock()
+
         self.init_database()
 
     @contextmanager
@@ -362,12 +368,24 @@ class Database:
                     SELECT * FROM challenges
                     WHERE status = 'queued'
                       AND enabled = 1
-                      AND (next_tx_time IS NULL OR next_tx_time <= CURRENT_TIMESTAMP)
-                    ORDER BY priority DESC, last_tx_time ASC NULLS FIRST
-                    LIMIT 1
+                    ORDER BY priority DESC
                 ''')
 
-                row = cursor.fetchone()
+                rows = cursor.fetchall()
+
+                # Filter by timing from in-memory tracking
+                now = datetime.now()
+                row = None
+                with self.timing_lock:
+                    for r in rows:
+                        cid = r['challenge_id']
+                        timing = self.challenge_timing.get(cid, {})
+                        next_tx = timing.get('next_tx')
+
+                        # Challenge is ready if no next_tx set or next_tx has passed
+                        if next_tx is None or next_tx <= now:
+                            row = r
+                            break
 
                 if row:
                     challenge = dict(row)
@@ -421,19 +439,26 @@ class Database:
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
+                now = datetime.now()
+                next_tx = now + timedelta(seconds=avg_delay)
 
-                # Update challenge status
+                # Update in-memory timing
+                with self.timing_lock:
+                    self.challenge_timing[challenge_id] = {
+                        'last_tx': now,
+                        'next_tx': next_tx
+                    }
+
+                # Update challenge status (no timing fields in DB)
                 cursor.execute('''
                     UPDATE challenges
                     SET status = 'queued',
                         assigned_to = NULL,
                         assigned_at = NULL,
                         assignment_expires = NULL,
-                        last_tx_time = CURRENT_TIMESTAMP,
-                        next_tx_time = datetime('now', '+' || ? || ' seconds'),
                         transmission_count = transmission_count + 1
                     WHERE challenge_id = ?
-                ''', (int(avg_delay), challenge_id))
+                ''', (challenge_id,))
 
                 conn.commit()
 
