@@ -326,6 +326,8 @@ class Database:
             if row:
                 result = dict(row)
                 result['config'] = json.loads(result['config'])
+                # Convert SQLite integer to boolean
+                result['enabled'] = bool(result['enabled'])
                 return result
             return None
 
@@ -338,6 +340,8 @@ class Database:
             for row in cursor.fetchall():
                 challenge = dict(row)
                 challenge['config'] = json.loads(challenge['config'])
+                # Convert SQLite integer to boolean
+                challenge['enabled'] = bool(challenge['enabled'])
                 challenges.append(challenge)
             return challenges
 
@@ -384,6 +388,8 @@ class Database:
 
                     # Parse config JSON
                     challenge['config'] = json.loads(challenge['config'])
+                    # Convert SQLite integer to boolean
+                    challenge['enabled'] = bool(challenge['enabled'])
 
                     logger.info(f"Assigned challenge {challenge['name']} to runner {runner_id}")
                     return challenge

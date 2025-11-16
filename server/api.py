@@ -992,9 +992,11 @@ class ChallengeCtlAPI:
             data = request.json
             enabled = data.get('enabled', True)
 
+            logger.info(f"Setting challenge {challenge_id} enabled={enabled}")
             success = self.db.enable_challenge(challenge_id, enabled)
 
             if success:
+                logger.info(f"Challenge {challenge_id} {'enabled' if enabled else 'disabled'} successfully")
                 return jsonify({'status': 'updated'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
