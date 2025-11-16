@@ -227,7 +227,7 @@ export default {
         recentTransmissions.value.unshift({
           started_at: event.timestamp,
           runner_id: event.runner_id,
-          challenge_name: event.challenge_id,
+          challenge_name: event.challenge_name,
           status: event.status,
           frequency: 0
         })

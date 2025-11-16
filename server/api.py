@@ -822,6 +822,10 @@ class ChallengeCtlAPI:
             # device_id = data.get('device_id', '')
             # frequency = data.get('frequency', 0)
 
+            # Get challenge name for broadcast
+            challenge = self.db.get_challenge(challenge_id)
+            challenge_name = challenge['name'] if challenge else challenge_id
+
             # Record transmission in history
             if success:
                 self.db.complete_challenge(challenge_id, runner_id, success, error_message)
@@ -830,6 +834,7 @@ class ChallengeCtlAPI:
             self.broadcast_event('transmission_complete', {
                 'runner_id': runner_id,
                 'challenge_id': challenge_id,
+                'challenge_name': challenge_name,
                 'status': 'success' if success else 'failed',
                 'error_message': error_message,
                 'timestamp': datetime.now().isoformat()
