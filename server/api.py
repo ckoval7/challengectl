@@ -727,9 +727,25 @@ class ChallengeCtlAPI:
                 self.destroy_session(session_token)
 
             # Clear both session and CSRF cookies
+            # NOTE: Cookie attributes must match exactly how they were set during login
+            # Otherwise browsers won't delete them
             response = make_response(jsonify({'status': 'logged out'}), 200)
-            response.set_cookie('session_token', '', expires=0, httponly=True, samesite=None)
-            response.set_cookie('csrf_token', '', expires=0, httponly=False, samesite=None)
+            response.set_cookie(
+                'session_token',
+                '',
+                httponly=True,
+                secure=False,    # Must match login cookie setting
+                samesite=None,
+                max_age=0        # Use max_age=0 to delete cookie (matches login style)
+            )
+            response.set_cookie(
+                'csrf_token',
+                '',
+                httponly=False,
+                secure=False,    # Must match login cookie setting
+                samesite=None,
+                max_age=0        # Use max_age=0 to delete cookie (matches login style)
+            )
 
             return response
 

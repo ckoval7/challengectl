@@ -144,10 +144,20 @@ export default {
       applyTheme()
     }
 
-    const handleLogout = () => {
-      logout()
-      ElMessage.success('Logged out successfully')
-      router.push('/public')
+    const handleLogout = async () => {
+      try {
+        // Call backend logout API to destroy session
+        await api.post('/auth/logout')
+        // Clear local auth state
+        logout()
+        ElMessage.success('Logged out successfully')
+        router.push('/public')
+      } catch (error) {
+        // Even if API call fails, clear local state
+        logout()
+        ElMessage.warning('Logged out (session may still be active)')
+        router.push('/public')
+      }
     }
 
     const pauseSystem = async () => {
