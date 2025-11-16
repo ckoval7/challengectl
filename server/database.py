@@ -7,7 +7,7 @@ Uses SQLite for simplicity with 2-3 runners.
 import sqlite3
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import threading
@@ -246,7 +246,7 @@ class Database:
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, datetime.now(), json.dumps(devices)))
+                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices)))
                 conn.commit()
                 logger.info(f"Registered runner: {runner_id} from {ip_address}")
                 return True
@@ -273,7 +273,7 @@ class Database:
                     UPDATE runners
                     SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
                     WHERE runner_id = ?
-                ''', (datetime.now(), runner_id))
+                ''', (datetime.now(timezone.utc), runner_id))
                 conn.commit()
                 return (cursor.rowcount > 0, previous_status)
             except Exception as e:
@@ -309,22 +309,35 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
-    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> int:
-        """Mark runners as offline if they haven't sent heartbeat within timeout."""
-        threshold = datetime.now() - timedelta(seconds=timeout_seconds)
+    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
+        """Mark runners as offline if they haven't sent heartbeat within timeout.
+
+        Returns:
+            list: List of runner IDs that were marked offline
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # First get the IDs of runners that will be marked offline
             cursor.execute('''
-                UPDATE runners
-                SET status = 'offline'
+                SELECT runner_id FROM runners
                 WHERE status = 'online'
                   AND last_heartbeat < ?
             ''', (threshold,))
-            conn.commit()
-            count = cursor.rowcount
-            if count > 0:
-                logger.warning(f"Marked {count} runner(s) as offline due to missed heartbeats")
-            return count
+            offline_runners = [row['runner_id'] for row in cursor.fetchall()]
+
+            # Now mark them offline
+            if offline_runners:
+                cursor.execute('''
+                    UPDATE runners
+                    SET status = 'offline'
+                    WHERE status = 'online'
+                      AND last_heartbeat < ?
+                ''', (threshold,))
+                conn.commit()
+                logger.warning(f"Marked {len(offline_runners)} runner(s) as offline due to missed heartbeats")
+
+            return offline_runners
 
     # Challenge management
     def add_challenge(self, challenge_id: str, name: str, config: Dict) -> bool:

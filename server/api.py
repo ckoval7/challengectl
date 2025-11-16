@@ -15,7 +15,7 @@ import os
 import hashlib
 import yaml
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 import uuid
 from collections import deque
@@ -1058,7 +1058,7 @@ class ChallengeCtlAPI:
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
                     'status': 'online',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
                 return jsonify({
@@ -1079,7 +1079,7 @@ class ChallengeCtlAPI:
 
             if success:
                 # Always broadcast heartbeat to update last_heartbeat timestamp in UI
-                heartbeat_time = datetime.now().isoformat()
+                heartbeat_time = datetime.now(timezone.utc).isoformat()
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
                     'status': 'online',
@@ -1302,7 +1302,7 @@ class ChallengeCtlAPI:
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
                     'status': 'offline',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
                 return jsonify({'status': 'removed'}), 200
             else:
