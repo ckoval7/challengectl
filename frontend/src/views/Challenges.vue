@@ -42,10 +42,10 @@
       >
         <template #default="scope">
           <el-tag
-            :type="scope.row.status === 'queued' ? 'success' : (scope.row.status === 'assigned' ? 'warning' : 'info')"
+            :type="!scope.row.enabled ? 'info' : (scope.row.status === 'queued' ? 'success' : (scope.row.status === 'assigned' ? 'warning' : 'info'))"
             size="small"
           >
-            {{ scope.row.status }}
+            {{ !scope.row.enabled ? 'disabled' : scope.row.status }}
           </el-tag>
         </template>
       </el-table-column>
