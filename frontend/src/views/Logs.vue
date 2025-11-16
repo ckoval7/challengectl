@@ -367,18 +367,16 @@ export default {
   }
 }
 
+/* Base styles - structural only, no colors */
 .log-entry {
   padding: 4px 0;
-  border-bottom: 1px solid #e4e7ed;
 }
 
 .log-timestamp {
-  color: #909399;
   margin-right: 10px;
 }
 
 .log-source {
-  color: #606266;
   margin-right: 10px;
   font-weight: bold;
 }
@@ -394,38 +392,8 @@ export default {
   font-weight: bold;
 }
 
-.log-level-debug {
-  background: #e4e7ed;
-  color: #606266;
-}
-
-.log-level-info {
-  background: #d9ecff;
-  color: #409eff;
-}
-
-.log-level-warning {
-  background: #fdf6ec;
-  color: #e6a23c;
-}
-
-.log-level-error {
-  background: #fef0f0;
-  color: #f56c6c;
-}
-
-.log-level-critical {
-  background: #f0e0e0;
-  color: #c03030;
-}
-
-.log-message {
-  color: #303133;
-}
-
 .log-empty {
   text-align: center;
   padding: 40px;
-  color: #909399;
 }
 </style>
