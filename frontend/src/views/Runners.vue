@@ -103,6 +103,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatDateTime } from '../utils/time'
 
 export default {
   name: 'Runners',
@@ -141,12 +142,6 @@ export default {
       }
     }
 
-    const formatTimestamp = (timestamp) => {
-      if (!timestamp) return 'Never'
-      const date = new Date(timestamp)
-      return date.toLocaleString()
-    }
-
     onMounted(() => {
       loadRunners()
 
@@ -158,7 +153,7 @@ export default {
     return {
       runners,
       kickRunner,
-      formatTimestamp
+      formatTimestamp: formatDateTime
     }
   }
 }

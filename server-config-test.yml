@@ -58,8 +58,9 @@ challenges:
     # Public dashboard visibility settings (optional)
     # Controls what information is shown on the public /public route
     public_view:
+      show_modulation: true     # Show modulation type (default: true)
       show_frequency: true      # Show frequency on public dashboard (default: true)
-      show_last_tx_time: true   # Show last transmission time (default: false)
+      show_last_tx_time: true   # Show last transmission time (default: true)
       show_active_status: true  # Show if currently transmitting (default: true)
 
   # CW (Morse Code) Example - Minimal public visibility
@@ -73,6 +74,7 @@ challenges:
     enabled: true
     # Example: Hide frequency and transmission times from public
     public_view:
+      show_modulation: false
       show_frequency: false
       show_last_tx_time: false
       show_active_status: false
@@ -87,7 +89,11 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
-    # No public_view section = uses defaults (show_frequency: true, show_last_tx_time: false, show_active_status: true)
+    public_view:
+      show_modulation: false
+      show_frequency: false
+      show_last_tx_time: true
+      show_active_status: false
 
   # ASK (Amplitude Shift Keying) Example
   - name: ASK_FLAG_1

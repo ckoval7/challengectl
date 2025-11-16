@@ -486,7 +486,8 @@ class Database:
                         assigned_to = NULL,
                         assigned_at = NULL,
                         assignment_expires = NULL,
-                        transmission_count = transmission_count + 1
+                        transmission_count = transmission_count + 1,
+                        last_tx_time = CURRENT_TIMESTAMP
                     WHERE challenge_id = ?
                 ''', (challenge_id,))
 

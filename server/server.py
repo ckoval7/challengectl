@@ -176,6 +176,52 @@ class ChallengeCtlServer:
         self.scheduler.start()
         logger.info("Background tasks started")
 
+        # Check if config and database are in sync
+        # Only run this check in the main process (not in Flask reloader's subprocess)
+        # Flask sets WERKZEUG_RUN_MAIN in the reloader's child process
+        is_reloader_process = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+
+        if not is_reloader_process or not debug:
+            sync_status = self.api.check_config_sync()
+
+            if sync_status.get('in_sync') is False:
+                # Concise log message for syslog
+                logger.warning(f"Configuration out of sync: {len(sync_status.get('new', []))} new, {len(sync_status.get('removed', []))} removed, {len(sync_status.get('updated', []))} updated challenges")
+
+                # Detailed console output
+                print("\n" + "="*60)
+                print("CONFIG OUT OF SYNC WARNING")
+                print("="*60)
+                print("The configuration file has changes not reflected in the database:")
+                print()
+
+                if sync_status['new']:
+                    print(f"  New challenges in config ({len(sync_status['new'])}):")
+                    for name in sync_status['new']:
+                        print(f"    - {name}")
+                    print()
+
+                if sync_status['removed']:
+                    print(f"  Challenges removed from config ({len(sync_status['removed'])}):")
+                    for name in sync_status['removed']:
+                        print(f"    - {name}")
+                    print()
+
+                if sync_status['updated']:
+                    print(f"  Challenges with updated config ({len(sync_status['updated'])}):")
+                    for name in sync_status['updated']:
+                        print(f"    - {name}")
+                    print()
+
+                print("RECOMMENDED ACTIONS:")
+                print("  1. Use the web UI: Go to Challenges page and click 'Reload from Config'")
+                print("  2. OR restart the server after reviewing your configuration file")
+                print("="*60 + "\n")
+            elif sync_status.get('in_sync') is True:
+                logger.info(f"Configuration in sync: {sync_status['total_config']} challenges")
+            elif sync_status.get('error'):
+                logger.error(f"Could not check config sync: {sync_status['error']}")
+
         # Handle shutdown gracefully
         def shutdown_handler(signum, frame):
             logger.info("Shutdown signal received")
@@ -376,6 +422,13 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
+    # Public dashboard visibility settings (optional)
+    # All default to true if not specified
+    public_view:
+      show_modulation: true       # Show modulation type
+      show_frequency: true        # Show frequency on public dashboard
+      show_last_tx_time: true     # Show last transmission time
+      show_active_status: true    # Show active/idle status
 
   - name: CW_MORSE_1
     frequency: 146450000
@@ -385,6 +438,12 @@ challenges:
     min_delay: 60
     max_delay: 90
     enabled: true
+    # Example: Hide frequency and modulation for mystery challenge
+    public_view:
+      show_modulation: false      # Hide modulation type
+      show_frequency: false       # Hide frequency
+      show_last_tx_time: true
+      show_active_status: true
 """
 
     with open(config_path, 'w') as f:

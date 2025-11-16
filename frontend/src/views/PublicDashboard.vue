@@ -15,6 +15,15 @@
       </div>
     </div>
 
+    <!-- WebSocket status indicator -->
+    <div
+      class="ws-status"
+      :class="{ connected: wsConnected, disconnected: !wsConnected }"
+      :title="wsConnected ? 'Live updates active' : 'Disconnected - attempting to reconnect'"
+    >
+      <div class="ws-dot" />
+    </div>
+
     <!-- Loading State -->
     <div
       v-if="loading"
@@ -64,17 +73,23 @@
           />
 
           <el-table-column
-            prop="modulation"
+            v-if="hasAnyModulationVisible"
             label="Modulation"
             width="120"
           >
             <template #default="scope">
-              <el-tag
-                size="small"
-                type="info"
-              >
-                {{ scope.row.modulation.toUpperCase() }}
-              </el-tag>
+              <span v-if="scope.row.modulation">
+                <el-tag
+                  size="small"
+                  type="info"
+                >
+                  {{ scope.row.modulation.toUpperCase() }}
+                </el-tag>
+              </span>
+              <span
+                v-else
+                class="hidden-field"
+              >—</span>
             </template>
           </el-table-column>
 
@@ -100,13 +115,19 @@
             width="180"
           >
             <template #default="scope">
-              <span v-if="scope.row.last_tx_time">
-                {{ formatTime(scope.row.last_tx_time) }}
+              <span v-if="scope.row.last_tx_time !== undefined">
+                <span v-if="scope.row.last_tx_time">
+                  {{ formatTime(scope.row.last_tx_time) }}
+                </span>
+                <span
+                  v-else
+                  class="no-data"
+                >Never</span>
               </span>
               <span
                 v-else
-                class="no-data"
-              >Never</span>
+                class="hidden-field"
+              >—</span>
             </template>
           </el-table-column>
 
@@ -130,32 +151,9 @@
               >—</span>
             </template>
           </el-table-column>
-
-          <el-table-column
-            label="Transmissions"
-            width="130"
-            align="center"
-          >
-            <template #default="scope">
-              <el-badge
-                :value="scope.row.transmission_count"
-                :max="999"
-                class="badge-count"
-              >
-                <el-icon :size="20">
-                  <Promotion />
-                </el-icon>
-              </el-badge>
-            </template>
-          </el-table-column>
         </el-table>
       </el-card>
 
-      <!-- Auto-refresh indicator -->
-      <div class="footer-info">
-        <el-icon><Refresh /></el-icon>
-        <span>Auto-refreshing every {{ refreshInterval / 1000 }} seconds</span>
-      </div>
     </div>
 
     <!-- Empty State -->
@@ -179,25 +177,27 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { io } from 'socket.io-client'
 import { api } from '../api'
-import { Loading, Refresh, Warning, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
+import config from '../config'
+import { Loading, Refresh, Warning, Moon, Sunny } from '@element-plus/icons-vue'
+import { formatTime } from '../utils/time'
 
 export default {
   name: 'PublicDashboard',
   components: {
     Loading,
     Refresh,
-    Warning,
-    Promotion
+    Warning
   },
   setup() {
     const challenges = ref([])
     const loading = ref(true)
     const error = ref(null)
     const lastUpdateTime = ref('')
-    const refreshInterval = ref(30000) // 30 seconds
-    let refreshTimer = null
     const isDark = ref(true) // Default to dark theme
+    const wsConnected = ref(false)
+    let socket = null
 
     // Conference info (could be loaded from config)
     const conference = ref({
@@ -228,6 +228,10 @@ export default {
     }
 
     // Computed properties to determine which columns to show
+    const hasAnyModulationVisible = computed(() => {
+      return challenges.value.some(c => c.modulation !== undefined)
+    })
+
     const hasAnyFrequencyVisible = computed(() => {
       return challenges.value.some(c => c.frequency_display !== undefined)
     })
@@ -256,47 +260,57 @@ export default {
       }
     }
 
-    const formatTime = (timestamp) => {
-      if (!timestamp) return 'N/A'
+    const connectWebSocket = () => {
+      // Connect to public WebSocket namespace (no authentication required)
+      const wsUrl = config.websocket?.url || window.location.origin
 
-      const date = new Date(timestamp)
-      const now = new Date()
-      const diffMs = now - date
-      const diffMins = Math.floor(diffMs / 60000)
+      socket = io(`${wsUrl}/public`, {
+        transports: ['websocket', 'polling']
+      })
 
-      if (diffMins < 1) return 'Just now'
-      if (diffMins < 60) return `${diffMins}m ago`
+      socket.on('connect', () => {
+        console.log('Public WebSocket connected')
+        wsConnected.value = true
+        error.value = null
+      })
 
-      const diffHours = Math.floor(diffMins / 60)
-      if (diffHours < 24) return `${diffHours}h ago`
+      socket.on('disconnect', (reason) => {
+        console.log('Public WebSocket disconnected. Reason:', reason)
+        wsConnected.value = false
+      })
 
-      const diffDays = Math.floor(diffHours / 24)
-      if (diffDays < 7) return `${diffDays}d ago`
+      socket.on('connect_error', (error) => {
+        console.error('Public WebSocket connection error:', error.message)
+        wsConnected.value = false
+        // Fall back to loading from API on connection error
+        if (challenges.value.length === 0) {
+          loadChallenges()
+        }
+      })
 
-      return date.toLocaleDateString()
+      socket.on('challenges_update', (data) => {
+        console.log('Challenges update received:', data)
+        challenges.value = data.challenges || []
+        lastUpdateTime.value = new Date().toLocaleTimeString()
+        loading.value = false
+      })
     }
 
-    const startAutoRefresh = () => {
-      refreshTimer = setInterval(() => {
-        loadChallenges()
-      }, refreshInterval.value)
-    }
-
-    const stopAutoRefresh = () => {
-      if (refreshTimer) {
-        clearInterval(refreshTimer)
-        refreshTimer = null
+    const disconnectWebSocket = () => {
+      if (socket) {
+        socket.disconnect()
+        socket = null
       }
     }
 
     onMounted(() => {
       initTheme()
-      loadChallenges()
-      startAutoRefresh()
+      loadChallenges() // Initial load
+      connectWebSocket() // Connect to real-time updates
     })
 
     onUnmounted(() => {
-      stopAutoRefresh()
+      disconnectWebSocket()
     })
 
     return {
@@ -304,13 +318,14 @@ export default {
       loading,
       error,
       lastUpdateTime,
-      refreshInterval,
       conference,
+      hasAnyModulationVisible,
       hasAnyFrequencyVisible,
       hasAnyLastTxVisible,
       hasAnyActiveStatusVisible,
       formatTime,
       isDark,
+      wsConnected,
       Moon,
       Sunny,
       toggleTheme
@@ -388,21 +403,41 @@ export default {
   font-style: italic;
 }
 
-.badge-count {
-  cursor: default;
-}
-
-.footer-info {
+/* WebSocket status indicator */
+.ws-status {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: var(--el-bg-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  margin-top: 20px;
-  padding: 15px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  color: #606266;
-  font-size: 0.9em;
+  cursor: help;
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
+
+.ws-status:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.ws-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.ws-status.connected .ws-dot {
+  background-color: #67c23a;
+  box-shadow: 0 0 8px rgba(103, 194, 58, 0.5);
+}
+
+.ws-status.disconnected .ws-dot {
+  background-color: #909399;
 }
 
 /* Mobile responsiveness */

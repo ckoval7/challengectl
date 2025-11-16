@@ -189,6 +189,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
+import { formatTime } from '../utils/time'
 
 export default {
   name: 'Dashboard',
@@ -256,12 +257,6 @@ export default {
       websocket.off('runner_status', handleWebSocketEvent)
       websocket.off('transmission_complete', handleWebSocketEvent)
     })
-
-    const formatTime = (timestamp) => {
-      if (!timestamp) return 'Never'
-      const date = new Date(timestamp)
-      return date.toLocaleTimeString()
-    }
 
     const formatFrequency = (hz) => {
       if (!hz) return 'N/A'

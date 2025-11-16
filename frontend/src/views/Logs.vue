@@ -76,6 +76,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { websocket } from '../websocket'
 import { api } from '../api'
+import { formatTime } from '../utils/time'
 
 export default {
   name: 'Logs',
@@ -138,11 +139,6 @@ export default {
 
     const clearLogs = () => {
       logs.value = []
-    }
-
-    const formatTime = (timestamp) => {
-      const date = new Date(timestamp)
-      return date.toLocaleTimeString()
     }
 
     onMounted(async () => {

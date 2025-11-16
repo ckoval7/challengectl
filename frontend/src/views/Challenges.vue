@@ -98,6 +98,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
+import { formatDateTime } from '../utils/time'
 
 export default {
   name: 'Challenges',
@@ -155,12 +156,6 @@ export default {
       }
     }
 
-    const formatTimestamp = (timestamp) => {
-      if (!timestamp) return 'Never'
-      const date = new Date(timestamp)
-      return date.toLocaleString()
-    }
-
     const formatFrequency = (hz) => {
       if (!hz) return 'N/A'
       return (hz / 1e6).toFixed(3) + ' MHz'
@@ -189,7 +184,7 @@ export default {
       reloadChallenges,
       toggleChallenge,
       triggerChallenge,
-      formatTimestamp,
+      formatTimestamp: formatDateTime,
       formatFrequency,
       getStatusType
     }

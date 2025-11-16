@@ -181,6 +181,46 @@ class ChallengeCtlAPI:
             logger.error(f"Error loading config: {e}")
             return {}
 
+    def check_config_sync(self) -> Dict:
+        """Check if database challenges are in sync with config file.
+
+        Returns:
+            Dict with 'in_sync' boolean and details about differences
+        """
+        try:
+            # Load challenges from config
+            config_challenges = {}
+            for challenge in self.config.get('challenges', []):
+                if isinstance(challenge, dict) and 'name' in challenge:
+                    config_challenges[challenge['name']] = challenge
+
+            # Get challenges from database
+            db_challenges = {c['name']: c for c in self.db.get_all_challenges()}
+
+            # Find differences
+            new_in_config = set(config_challenges.keys()) - set(db_challenges.keys())
+            removed_from_config = set(db_challenges.keys()) - set(config_challenges.keys())
+
+            # Check for updated challenges (same name but different config)
+            updated = []
+            for name in set(config_challenges.keys()) & set(db_challenges.keys()):
+                if config_challenges[name] != db_challenges[name]['config']:
+                    updated.append(name)
+
+            in_sync = not (new_in_config or removed_from_config or updated)
+
+            return {
+                'in_sync': in_sync,
+                'new': sorted(new_in_config),
+                'removed': sorted(removed_from_config),
+                'updated': sorted(updated),
+                'total_config': len(config_challenges),
+                'total_db': len(db_challenges)
+            }
+        except Exception as e:
+            logger.error(f"Error checking config sync: {e}")
+            return {'in_sync': None, 'error': str(e)}
+
     def _parse_runner_devices(self, runner: Dict) -> Dict:
         """Parse devices JSON field in runner dict.
 
@@ -946,53 +986,7 @@ class ChallengeCtlAPI:
         def get_public_challenges():
             """Get public view of enabled challenges with configurable visibility."""
             try:
-                all_challenges = self.db.get_all_challenges()
-
-                # Filter to only enabled challenges and remove sensitive information
-                public_challenges = []
-                for challenge in all_challenges:
-                    if not challenge.get('enabled'):
-                        continue
-
-                    config = challenge.get('config', {})
-
-                    # Build public challenge object with only safe fields
-                    public_challenge = {
-                        'challenge_id': challenge['challenge_id'],
-                        'name': challenge['name'],
-                        'modulation': config.get('modulation', 'unknown'),
-                        'transmission_count': challenge.get('transmission_count', 0),
-                    }
-
-                    # Conditionally add fields based on public view settings
-                    public_view = config.get('public_view', {})
-
-                    # Show frequency if enabled (default: True)
-                    if public_view.get('show_frequency', True):
-                        frequency = config.get('frequency')
-                        if frequency:
-                            # Format frequency in MHz for readability
-                            freq_mhz = frequency / 1_000_000
-                            public_challenge['frequency'] = frequency
-                            public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
-
-                    # Show last transmission time if enabled (default: False)
-                    if public_view.get('show_last_tx_time', False):
-                        last_tx = challenge.get('last_tx_time')
-                        if last_tx:
-                            public_challenge['last_tx_time'] = last_tx
-
-                    # Show active status if enabled (default: True)
-                    if public_view.get('show_active_status', True):
-                        # Check if currently assigned (actively transmitting)
-                        is_active = (challenge.get('status') == 'assigned' and
-                                     challenge.get('assigned_to') is not None)
-                        public_challenge['is_active'] = is_active
-
-                    public_challenges.append(public_challenge)
-
-                # Sort by name
-                public_challenges.sort(key=lambda x: x['name'])
+                public_challenges = self.get_public_challenges_data()
 
                 return jsonify({
                     'challenges': public_challenges,
@@ -1156,6 +1150,9 @@ class ChallengeCtlAPI:
                 'error_message': error_message,
                 'timestamp': timestamp
             })
+
+            # Broadcast updated public challenges to public dashboard
+            self.broadcast_public_challenges()
 
             return jsonify({'status': 'recorded'}), 200
 
@@ -1372,16 +1369,34 @@ class ChallengeCtlAPI:
                 config = self.load_config(self.config_path)
                 challenges_config = config.get('challenges', [])
 
+                # Get existing challenges by name
+                existing_challenges = {c['name']: c for c in self.db.get_all_challenges()}
+
                 added = 0
+                updated = 0
                 for challenge in challenges_config:
                     if isinstance(challenge, dict) and 'name' in challenge:
-                        challenge_id = str(uuid.uuid4())
-                        if self.db.add_challenge(challenge_id, challenge['name'], challenge):
-                            added += 1
+                        name = challenge['name']
+
+                        if name in existing_challenges:
+                            # Update existing challenge
+                            challenge_id = existing_challenges[name]['challenge_id']
+                            if self.db.update_challenge(challenge_id, challenge):
+                                updated += 1
+                                logger.info(f"Updated challenge: {name}")
+                        else:
+                            # Add new challenge
+                            challenge_id = str(uuid.uuid4())
+                            if self.db.add_challenge(challenge_id, name, challenge):
+                                added += 1
+
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
 
                 return jsonify({
                     'status': 'reloaded',
-                    'added': added
+                    'added': added,
+                    'updated': updated
                 }), 200
             except Exception as e:
                 logger.error(f"Error reloading challenges: {e}")
@@ -1592,6 +1607,26 @@ class ChallengeCtlAPI:
         def handle_disconnect():
             logger.info(f"WebSocket client disconnected: {request.sid}")
 
+        # Public namespace - no authentication required
+        @self.socketio.on('connect', namespace='/public')
+        def handle_public_connect():
+            """Handle public WebSocket connection (no authentication required)."""
+            logger.info(f"Public WebSocket client connected: {request.sid} from {request.remote_addr}")
+
+            # Send initial public challenge data
+            try:
+                challenges = self.get_public_challenges_data()
+                emit('challenges_update', {
+                    'challenges': challenges,
+                    'timestamp': datetime.now().isoformat()
+                }, namespace='/public')
+            except Exception as e:
+                logger.error(f"Error sending initial public challenges: {e}")
+
+        @self.socketio.on('disconnect', namespace='/public')
+        def handle_public_disconnect():
+            logger.info(f"Public WebSocket client disconnected: {request.sid}")
+
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
         try:
@@ -1601,6 +1636,70 @@ class ChallengeCtlAPI:
             })
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
+
+    def get_public_challenges_data(self):
+        """Build public challenges data with configurable visibility."""
+        all_challenges = self.db.get_all_challenges()
+
+        # Filter to only enabled challenges and remove sensitive information
+        public_challenges = []
+        for challenge in all_challenges:
+            if not challenge.get('enabled'):
+                continue
+
+            config = challenge.get('config', {})
+
+            # Build public challenge object with only safe fields
+            public_challenge = {
+                'challenge_id': challenge['challenge_id'],
+                'name': challenge['name'],
+            }
+
+            # Conditionally add fields based on public view settings
+            public_view = config.get('public_view', {})
+
+            # Show modulation if enabled (default: True)
+            if public_view.get('show_modulation', True):
+                public_challenge['modulation'] = config.get('modulation', 'unknown')
+
+            # Show frequency if enabled (default: True)
+            if public_view.get('show_frequency', True):
+                frequency = config.get('frequency')
+                if frequency:
+                    # Format frequency in MHz for readability
+                    freq_mhz = frequency / 1_000_000
+                    public_challenge['frequency'] = frequency
+                    public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
+
+            # Show last transmission time if enabled (default: True)
+            if public_view.get('show_last_tx_time', True):
+                # Always include the field if it should be shown (even if null)
+                # This allows frontend to distinguish between "never" and "hidden"
+                public_challenge['last_tx_time'] = challenge.get('last_tx_time')
+
+            # Show active status if enabled (default: True)
+            if public_view.get('show_active_status', True):
+                # Check if currently assigned (actively transmitting)
+                is_active = (challenge.get('status') == 'assigned' and
+                             challenge.get('assigned_to') is not None)
+                public_challenge['is_active'] = is_active
+
+            public_challenges.append(public_challenge)
+
+        # Sort by name
+        public_challenges.sort(key=lambda x: x['name'])
+        return public_challenges
+
+    def broadcast_public_challenges(self):
+        """Broadcast updated public challenge data to all public WebSocket clients."""
+        try:
+            challenges = self.get_public_challenges_data()
+            self.socketio.emit('challenges_update', {
+                'challenges': challenges,
+                'timestamp': datetime.now().isoformat()
+            }, namespace='/public')
+        except Exception as e:
+            logger.error(f"Error broadcasting public challenges: {e}")
 
     def run(self, host='0.0.0.0', port=8443, debug=False):
         """Run the API server.
