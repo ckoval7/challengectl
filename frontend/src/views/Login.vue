@@ -191,9 +191,7 @@ export default {
         }
       } catch (error) {
         if (error.response?.status === 401) {
-          ElMessage.error('Invalid username or password')
-        } else if (error.response?.status === 403) {
-          ElMessage.error('Account disabled')
+          ElMessage.error('Invalid credentials')
         } else if (error.response?.status === 429) {
           ElMessage.error('Too many login attempts. Please try again in 15 minutes.')
         } else {

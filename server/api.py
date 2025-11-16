@@ -316,20 +316,27 @@ class ChallengeCtlAPI:
             # Get user from database
             user = self.db.get_user(username)
 
-            if not user:
-                return jsonify({'error': 'Invalid credentials'}), 401
-
-            if not user.get('enabled'):
-                return jsonify({'error': 'Account disabled'}), 403
-
-            # Verify password
-            try:
+            # Always perform bcrypt check to prevent timing attacks that reveal user existence
+            # Use a dummy hash if user doesn't exist to maintain constant time
+            if user:
                 password_hash = user['password_hash']
-                if not bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
-                    return jsonify({'error': 'Invalid credentials'}), 401
+            else:
+                # Dummy hash to compare against (prevents timing attack on user enumeration)
+                # This ensures bcrypt work is done even for non-existent users
+                password_hash = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYuZx3U6jpe'
+
+            # Verify password (always runs regardless of user existence)
+            try:
+                password_valid = bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
             except Exception as e:
                 logger.error(f"Password verification error: {e}")
-                return jsonify({'error': 'Authentication failed'}), 500
+                return jsonify({'error': 'Invalid credentials'}), 401
+
+            # Check authentication after constant-time operations complete
+            # Return generic error for: user not found, wrong password, OR disabled account
+            # This prevents username enumeration
+            if not user or not password_valid or not user.get('enabled'):
+                return jsonify({'error': 'Invalid credentials'}), 401
 
             # Check if user has TOTP configured
             totp_secret = user.get('totp_secret')
@@ -397,12 +404,12 @@ class ChallengeCtlAPI:
             user = self.db.get_user(username)
 
             if not user:
-                return jsonify({'error': 'User not found'}), 401
+                return jsonify({'error': 'Invalid session'}), 401
 
             totp_secret = user.get('totp_secret')
 
             if not totp_secret:
-                return jsonify({'error': 'TOTP not configured for this user'}), 500
+                return jsonify({'error': 'Invalid session'}), 401
 
             # Verify TOTP code
             try:
