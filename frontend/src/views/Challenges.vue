@@ -107,7 +107,11 @@ export default {
     const loadChallenges = async () => {
       try {
         const response = await api.get('/challenges')
-        challenges.value = response.data.challenges || []
+        // Ensure enabled is a proper boolean
+        challenges.value = (response.data.challenges || []).map(c => ({
+          ...c,
+          enabled: Boolean(c.enabled)
+        }))
       } catch (error) {
         console.error('Error loading challenges:', error)
         ElMessage.error('Failed to load challenges')
