@@ -96,7 +96,7 @@ export default {
     const fetchLogs = async () => {
       loading.value = true
       try {
-        const response = await api.get('/api/logs')
+        const response = await api.get('/logs')
         const fetchedLogs = response.data.logs || []
 
         // Add fetched logs in reverse order (newest first)
