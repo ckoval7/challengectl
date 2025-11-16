@@ -194,6 +194,8 @@ export default {
           ElMessage.error('Invalid username or password')
         } else if (error.response?.status === 403) {
           ElMessage.error('Account disabled')
+        } else if (error.response?.status === 429) {
+          ElMessage.error('Too many login attempts. Please try again in 15 minutes.')
         } else {
           ElMessage.error('Login failed. Please try again.')
         }
@@ -234,6 +236,9 @@ export default {
       } catch (error) {
         if (error.response?.status === 401) {
           ElMessage.error('Invalid TOTP code. Please try again.')
+          form.value.totpCode = '' // Clear the code field
+        } else if (error.response?.status === 429) {
+          ElMessage.error('Too many TOTP verification attempts. Please try again in 15 minutes.')
           form.value.totpCode = '' // Clear the code field
         } else {
           ElMessage.error('TOTP verification failed. Please try again.')

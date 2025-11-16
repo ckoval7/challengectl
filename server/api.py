@@ -7,6 +7,8 @@ Handles runner communication, challenge distribution, and WebUI serving.
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 import os
@@ -78,6 +80,15 @@ class ChallengeCtlAPI:
 
         # Initialize SocketIO for real-time updates
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
+
+        # Initialize rate limiter for authentication endpoints
+        self.limiter = Limiter(
+            app=self.app,
+            key_func=get_remote_address,
+            default_limits=["200 per day", "50 per hour"],
+            storage_uri="memory://",
+            strategy="fixed-window"
+        )
 
         # Use provided database instance
         self.db = db
@@ -264,6 +275,7 @@ class ChallengeCtlAPI:
 
         # Authentication endpoints
         @self.app.route('/api/auth/login', methods=['POST'])
+        @self.limiter.limit("5 per 15 minutes")
         def login():
             """Authenticate with username and password, return session token."""
             data = request.json
@@ -330,6 +342,7 @@ class ChallengeCtlAPI:
                 }), 200
 
         @self.app.route('/api/auth/verify-totp', methods=['POST'])
+        @self.limiter.limit("5 per 15 minutes")
         def verify_totp():
             """Verify TOTP code and fully authenticate the session."""
             data = request.json
