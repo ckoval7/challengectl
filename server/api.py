@@ -116,10 +116,12 @@ class ChallengeCtlAPI:
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
 
         # Initialize rate limiter for authentication endpoints
+        # Note: No default limits - only specific endpoints (login, TOTP) are rate-limited
+        # to prevent brute force attacks. Runner endpoints need high frequency access.
         self.limiter = Limiter(
             app=self.app,
             key_func=get_remote_address,
-            default_limits=["200 per day", "50 per hour"],
+            default_limits=[],  # No default limits
             storage_uri="memory://",
             strategy="fixed-window"
         )
@@ -456,12 +458,14 @@ class ChallengeCtlAPI:
                 }), 200)
 
                 # Set secure httpOnly cookie for session token
+                # NOTE: Using samesite=None to allow WebSocket connections
+                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
                     secure=False,   # Set to True in production with HTTPS
-                    samesite='Lax', # CSRF protection
+                    samesite=None,  # Allow WebSocket connections (was 'Lax')
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -471,7 +475,7 @@ class ChallengeCtlAPI:
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
                     secure=False,    # Set to True in production with HTTPS
-                    samesite='Lax',  # CSRF protection
+                    samesite=None,   # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -510,12 +514,14 @@ class ChallengeCtlAPI:
                 }), 200)
 
                 # Set secure httpOnly cookie for session token
+                # NOTE: Using samesite=None to allow WebSocket connections
+                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
                     secure=False,   # Set to True in production with HTTPS
-                    samesite='Lax', # CSRF protection
+                    samesite=None,  # Allow WebSocket connections (was 'Lax')
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -525,7 +531,7 @@ class ChallengeCtlAPI:
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
                     secure=False,    # Set to True in production with HTTPS
-                    samesite='Lax',  # CSRF protection
+                    samesite=None,   # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -677,8 +683,8 @@ class ChallengeCtlAPI:
 
             # Clear both session and CSRF cookies
             response = make_response(jsonify({'status': 'logged out'}), 200)
-            response.set_cookie('session_token', '', expires=0, httponly=True, samesite='Lax')
-            response.set_cookie('csrf_token', '', expires=0, httponly=False, samesite='Lax')
+            response.set_cookie('session_token', '', expires=0, httponly=True, samesite=None)
+            response.set_cookie('csrf_token', '', expires=0, httponly=False, samesite=None)
 
             return response
 
@@ -1542,15 +1548,19 @@ class ChallengeCtlAPI:
             # Validate session authentication before allowing WebSocket connection
             session_token = request.cookies.get('session_token')
 
+            # Debug logging to help diagnose cookie issues
+            logger.debug(f"WebSocket connection attempt from {request.remote_addr}")
+            logger.debug(f"Cookies received: {list(request.cookies.keys())}")
+
             if not session_token:
-                logger.warning(f"WebSocket connection rejected: No session token from {request.remote_addr}")
+                logger.warning(f"WebSocket connection rejected: No session token from {request.remote_addr} (cookies: {list(request.cookies.keys())})")
                 return False  # Reject connection
 
             # Validate session
             session = self.db.get_session(session_token)
 
             if not session:
-                logger.warning(f"WebSocket connection rejected: Invalid session from {request.remote_addr}")
+                logger.warning(f"WebSocket connection rejected: Invalid session token from {request.remote_addr}")
                 return False  # Reject connection
 
             # Check if session is expired
@@ -1561,8 +1571,10 @@ class ChallengeCtlAPI:
                 return False  # Reject connection
 
             # Check if TOTP was verified (full authentication required)
-            if not session.get('totp_verified', False):
-                logger.warning(f"WebSocket connection rejected: TOTP not verified from {request.remote_addr}")
+            totp_verified = session.get('totp_verified', False)
+            logger.debug(f"Session totp_verified value: {totp_verified} (type: {type(totp_verified)})")
+            if not totp_verified:
+                logger.warning(f"WebSocket connection rejected: TOTP not verified (value={totp_verified}) from {request.remote_addr}")
                 return False  # Reject connection
 
             # Authentication successful

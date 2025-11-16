@@ -26,14 +26,18 @@ class WebSocketManager {
       this.connected = true
     })
 
-    this.socket.on('disconnect', () => {
-      console.log('WebSocket disconnected')
+    this.socket.on('disconnect', (reason) => {
+      console.log('WebSocket disconnected. Reason:', reason)
       this.connected = false
     })
 
     this.socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error (may need authentication):', error.message)
+      console.error('WebSocket connection error (may need authentication):', error.message, error)
       this.connected = false
+    })
+
+    this.socket.on('error', (error) => {
+      console.error('WebSocket error:', error)
     })
 
     this.socket.on('event', (data) => {

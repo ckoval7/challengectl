@@ -40,7 +40,9 @@ api.interceptors.response.use(
   response => response,
   error => {
     // Handle 401 Unauthorized errors (expired or invalid session)
-    if (error.response?.status === 401) {
+    // BUT: Don't redirect if we're just checking the session endpoint
+    // (the router guard will handle redirects based on validateSession result)
+    if (error.response?.status === 401 && !error.config.url.endsWith('/auth/session')) {
       console.warn('Session expired or unauthorized. Logging out...')
       logout()
       // Redirect to login page

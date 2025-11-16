@@ -7,13 +7,6 @@
       </p>
       <div class="header-controls">
         <el-button
-          type="primary"
-          class="login-button"
-          @click="goToLogin"
-        >
-          Admin Login
-        </el-button>
-        <el-button
           circle
           :icon="isDark ? Moon : Sunny"
           class="theme-toggle"
@@ -186,7 +179,6 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { Loading, Refresh, Warning, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
 
@@ -196,12 +188,9 @@ export default {
     Loading,
     Refresh,
     Warning,
-    Promotion,
-    Moon,
-    Sunny
+    Promotion
   },
   setup() {
-    const router = useRouter()
     const challenges = ref([])
     const loading = ref(true)
     const error = ref(null)
@@ -214,10 +203,6 @@ export default {
     const conference = ref({
       name: 'RF CTF Challenge Status'
     })
-
-    const goToLogin = () => {
-      router.push('/login')
-    }
 
     // Initialize theme from localStorage or default to dark
     const initTheme = () => {
@@ -258,7 +243,8 @@ export default {
     const loadChallenges = async () => {
       try {
         // Public endpoint - no authentication required
-        const response = await api.get('/api/public/challenges')
+        // Note: baseURL is already '/api', so we just need '/public/challenges'
+        const response = await api.get('/public/challenges')
         challenges.value = response.data.challenges || []
         lastUpdateTime.value = new Date().toLocaleTimeString()
         error.value = null
@@ -327,8 +313,7 @@ export default {
       isDark,
       Moon,
       Sunny,
-      toggleTheme,
-      goToLogin
+      toggleTheme
     }
   }
 }
@@ -356,14 +341,6 @@ export default {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.login-button {
-  /* Additional styling if needed */
-}
-
-.theme-toggle {
-  /* Theme toggle is now within header-controls */
 }
 
 .header h1 {

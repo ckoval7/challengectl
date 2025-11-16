@@ -130,6 +130,48 @@ class ChallengeCtlServer:
         logger.info("For TLS/HTTPS, use nginx reverse proxy (see DEPLOYMENT.md)")
         logger.info("="*60)
 
+        # Ensure system is not paused on startup
+        # Pausing is an operational control, not a persistent state
+        if self.db.get_system_state('paused', 'false') == 'true':
+            logger.info("System was paused - resuming on startup")
+            self.db.set_system_state('paused', 'false')
+
+        # Reset any stale challenge states on startup
+        # Challenges in 'assigned' or 'waiting' state should be requeued
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get IDs of challenges being reset
+            cursor.execute('''
+                SELECT challenge_id FROM challenges
+                WHERE status IN ('assigned', 'waiting')
+                  AND enabled = 1
+            ''')
+            reset_challenge_ids = [row['challenge_id'] for row in cursor.fetchall()]
+
+            # Reset database state
+            cursor.execute('''
+                UPDATE challenges
+                SET status = 'queued',
+                    assigned_to = NULL,
+                    assigned_at = NULL,
+                    assignment_expires = NULL
+                WHERE status IN ('assigned', 'waiting')
+                  AND enabled = 1
+            ''')
+            reset_count = cursor.rowcount
+            conn.commit()
+
+            # Clear in-memory timing state for reset challenges
+            if reset_challenge_ids:
+                with self.db.timing_lock:
+                    for cid in reset_challenge_ids:
+                        if cid in self.db.challenge_timing:
+                            del self.db.challenge_timing[cid]
+
+            if reset_count > 0:
+                logger.info(f"Reset {reset_count} challenge(s) to queued state on startup")
+
         # Start background scheduler
         self.scheduler.start()
         logger.info("Background tasks started")

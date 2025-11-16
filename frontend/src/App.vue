@@ -108,9 +108,7 @@ export default {
     Connection,
     Document,
     Notebook,
-    User,
-    Moon,
-    Sunny
+    User
   },
   setup() {
     const route = useRoute()
