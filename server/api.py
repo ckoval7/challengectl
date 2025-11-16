@@ -290,15 +290,39 @@ class ChallengeCtlAPI:
                 logger.error(f"Password verification error: {e}")
                 return jsonify({'error': 'Authentication failed'}), 500
 
-            # Create session (not yet TOTP verified)
-            session_token = self.create_session(username, totp_verified=False)
+            # Check if user has TOTP configured
+            totp_secret = user.get('totp_secret')
+            has_totp = totp_secret is not None and totp_secret != ''
 
-            # Return session token and TOTP requirement
-            return jsonify({
-                'session_token': session_token,
-                'totp_required': True,
-                'username': username
-            }), 200
+            if has_totp:
+                # Create session (not yet TOTP verified)
+                session_token = self.create_session(username, totp_verified=False)
+
+                # Return session token and TOTP requirement
+                return jsonify({
+                    'session_token': session_token,
+                    'totp_required': True,
+                    'username': username
+                }), 200
+            else:
+                # No TOTP configured - complete login immediately
+                session_token = self.create_session(username, totp_verified=True)
+
+                # Update last login timestamp
+                self.db.update_last_login(username)
+
+                # Check if initial setup is required
+                initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
+
+                logger.info(f"User {username} logged in (no TOTP configured)")
+
+                return jsonify({
+                    'status': 'authenticated',
+                    'session_token': session_token,
+                    'totp_required': False,
+                    'initial_setup_required': initial_setup_required,
+                    'username': username
+                }), 200
 
         @self.app.route('/api/auth/verify-totp', methods=['POST'])
         def verify_totp():
@@ -461,6 +485,11 @@ class ChallengeCtlAPI:
             # Create user
             if not self.db.create_user(username, password_hash, totp_secret):
                 return jsonify({'error': 'User already exists'}), 409
+
+            # Mark initial setup as complete if this is being done during initial setup
+            if self.db.get_system_state('initial_setup_required', 'false') == 'true':
+                self.db.set_system_state('initial_setup_required', 'false')
+                logger.info("Initial setup completed")
 
             # Generate TOTP provisioning URI
             totp = pyotp.TOTP(totp_secret)

@@ -8,6 +8,7 @@ import Users from './views/Users.vue'
 import PublicDashboard from './views/PublicDashboard.vue'
 import Login from './views/Login.vue'
 import ChangePassword from './views/ChangePassword.vue'
+import InitialSetup from './views/InitialSetup.vue'
 
 const routes = [
   {
@@ -23,6 +24,12 @@ const routes = [
     path: '/public',
     name: 'PublicDashboard',
     component: PublicDashboard
+  },
+  {
+    path: '/initial-setup',
+    name: 'InitialSetup',
+    component: InitialSetup,
+    meta: { requiresAuth: true }
   },
   {
     path: '/change-password',

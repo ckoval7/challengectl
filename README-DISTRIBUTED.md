@@ -24,32 +24,35 @@ python server.py
 python server.py
 ```
 
-### 2. First Login (Default Admin)
+### 2. Initial Setup (First Login)
 
-On first startup, the server automatically creates a default admin user:
+On first startup, the server automatically creates a default admin user with a **random password**.
 
-**Username:** `admin`
-**Password:** `changeme`
-
-The TOTP secret will be displayed in the server logs. Look for:
+Check the server logs for the credentials:
 
 ```
 ================================================================================
 DEFAULT ADMIN USER CREATED
 ================================================================================
 Username: admin
-Password: changeme
-TOTP Secret: XXXXX...
-Provisioning URI: otpauth://totp/...
+Password: <16-character random password>
+
+IMPORTANT: Log in with these credentials to create your admin account.
+You will be prompted to create a new user with TOTP 2FA on first login.
+After setup, you can delete this default admin account.
 ================================================================================
 ```
 
-**Setup Steps:**
-1. Copy the TOTP provisioning URI or secret from the logs
-2. Scan it with your authenticator app (Google Authenticator, Authy, etc.)
-3. Log in at `http://server-ip:8443/login`
-4. You'll be **forced to change the password** immediately
-5. Create additional users through the web UI (Users page)
+**Initial Setup Flow:**
+1. Log in at `http://server-ip:8443/login` with the default admin credentials from the logs
+2. You'll be redirected to the **Initial Setup** page
+3. Create your personal admin account:
+   - Choose your username
+   - Set a strong password (minimum 8 characters)
+   - Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
+   - Verify your TOTP setup by entering a code
+4. You're automatically logged in with your new account
+5. (Optional) Delete the default `admin` account from the Users page
 
 Server runs on `http://0.0.0.0:8443`
 

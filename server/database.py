@@ -136,29 +136,35 @@ class Database:
 
             if user_count == 0:
                 import bcrypt
-                import pyotp
+                import secrets
+                import string
 
-                # Create default admin with temporary password
-                default_password = "changeme"
+                # Create default admin with random password and no TOTP
+                # User will create their own account with TOTP on first login
+                alphabet = string.ascii_letters + string.digits
+                default_password = ''.join(secrets.choice(alphabet) for _ in range(16))
                 password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                totp_secret = pyotp.random_base32()
 
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, totp_secret, password_change_required)
-                    VALUES (?, ?, ?, 1)
-                ''', ('admin', password_hash, totp_secret))
+                    VALUES (?, ?, NULL, 0)
+                ''', ('admin', password_hash))
+
+                # Mark system as requiring initial setup
+                cursor.execute('''
+                    INSERT INTO system_state (key, value)
+                    VALUES ('initial_setup_required', 'true')
+                ''')
 
                 logger.warning("=" * 80)
                 logger.warning("DEFAULT ADMIN USER CREATED")
                 logger.warning("=" * 80)
                 logger.warning(f"Username: admin")
                 logger.warning(f"Password: {default_password}")
-                logger.warning(f"TOTP Secret: {totp_secret}")
                 logger.warning("")
-                logger.warning("IMPORTANT: Change the password immediately after first login!")
-                logger.warning("Scan this TOTP secret with your authenticator app:")
-                logger.warning(f"  Manual entry: {totp_secret}")
-                logger.warning(f"  Provisioning URI: otpauth://totp/ChallengeCtl:admin?secret={totp_secret}&issuer=ChallengeCtl")
+                logger.warning("IMPORTANT: Log in with these credentials to create your admin account.")
+                logger.warning("You will be prompted to create a new user with TOTP 2FA on first login.")
+                logger.warning("After setup, you can delete this default admin account.")
                 logger.warning("=" * 80)
 
             # Create indexes

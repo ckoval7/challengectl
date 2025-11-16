@@ -170,10 +170,25 @@ export default {
           password: form.value.password
         })
 
-        // Save session token and move to TOTP step
-        sessionToken.value = response.data.session_token
-        showTotpStep.value = true
-        ElMessage.success('Password verified. Please enter your TOTP code.')
+        // Check if TOTP is required
+        if (response.data.totp_required) {
+          // Save session token and move to TOTP step
+          sessionToken.value = response.data.session_token
+          showTotpStep.value = true
+          ElMessage.success('Password verified. Please enter your TOTP code.')
+        } else {
+          // No TOTP required - user logged in directly
+          login(response.data.session_token)
+
+          // Check if initial setup is required
+          if (response.data.initial_setup_required) {
+            ElMessage.info('Please create your admin account')
+            router.push('/initial-setup')
+          } else {
+            ElMessage.success('Login successful')
+            router.push('/admin')
+          }
+        }
       } catch (error) {
         if (error.response?.status === 401) {
           ElMessage.error('Invalid username or password')
