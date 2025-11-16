@@ -21,7 +21,7 @@ describe('Router', () => {
     const routes = router.getRoutes()
 
     const dashboard = routes.find(r => r.name === 'Dashboard')
-    expect(dashboard.path).toBe('/')
+    expect(dashboard.path).toBe('/admin')
 
     const runners = routes.find(r => r.name === 'Runners')
     expect(runners.path).toBe('/runners')
