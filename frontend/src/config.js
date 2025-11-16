@@ -9,11 +9,9 @@ const config = {
   // API configuration
   api: {
     // Base URL for API (empty string uses same host)
-    baseURL: '',
-
-    // API key for authentication
-    // In production, this should be set via environment variable or secure config
-    apiKey: import.meta.env.VITE_API_KEY || 'change-this-admin-key-xyz999'
+    baseURL: ''
+    // Note: Authentication uses httpOnly cookies for session tokens (see auth.js)
+    // API keys are only for runner authentication, not admin sessions
   },
 
   // WebSocket configuration

@@ -5,7 +5,7 @@ describe('Config Module', () => {
   it('should have api configuration', () => {
     expect(config.api).toBeDefined()
     expect(config.api.baseURL).toBeDefined()
-    expect(config.api.apiKey).toBeDefined()
+    // Note: Authentication now uses httpOnly cookies, not API keys
   })
 
   it('should have websocket configuration', () => {
@@ -32,10 +32,5 @@ describe('Config Module', () => {
     // Max log entries should be reasonable
     expect(config.ui.maxLogEntries).toBeGreaterThan(100)
     expect(config.ui.maxLogEntries).toBeLessThan(10000)
-  })
-
-  it('should use environment variables when available', () => {
-    // The config should support VITE_API_KEY env var
-    expect(typeof config.api.apiKey).toBe('string')
   })
 })

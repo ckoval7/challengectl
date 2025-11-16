@@ -5,7 +5,7 @@ describe('API Module', () => {
   it('should have API configuration', () => {
     expect(config.api).toBeDefined()
     expect(config.api.baseURL).toBeDefined()
-    expect(config.api.apiKey).toBeDefined()
+    // Note: Authentication now uses httpOnly cookies, not API keys in config
   })
 
   it('should export config object', () => {
