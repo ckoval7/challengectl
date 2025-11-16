@@ -848,6 +848,7 @@ class ChallengeCtlAPI:
 
             with self.transmission_lock:
                 self.transmission_buffer.appendleft(transmission)
+                logger.info(f"Added transmission to buffer. Buffer size: {len(self.transmission_buffer)}")
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
@@ -901,6 +902,7 @@ class ChallengeCtlAPI:
             # Get recent transmissions from in-memory buffer
             with self.transmission_lock:
                 recent_transmissions = list(self.transmission_buffer)
+                logger.debug(f"Dashboard: Returning {len(recent_transmissions)} transmissions from buffer")
 
                 # Calculate success rate from in-memory transmissions
                 if recent_transmissions:
