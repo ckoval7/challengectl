@@ -34,6 +34,22 @@
           />
         </el-select>
 
+        <el-select
+          v-model="sourceFilter"
+          placeholder="Filter by source"
+          style="width: 220px"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+        >
+          <el-option
+            v-for="source in uniqueSources"
+            :key="source"
+            :label="source"
+            :value="source"
+          />
+        </el-select>
+
         <el-input
           v-model="searchFilter"
           placeholder="Search logs..."
@@ -101,10 +117,21 @@ export default {
   setup() {
     const logs = ref([])
     const levelFilter = ref([])
+    const sourceFilter = ref([])
     const searchFilter = ref('')
     const autoScroll = ref(true)
     const logContainer = ref(null)
     const loading = ref(false)
+
+    const uniqueSources = computed(() => {
+      const sources = new Set()
+      logs.value.forEach(log => {
+        if (log.source) {
+          sources.add(log.source)
+        }
+      })
+      return Array.from(sources).sort()
+    })
 
     const filteredLogs = computed(() => {
       let result = logs.value
@@ -112,6 +139,11 @@ export default {
       // Filter by log levels
       if (levelFilter.value && levelFilter.value.length > 0) {
         result = result.filter(log => levelFilter.value.includes(log.level))
+      }
+
+      // Filter by sources (server/runners)
+      if (sourceFilter.value && sourceFilter.value.length > 0) {
+        result = result.filter(log => sourceFilter.value.includes(log.source))
       }
 
       // Filter by search text
@@ -189,7 +221,9 @@ export default {
     return {
       logs,
       filteredLogs,
+      uniqueSources,
       levelFilter,
+      sourceFilter,
       searchFilter,
       autoScroll,
       logContainer,
