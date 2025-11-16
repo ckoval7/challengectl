@@ -1397,9 +1397,38 @@ class ChallengeCtlAPI:
 
         @self.socketio.on('connect')
         def handle_connect():
-            logger.info(f"WebSocket client connected: {request.sid}")
+            """Handle WebSocket connection with authentication validation."""
+            # Validate session authentication before allowing WebSocket connection
+            session_token = request.cookies.get('session_token')
 
-            # Send initial state
+            if not session_token:
+                logger.warning(f"WebSocket connection rejected: No session token from {request.remote_addr}")
+                return False  # Reject connection
+
+            # Validate session
+            session = self.db.get_session(session_token)
+
+            if not session:
+                logger.warning(f"WebSocket connection rejected: Invalid session from {request.remote_addr}")
+                return False  # Reject connection
+
+            # Check if session is expired
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                self.db.delete_session(session_token)
+                logger.warning(f"WebSocket connection rejected: Expired session from {request.remote_addr}")
+                return False  # Reject connection
+
+            # Check if TOTP was verified (full authentication required)
+            if not session.get('totp_verified', False):
+                logger.warning(f"WebSocket connection rejected: TOTP not verified from {request.remote_addr}")
+                return False  # Reject connection
+
+            # Authentication successful
+            username = session['username']
+            logger.info(f"WebSocket client connected: {request.sid} (user: {username})")
+
+            # Send initial state to authenticated client
             stats = self.db.get_dashboard_stats()
             emit('initial_state', {
                 'stats': stats,

@@ -17,7 +17,8 @@ class WebSocketManager {
     const wsUrl = url || config.websocket.url
 
     this.socket = io(wsUrl, {
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      withCredentials: true  // Send cookies (session token) with WebSocket connection
     })
 
     this.socket.on('connect', () => {
@@ -27,6 +28,11 @@ class WebSocketManager {
 
     this.socket.on('disconnect', () => {
       console.log('WebSocket disconnected')
+      this.connected = false
+    })
+
+    this.socket.on('connect_error', (error) => {
+      console.error('WebSocket connection error (may need authentication):', error.message)
       this.connected = false
     })
 
