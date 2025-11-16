@@ -49,7 +49,7 @@
               Total Transmissions
             </div>
             <div class="stat-sublabel">
-              {{ stats.transmissions_last_hour || 0 }} Last Hour
+              All Time
             </div>
           </div>
         </el-card>
@@ -65,7 +65,7 @@
               Success Rate
             </div>
             <div class="stat-sublabel">
-              Last Hour
+              Recent Transmissions
             </div>
           </div>
         </el-card>
