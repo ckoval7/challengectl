@@ -421,7 +421,6 @@ class Database:
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
-                next_tx = datetime.now() + timedelta(seconds=avg_delay)
 
                 # Update challenge status
                 cursor.execute('''
@@ -431,10 +430,10 @@ class Database:
                         assigned_at = NULL,
                         assignment_expires = NULL,
                         last_tx_time = CURRENT_TIMESTAMP,
-                        next_tx_time = ?,
+                        next_tx_time = datetime('now', '+' || ? || ' seconds'),
                         transmission_count = transmission_count + 1
                     WHERE challenge_id = ?
-                ''', (next_tx, challenge_id))
+                ''', (int(avg_delay), challenge_id))
 
                 conn.commit()
 
