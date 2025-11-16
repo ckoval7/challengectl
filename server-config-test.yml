@@ -1,0 +1,150 @@
+---
+# ChallengeCtl Server Configuration Example
+# Copy this file to server-config.yml and customize for your deployment
+
+server:
+  bind: "0.0.0.0"
+  port: 8080
+
+  # API keys for runner authentication
+  # Each runner should have a unique API key
+  # Generate secure keys with: python3 generate-api-key.py --count 4
+  # Format: runner_id: api_key
+  api_keys:
+    # Runner API keys
+    runner-1: "CHANGE-THIS-runner-1-key-abc123"
+    runner-2: "CHANGE-THIS-runner-2-key-def456"
+    runner-3: "CHANGE-THIS-runner-3-key-ghi789"
+
+    # Admin API key for WebUI access
+    admin: "CHANGE-THIS-admin-key-xyz999"
+
+  # File storage settings
+  files_dir: "files"
+
+  # Runner heartbeat settings (seconds)
+  heartbeat_timeout: 90      # Mark runner offline after this many seconds
+  assignment_timeout: 300    # Requeue challenge after this many seconds (5 minutes)
+
+# Conference settings
+conference:
+  name: "ExampleCon 2025"
+  start: "2025-04-05 09:00:00 -5"
+  stop: "2025-04-07 18:00:00 -5"
+  timezone: "America/New_York"
+
+# Challenge definitions
+# Same format as standalone challengectl-v2 config
+challenges:
+  # Default delays that apply to all challenges unless overridden
+  - default_min_delay: 60  # Seconds
+    default_max_delay: 90  # Seconds
+
+  # NBFM Example - Full public visibility
+  - name: NBFM_FLAG_1
+    frequency: 146550000  # Hz (146.550 MHz)
+    modulation: nbfm
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    # Public dashboard visibility settings (optional)
+    # Controls what information is shown on the public /public route
+    public_view:
+      show_frequency: true      # Show frequency on public dashboard (default: true)
+      show_last_tx_time: true   # Show last transmission time (default: false)
+      show_active_status: true  # Show if currently transmitting (default: true)
+
+  # CW (Morse Code) Example - Minimal public visibility
+  - name: CW_MORSE_1
+    frequency: 146450000  # Hz (146.450 MHz)
+    modulation: cw
+    flag: 'CQ CQ CQ DE RFCTF K'
+    speed: 35  # WPM
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    # Example: Hide frequency and transmission times from public
+    public_view:
+      show_frequency: false
+      show_last_tx_time: false
+      show_active_status: false
+
+  # SSB (Single Sideband) Example - Default visibility (omit public_view to use defaults)
+  - name: SSB_FLAG_1
+    frequency: 146600000  # Hz (146.600 MHz)
+    modulation: ssb
+    mode: usb  # or 'lsb'
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    # No public_view section = uses defaults (show_frequency: true, show_last_tx_time: false, show_active_status: true)
+
+  # ASK (Amplitude Shift Keying) Example
+  - name: ASK_FLAG_1
+    frequency: 146700000  # Hz (146.700 MHz)
+    modulation: ask
+    flag: 'flag{this_is_ask_data}'
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # POCSAG Pager Example
+  - name: POCSAG_FLAG_1
+    frequency: 146800000  # Hz (146.800 MHz)
+    modulation: pocsag
+    flag: 'POCSAG message with flag'
+    capcode: 123456
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # FHSS (Frequency Hopping) Example
+  - name: FHSS_FLAG_1
+    frequency: 146550000  # Hz (base frequency)
+    modulation: fhss
+    flag: challenges/examples/example_voice.wav
+    channel_spacing: 10000  # Hz
+    hop_rate: 10  # hops per second
+    hop_time: 60  # seconds
+    seed: RFHS
+    wav_samplerate: 48000
+    min_delay: 120
+    max_delay: 180
+    enabled: true
+
+  # LRS Pager Example
+  - name: LRS_FLAG_1
+    frequency: 146900000  # Hz (146.900 MHz)
+    modulation: lrs
+    flag: '-s 10 -p 976 -pf 1'
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # Spectrum Paint Example
+  - name: PAINT_FLAG_1
+    frequency: 147000000  # Hz (147.000 MHz)
+    modulation: paint
+    flag: challenges/rfhs.bin  # Binary file for spectrum painting
+    min_delay: 120
+    max_delay: 180
+    enabled: true
+
+  # FreeDV Digital Voice Example
+  - name: FREEDV_FLAG_1
+    frequency: 147100000  # Hz (147.100 MHz)
+    modulation: freedv
+    mode: usb
+    flag: challenges/examples/example_voice.wav
+    text: 'FreeDV text message flag'  # Optional text transmission
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+# Note: Challenge files (WAV, etc.) should be placed in the server's files directory
+# or referenced with relative paths from the server directory

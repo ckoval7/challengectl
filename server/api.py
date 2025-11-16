@@ -848,7 +848,7 @@ class ChallengeCtlAPI:
 
             with self.transmission_lock:
                 self.transmission_buffer.appendleft(transmission)
-                logger.info(f"Added transmission to buffer. Buffer size: {len(self.transmission_buffer)}")
+                logger.debug(f"Added transmission to buffer. Buffer size: {len(self.transmission_buffer)}")
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
