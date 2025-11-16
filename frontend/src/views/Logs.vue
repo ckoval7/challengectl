@@ -257,15 +257,67 @@ export default {
   overflow-y: auto;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  background: #f5f7fa;
   padding: 10px;
   border-radius: 4px;
+}
+
+/* Light theme (default) */
+@media (prefers-color-scheme: light), (prefers-color-scheme: no-preference) {
+  .log-container {
+    background: #f5f7fa !important;
+  }
+
+  .log-entry {
+    border-bottom-color: #e4e7ed !important;
+  }
+
+  .log-timestamp {
+    color: #909399 !important;
+  }
+
+  .log-source {
+    color: #606266 !important;
+  }
+
+  .log-message {
+    color: #303133 !important;
+  }
+
+  .log-empty {
+    color: #909399 !important;
+  }
+
+  /* Light theme log level colors */
+  .log-level-debug {
+    background: #e4e7ed !important;
+    color: #606266 !important;
+  }
+
+  .log-level-info {
+    background: #d9ecff !important;
+    color: #409eff !important;
+  }
+
+  .log-level-warning {
+    background: #fdf6ec !important;
+    color: #e6a23c !important;
+  }
+
+  .log-level-error {
+    background: #fef0f0 !important;
+    color: #f56c6c !important;
+  }
+
+  .log-level-critical {
+    background: #f0e0e0 !important;
+    color: #c03030 !important;
+  }
 }
 
 /* Dark theme support */
 @media (prefers-color-scheme: dark) {
   .log-container {
-    background: #1a1a1a;
+    background: #1a1a1a !important;
   }
 
   .log-entry {
