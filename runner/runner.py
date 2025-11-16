@@ -676,6 +676,10 @@ class ChallengeCtlRunner:
         time.sleep(1)
         logger.info("Runner stopped")
 
+        # Flush all log handlers to ensure messages are written
+        for handler in logging.root.handlers:
+            handler.flush()
+
 
 def argument_parser():
     """Parse command line arguments."""
@@ -737,18 +741,30 @@ def main():
     # Convert log level string to logging constant
     log_level = getattr(logging, args.log_level)
 
-    # Reconfigure logging with file output
+    # Reconfigure logging with both file and console output
     # Clear existing handlers and reconfigure
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-    logging.basicConfig(
-        filename=log_file,
-        filemode='w',
-        level=log_level,
-        format=f'%(asctime)s challengectl-{runner_id}[%(process)d]: %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%dT%H:%M:%S'
-    )
+    # Create formatters
+    log_format = f'%(asctime)s challengectl-{runner_id}[%(process)d]: %(levelname)s: %(message)s'
+    date_format = '%Y-%m-%dT%H:%M:%S'
+    formatter = logging.Formatter(log_format, datefmt=date_format)
+
+    # File handler
+    file_handler = logging.FileHandler(log_file, mode='w')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+    logging.root.addHandler(file_handler)
+
+    # Console handler for important messages
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)  # Always show INFO and above on console
+    console_handler.setFormatter(formatter)
+    logging.root.addHandler(console_handler)
+
+    # Set root logger level
+    logging.root.setLevel(log_level)
 
     logging.info(f"Logging initialized at {args.log_level} level")
 
