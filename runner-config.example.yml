@@ -35,7 +35,7 @@ runner:
   # Spectrum Paint Pre-Challenge
   # Set to true to fire spectrum paint before each challenge
   # This matches the behavior of the original challengectl
-  spectrum_paint_before_challenge: false
+  spectrum_paint_before_challenge: true
 
 # Radio/SDR Device Configuration
 # Same format as standalone challengectl-v2

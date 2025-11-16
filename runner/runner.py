@@ -80,7 +80,7 @@ class ChallengeCtlRunner:
         self.cache_dir = self.config['runner'].get('cache_dir', 'cache')
         self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
-        self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', False)
+        self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', True)
 
         # TLS configuration
         self.ca_cert = self.config['runner'].get('ca_cert')
