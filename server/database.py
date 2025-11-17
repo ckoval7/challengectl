@@ -865,6 +865,18 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def update_session_expires(self, session_token: str, new_expires: str) -> bool:
+        """Update session expiry time (for sliding sessions)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE sessions
+                SET expires = ?
+                WHERE session_token = ?
+            ''', (new_expires, session_token))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def delete_session(self, session_token: str) -> bool:
         """Delete a specific session."""
         with self.get_connection() as conn:
@@ -897,11 +909,15 @@ class Database:
             return cursor.rowcount
 
     def cleanup_expired_sessions(self) -> int:
-        """Delete all expired sessions. Returns the number of sessions deleted."""
+        """Delete all expired sessions. Returns the number of sessions deleted.
+
+        SECURITY: Uses UTC timestamps for consistent timezone handling.
+        """
         from datetime import datetime
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().isoformat()
+            # Use UTC for consistent timezone handling
+            now = datetime.utcnow().isoformat()
             cursor.execute('''
                 DELETE FROM sessions
                 WHERE expires < ?

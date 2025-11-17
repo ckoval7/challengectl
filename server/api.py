@@ -349,14 +349,19 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             # Note: expires is stored as ISO format string in database
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
             # Check if TOTP was verified
             if not session.get('totp_verified', False):
                 return jsonify({'error': 'TOTP verification required'}), 401
+
+            # SECURITY: Sliding session - renew expiry on activity
+            # Extends session by 24 hours from now
+            self.renew_session(session_token)
 
             # Add username to request context
             request.admin_username = session['username']
@@ -366,9 +371,13 @@ class ChallengeCtlAPI:
         return decorated_function
 
     def create_session(self, username: str, totp_verified: bool = False) -> str:
-        """Create a new session token for a user (stored in database)."""
+        """Create a new session token for a user (stored in database).
+
+        SECURITY: Uses UTC timestamps to prevent timezone manipulation issues.
+        """
         session_token = secrets.token_urlsafe(32)
-        expires = datetime.now() + timedelta(hours=24)
+        # Use UTC to prevent timezone manipulation
+        expires = datetime.utcnow() + timedelta(hours=24)
 
         # Store session in database instead of memory
         self.db.create_session(
@@ -383,6 +392,15 @@ class ChallengeCtlAPI:
     def update_session_totp(self, session_token: str) -> bool:
         """Mark session as TOTP verified (in database)."""
         return self.db.update_session_totp(session_token)
+
+    def renew_session(self, session_token: str) -> bool:
+        """Renew session expiry (sliding session).
+
+        SECURITY: Extends session by 24 hours from current time on activity.
+        Uses UTC timestamps to prevent timezone manipulation.
+        """
+        new_expires = datetime.utcnow() + timedelta(hours=24)
+        return self.db.update_session_expires(session_token, new_expires.isoformat())
 
     def destroy_session(self, session_token: str) -> bool:
         """Destroy a session (from database)."""
@@ -727,14 +745,19 @@ class ChallengeCtlAPI:
                 return jsonify({'authenticated': False, 'error': 'Invalid session'}), 401
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
 
             # Check if TOTP was verified (required for full authentication)
             if not session.get('totp_verified', False):
                 return jsonify({'authenticated': False, 'error': 'TOTP verification required'}), 401
+
+            # SECURITY: Sliding session - renew expiry on session check
+            # This is called on page refresh and navigation
+            self.renew_session(session_token)
 
             # Session is valid
             username = session['username']
