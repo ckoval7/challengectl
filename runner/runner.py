@@ -775,22 +775,17 @@ def main():
     date_format = '%Y-%m-%dT%H:%M:%S'
     formatter = logging.Formatter(log_format, datefmt=date_format)
 
-    # File handler
+    # File handler (only log to file, use print() for user-facing messages)
     file_handler = logging.FileHandler(log_file, mode='w')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
     logging.root.addHandler(file_handler)
 
-    # Console handler for important messages
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)  # Always show INFO and above on console
-    console_handler.setFormatter(formatter)
-    logging.root.addHandler(console_handler)
-
     # Set root logger level
     logging.root.setLevel(log_level)
 
     logging.info(f"Logging initialized at {args.log_level} level")
+    print(f"Logging to {log_file}")
 
     # Create and start runner
     runner = ChallengeCtlRunner(args.config)
