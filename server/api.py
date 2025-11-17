@@ -234,7 +234,7 @@ class ChallengeCtlAPI:
             }
         except Exception as e:
             logger.error(f"Error checking config sync: {e}")
-            return {'in_sync': None, 'error': str(e)}
+            return {'in_sync': None, 'error': 'Failed to check configuration sync'}
 
     def _parse_runner_devices(self, runner: Dict) -> Dict:
         """Parse devices JSON field in runner dict.
@@ -1531,7 +1531,7 @@ class ChallengeCtlAPI:
                 }), 200
             except Exception as e:
                 logger.error(f"Error reloading challenges: {e}")
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': 'Failed to reload challenges'}), 500
 
         @self.app.route('/api/transmissions', methods=['GET'])
         @self.require_admin_auth
