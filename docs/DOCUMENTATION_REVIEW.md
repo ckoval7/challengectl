@@ -106,30 +106,6 @@ def cleanup_stale_assignments(self, timeout_minutes: int = 5) -> int:
 
 **Observation**: When an assignment times out, it goes to 'waiting' (respects delay timer) rather than immediately to 'queued'. This is actually documented correctly but worth noting explicitly.
 
-### 4. Stop System Behavior
-
-**Status**: ✅ FIXED in previous update
-
-The documentation now correctly states that Stop:
-- Pauses the system
-- Requeues all assigned challenges (to 'queued', not 'waiting')
-- Does NOT shut down the server
-
-**Actual code** (api.py:1597-1621):
-```python
-def stop_system():
-    self.db.set_system_state('paused', 'true')
-    # Requeue all assigned challenges
-    conn.execute('''
-        UPDATE challenges
-        SET status = 'queued',  # Goes directly to queued, bypassing delay
-            assigned_to = NULL,
-            assigned_at = NULL,
-            assignment_expires = NULL
-        WHERE status = 'assigned'
-    ''')
-```
-
 ## Previously Fixed Issues
 
 ### ✅ 1. Database Schema (FIXED)
