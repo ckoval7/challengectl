@@ -349,6 +349,18 @@ Displays all admin users with:
 
 System controls affect the entire ChallengeCtl server and all runners.
 
+### Accessing System Controls
+
+System control buttons are located in the **header bar** at the top of every page:
+
+- **Pause button**: Visible when system is running normally
+- **Resume button**: Visible when system is paused (replaces Pause button)
+- **Stop button**: Always visible
+
+The Stop button includes a confirmation dialog to prevent accidental use:
+- Message: "This will stop all transmissions immediately. Continue?"
+- You must click "Stop All" to confirm the action
+
 ### Pause vs Stop vs Disable
 
 Understanding the differences between these operations is critical:

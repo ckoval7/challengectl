@@ -238,3 +238,91 @@ Confirmed by code review:
 - ✅ Cleanup intervals match documentation
 - ✅ Database schema matches code
 - ✅ API endpoints match route definitions
+
+## Runner and Frontend Review
+
+### Runner Implementation (runner/runner.py)
+
+**Verified Correct**:
+- ✅ Heartbeat interval: Default 30 seconds (configurable)
+- ✅ Cache directory: Default 'cache' (configurable)
+- ✅ API key authentication via X-API-Key header
+- ✅ File caching by SHA-256 hash
+- ✅ SSL/TLS verification configurable
+- ✅ Spectrum paint before challenge (configurable, default true)
+- ✅ Device configuration loaded from config file
+
+**Discrepancies Found**:
+
+### 5. Runner Poll Interval (Architecture.md)
+
+**Documentation claims** (Architecture.md line 136):
+```
+3. **Polls for tasks** every 5 seconds
+```
+
+**Actual implementation** (runner/runner.py:83):
+```python
+self.poll_interval = self.config['runner'].get('poll_interval', 10)
+```
+
+**Reality**: Runner polls every **10 seconds** by default (not 5), and this is configurable via `runner.poll_interval` in config.
+
+**Impact**: Architecture.md and potentially Quick-Start.md documentation is incorrect.
+
+### Frontend Implementation (frontend/src/)
+
+**Verified Correct**:
+- ✅ Initial setup wizard exists (views/InitialSetup.vue)
+- ✅ Dashboard with statistics (views/Dashboard.vue)
+- ✅ Users management page (views/Users.vue)
+- ✅ Runners management page (views/Runners.vue)
+- ✅ Challenges management page (views/Challenges.vue)
+- ✅ Logs viewer (views/Logs.vue)
+- ✅ Public dashboard (views/PublicDashboard.vue)
+- ✅ Vue.js with Element Plus UI framework
+- ✅ WebSocket for real-time updates
+- ✅ Session-based authentication
+- ✅ TOTP two-factor authentication flow
+- ✅ Dark mode support
+
+**System Controls** (App.vue:163-203):
+- ✅ Pause button: Calls `/api/control/pause`
+- ✅ Resume button: Calls `/api/control/resume`, shown when system paused
+- ✅ Stop button: Calls `/api/control/stop`, shows confirmation dialog
+- ✅ Stop confirmation message: "This will stop all transmissions immediately"
+- ✅ Buttons located in header bar (not Dashboard page)
+- ✅ Stop sets `systemPaused.value = true` (behaves like pause after stopping)
+
+**Missing from Documentation**:
+
+### 6. System Control Button Locations
+
+**Web Interface Guide** does not specify **where** the Pause/Resume/Stop buttons are located.
+
+**Actual location** (App.vue):
+- Buttons are in the **header bar** at the top of every page
+- Resume button only visible when system is paused
+- Stop button always visible
+- Pause button visible when system not paused
+
+**Recommendation**: Add section to Web Interface Guide explaining header controls.
+
+### 7. Stop Button Confirmation Dialog
+
+**Web Interface Guide** does not mention the confirmation dialog for Stop.
+
+**Actual behavior** (App.vue:185-193):
+```javascript
+await ElMessageBox.confirm(
+  'This will stop all transmissions immediately. Continue?',
+  'Stop All Transmissions',
+  {
+    confirmButtonText: 'Stop All',
+    cancelButtonText: 'Cancel',
+    type: 'error'
+  }
+)
+```
+
+**Recommendation**: Document that Stop requires confirmation to prevent accidental use.

@@ -132,8 +132,8 @@ These tasks ensure system reliability by automatically detecting and recovering 
 Each runner is a long-running Python process that:
 
 1. **Registers** with the server using its API key
-2. **Sends heartbeats** every 30 seconds to indicate it's alive
-3. **Polls for tasks** every 5 seconds
+2. **Sends heartbeats** every 30 seconds to indicate it's alive (configurable)
+3. **Polls for tasks** every 10 seconds by default (configurable)
 4. **Downloads files** needed for challenges (cached locally)
 5. **Executes transmissions** using GNU Radio and SDR hardware
 6. **Reports completion** or errors back to the server
