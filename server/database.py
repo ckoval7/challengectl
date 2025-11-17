@@ -7,7 +7,7 @@ Uses SQLite for simplicity with 2-3 runners.
 import sqlite3
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import threading
@@ -60,6 +60,7 @@ class Database:
                     hostname TEXT,
                     ip_address TEXT,
                     status TEXT DEFAULT 'offline',
+                    enabled BOOLEAN DEFAULT 1,
                     last_heartbeat TIMESTAMP,
                     devices JSON,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -211,6 +212,14 @@ class Database:
                 print("After setup, you can delete this default admin account.", flush=True)
                 print("=" * 80 + "\n", flush=True)
 
+            # Migrations for existing databases
+            # Add enabled column to runners table if it doesn't exist
+            cursor.execute("PRAGMA table_info(runners)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'enabled' not in columns:
+                logger.info("Adding 'enabled' column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
+
             # Create indexes
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_challenges_status
@@ -246,7 +255,7 @@ class Database:
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, datetime.now(), json.dumps(devices)))
+                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices)))
                 conn.commit()
                 logger.info(f"Registered runner: {runner_id} from {ip_address}")
                 return True
@@ -254,21 +263,31 @@ class Database:
                 logger.error(f"Error registering runner {runner_id}: {e}")
                 return False
 
-    def update_heartbeat(self, runner_id: str) -> bool:
-        """Update runner heartbeat timestamp."""
+    def update_heartbeat(self, runner_id: str) -> tuple[bool, str]:
+        """Update runner heartbeat timestamp.
+
+        Returns:
+            tuple: (success: bool, previous_status: str)
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
+                # Get previous status
+                cursor.execute('SELECT status FROM runners WHERE runner_id = ?', (runner_id,))
+                row = cursor.fetchone()
+                previous_status = row['status'] if row else 'offline'
+
+                # Update heartbeat and status
                 cursor.execute('''
                     UPDATE runners
                     SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
                     WHERE runner_id = ?
-                ''', (datetime.now(), runner_id))
+                ''', (datetime.now(timezone.utc), runner_id))
                 conn.commit()
-                return cursor.rowcount > 0
+                return (cursor.rowcount > 0, previous_status)
             except Exception as e:
                 logger.error(f"Error updating heartbeat for {runner_id}: {e}")
-                return False
+                return (False, 'offline')
 
     def get_runner(self, runner_id: str) -> Optional[Dict]:
         """Get runner details."""
@@ -299,22 +318,63 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
-    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> int:
-        """Mark runners as offline if they haven't sent heartbeat within timeout."""
-        threshold = datetime.now() - timedelta(seconds=timeout_seconds)
+    def enable_runner(self, runner_id: str) -> bool:
+        """Enable a runner to receive task assignments."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE runners
-                SET status = 'offline'
+                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (runner_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Enabled runner: {runner_id}")
+            return cursor.rowcount > 0
+
+    def disable_runner(self, runner_id: str) -> bool:
+        """Disable a runner from receiving task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE runners
+                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (runner_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Disabled runner: {runner_id}")
+            return cursor.rowcount > 0
+
+    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
+        """Mark runners as offline if they haven't sent heartbeat within timeout.
+
+        Returns:
+            list: List of runner IDs that were marked offline
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # First get the IDs of runners that will be marked offline
+            cursor.execute('''
+                SELECT runner_id FROM runners
                 WHERE status = 'online'
                   AND last_heartbeat < ?
             ''', (threshold,))
-            conn.commit()
-            count = cursor.rowcount
-            if count > 0:
-                logger.warning(f"Marked {count} runner(s) as offline due to missed heartbeats")
-            return count
+            offline_runners = [row['runner_id'] for row in cursor.fetchall()]
+
+            # Now mark them offline
+            if offline_runners:
+                cursor.execute('''
+                    UPDATE runners
+                    SET status = 'offline'
+                    WHERE status = 'online'
+                      AND last_heartbeat < ?
+                ''', (threshold,))
+                conn.commit()
+                logger.warning(f"Marked {len(offline_runners)} runner(s) as offline due to missed heartbeats")
+
+            return offline_runners
 
     # Challenge management
     def add_challenge(self, challenge_id: str, name: str, config: Dict) -> bool:
@@ -388,6 +448,14 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
+                # Check if runner is enabled
+                cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
+                runner_row = cursor.fetchone()
+                if not runner_row or not runner_row['enabled']:
+                    conn.rollback()
+                    logger.debug(f"Runner {runner_id} is disabled, skipping task assignment")
+                    return None
+
                 # Find next available challenge (queued or waiting with expired delay)
                 cursor.execute('''
                     SELECT * FROM challenges

@@ -91,13 +91,15 @@ Open browser to `http://<server-ip>:8443`
 ## Features
 
 ✅ **Central Control** - Single server manages all runners
-✅ **Web Dashboard** - Real-time monitoring and control
+✅ **Web Dashboard** - Real-time monitoring and control with WebSocket updates
 ✅ **Mutual Exclusion** - No duplicate transmissions
 ✅ **Auto Failover** - Requeue on runner failure
 ✅ **File Sync** - Automatic WAV/file distribution
-✅ **Live Logs** - Real-time log streaming
+✅ **Live Logs** - Real-time log streaming via WebSocket
 ✅ **Manual Triggers** - Force challenge transmission
 ✅ **Stop** - Instant shutdown of all transmissions
+✅ **Runner Control** - Enable, disable, or kick runners without disconnection
+✅ **Graceful Shutdown** - Runners properly sign out when stopped
 
 ## Architecture
 
@@ -151,9 +153,12 @@ radios:
 - Success rate metrics
 
 ### Runners
-- View all connected runners
-- Device inventory
-- Kick offline runners
+- View all connected runners in real-time via WebSocket
+- Device inventory with expandable details
+- Enable or disable runners to control task assignment
+- Kick runners to forcefully disconnect them
+- Live status updates including online, offline, and disabled states
+- Real-time heartbeat timestamp updates
 
 ### Challenges
 - Enable/disable challenges
@@ -168,10 +173,64 @@ radios:
 - **disabled** - Challenge is disabled, not in transmission queue (gray)
 
 ### Logs
-- Live log streaming
-- Filter by level
-- Auto-scroll
-- Color-coded
+- Live log streaming via WebSocket
+- Filter by source (server or specific runner) and level
+- Auto-scroll to newest entries
+- Color-coded by log level
+
+## Runner Management
+
+### Real-Time Monitoring
+
+The system provides real-time updates for all runner activity through WebSocket connections. The dashboard and runners page automatically update without page refreshes, showing immediate status changes when runners connect, disconnect, send heartbeats, or complete tasks.
+
+### Enable and Disable Runners
+
+Runners can be temporarily disabled to prevent them from receiving new task assignments while maintaining their connection to the server. This is useful for maintenance, testing, or load management scenarios.
+
+**To disable a runner:**
+1. Navigate to the Runners page in the web interface.
+2. Locate the runner you want to disable.
+3. Click the "Disable" button in the Actions column.
+4. The runner will immediately stop receiving new task assignments.
+5. A "disabled" badge will appear next to the runner's status.
+
+**To enable a runner:**
+1. Navigate to the Runners page in the web interface.
+2. Locate the disabled runner.
+3. Click the "Enable" button in the Actions column.
+4. The runner will immediately resume receiving task assignments.
+5. The "disabled" badge will be removed.
+
+**Key points about disabled runners:**
+- Disabled runners remain connected to the server and continue sending heartbeats.
+- They appear as online in the runners list but display a "disabled" badge.
+- They do not receive any task assignments while disabled.
+- Disabling is persistent across reconnections until manually enabled again.
+- This is different from kicking a runner, which forcefully disconnects it.
+
+### Graceful Shutdown
+
+When a runner is stopped using Ctrl+C or a termination signal, it performs a graceful shutdown sequence:
+
+1. The runner receives the shutdown signal (SIGINT or SIGTERM).
+2. It stops accepting new tasks and completes any ongoing operations.
+3. It sends a signout request to the server.
+4. The server immediately marks the runner as offline and broadcasts the status change.
+5. The web interface updates in real-time to show the runner as offline.
+
+This ensures that the dashboard reflects accurate runner status without waiting for heartbeat timeouts, which would otherwise take up to ninety seconds.
+
+**Console output during shutdown:**
+```
+Received SIGINT signal, shutting down...
+Stopping runner...
+Signing out from server...
+Signed out successfully
+Runner stopped
+```
+
+All shutdown messages are displayed both in the console and logged to the runner's log file for audit purposes.
 
 ### Users
 - **Web-based user management** - Create and manage users from the UI
@@ -255,18 +314,40 @@ python3 manage-users.py reset-totp <username>
 ## Troubleshooting
 
 **Runner won't connect:**
-- Check `server_url` and `api_key`
-- Verify server is running
-- Check firewall rules
+- Check `server_url` and `api_key` in the runner configuration file.
+- Verify the server is running and accessible from the runner's network.
+- Check firewall rules to ensure the server port is open.
+- Review the runner's console output and log file for error messages.
 
-**No challenges assigned:**
-- Verify challenges enabled in config
-- Check system not paused
-- Reload challenges from config
+**Runner shows as offline despite being connected:**
+- Check that the runner is sending heartbeats successfully.
+- Verify that the runner's system clock is synchronized (timestamps use UTC).
+- Check the server logs for any heartbeat processing errors.
+- Ensure the runner has not been disabled in the web interface.
+
+**No challenges assigned to runner:**
+- Verify that challenges are enabled in the server configuration.
+- Check that the system is not paused in the web interface.
+- Ensure the runner is enabled (not disabled) on the Runners page.
+- Reload challenges from the configuration file if recent changes were made.
+- Check that challenges are not all in the "waiting" state due to delay timers.
+
+**Runner status not updating in real-time:**
+- Verify that WebSocket connections are established (check browser console).
+- Check that the server's WebSocket functionality is working properly.
+- Ensure no firewall or proxy is blocking WebSocket connections.
+- Try refreshing the browser page to re-establish the WebSocket connection.
 
 **File download fails:**
-- Ensure files exist in server `files/` directory
-- Check permissions on cache directory
+- Ensure files exist in the server's `files/` directory.
+- Check file permissions on the server's files directory.
+- Verify cache directory permissions on the runner.
+- Check runner logs for specific download error messages.
+
+**Timestamps appear incorrect:**
+- All timestamps in the system use UTC (Coordinated Universal Time).
+- Your browser will display times in your local timezone.
+- Ensure both server and runner system clocks are synchronized with NTP.
 
 ## Development
 

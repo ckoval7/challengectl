@@ -17,6 +17,7 @@ import subprocess
 import random
 import string
 import tempfile
+import signal
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
@@ -219,6 +220,26 @@ class ChallengeCtlRunner:
 
         except Exception as e:
             logger.error(f"Error sending heartbeat: {e}")
+
+    def signout(self):
+        """Sign out from server (graceful shutdown)."""
+        try:
+            logger.info(f"Signing out from server...")
+            response = self.session.post(
+                f"{self.server_url}/api/runners/{self.runner_id}/signout",
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                logger.info("Signed out successfully")
+                return True
+            else:
+                logger.warning(f"Signout failed: {response.status_code}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during signout: {e}")
+            return False
 
     def heartbeat_loop(self):
         """Background thread for sending heartbeats."""
@@ -609,6 +630,16 @@ class ChallengeCtlRunner:
         logger.info(f"Runner {self.runner_id} starting")
         logger.info(f"Server: {self.server_url}, Devices: {len(self.devices)}")
 
+        # Set up signal handlers for graceful shutdown
+        def signal_handler(signum, frame):
+            sig_name = signal.Signals(signum).name
+            logger.info(f"Received {sig_name} signal, shutting down...")
+            self.stop()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
         # Register with server
         if not self.register():
             logger.error("Failed to register with server. Exiting.")
@@ -637,8 +668,17 @@ class ChallengeCtlRunner:
         """Stop the runner."""
         logger.info("Stopping runner...")
         self.running = False
+
+        # Sign out from server
+        self.signout()
+
+        # Give threads time to finish
         time.sleep(1)
         logger.info("Runner stopped")
+
+        # Flush all log handlers to ensure messages are written
+        for handler in logging.root.handlers:
+            handler.flush()
 
 
 def argument_parser():
@@ -701,18 +741,30 @@ def main():
     # Convert log level string to logging constant
     log_level = getattr(logging, args.log_level)
 
-    # Reconfigure logging with file output
+    # Reconfigure logging with both file and console output
     # Clear existing handlers and reconfigure
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-    logging.basicConfig(
-        filename=log_file,
-        filemode='w',
-        level=log_level,
-        format=f'%(asctime)s challengectl-{runner_id}[%(process)d]: %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%dT%H:%M:%S'
-    )
+    # Create formatters
+    log_format = f'%(asctime)s challengectl-{runner_id}[%(process)d]: %(levelname)s: %(message)s'
+    date_format = '%Y-%m-%dT%H:%M:%S'
+    formatter = logging.Formatter(log_format, datefmt=date_format)
+
+    # File handler
+    file_handler = logging.FileHandler(log_file, mode='w')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+    logging.root.addHandler(file_handler)
+
+    # Console handler for important messages
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)  # Always show INFO and above on console
+    console_handler.setFormatter(formatter)
+    logging.root.addHandler(console_handler)
+
+    # Set root logger level
+    logging.root.setLevel(log_level)
 
     logging.info(f"Logging initialized at {args.log_level} level")
 

@@ -15,7 +15,7 @@ import os
 import hashlib
 import yaml
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 import uuid
 from collections import deque
@@ -47,7 +47,7 @@ class WebSocketHandler(logging.Handler):
                 'source': 'server',
                 'level': record.levelname,
                 'message': record.getMessage(),
-                'timestamp': datetime.fromtimestamp(record.created).isoformat()
+                'timestamp': datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
             }
 
             # Add to buffer for historical retrieval
@@ -1058,7 +1058,7 @@ class ChallengeCtlAPI:
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
                     'status': 'online',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
                 return jsonify({
@@ -1075,10 +1075,41 @@ class ChallengeCtlAPI:
             if request.runner_id != runner_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            success = self.db.update_heartbeat(runner_id)
+            success, previous_status = self.db.update_heartbeat(runner_id)
 
             if success:
+                # Always broadcast heartbeat to update last_heartbeat timestamp in UI
+                heartbeat_time = datetime.now(timezone.utc).isoformat()
+                self.broadcast_event('runner_status', {
+                    'runner_id': runner_id,
+                    'status': 'online',
+                    'last_heartbeat': heartbeat_time,
+                    'timestamp': heartbeat_time
+                })
+
                 return jsonify({'status': 'ok'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
+        @self.app.route('/api/runners/<runner_id>/signout', methods=['POST'])
+        @self.require_api_key
+        def signout(runner_id):
+            """Runner graceful signout."""
+            if request.runner_id != runner_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Mark runner as offline
+            success = self.db.mark_runner_offline(runner_id)
+
+            if success:
+                # Broadcast offline status
+                self.broadcast_event('runner_status', {
+                    'runner_id': runner_id,
+                    'status': 'offline',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                logger.info(f"Runner {runner_id} signed out gracefully")
+                return jsonify({'status': 'signed_out'}), 200
             else:
                 return jsonify({'error': 'Runner not found'}), 404
 
@@ -1198,7 +1229,7 @@ class ChallengeCtlAPI:
                 'source': runner_id,
                 'level': log_entry.get('level', 'INFO'),
                 'message': log_entry.get('message', ''),
-                'timestamp': log_entry.get('timestamp', datetime.now().isoformat())
+                'timestamp': log_entry.get('timestamp', datetime.now(timezone.utc).isoformat())
             }
 
             # Add to log buffer
@@ -1293,9 +1324,43 @@ class ChallengeCtlAPI:
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
                     'status': 'offline',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
                 return jsonify({'status': 'removed'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
+        @self.app.route('/api/runners/<runner_id>/enable', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def enable_runner(runner_id):
+            """Enable a runner to receive task assignments."""
+            success = self.db.enable_runner(runner_id)
+
+            if success:
+                self.broadcast_event('runner_enabled', {
+                    'runner_id': runner_id,
+                    'enabled': True,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                return jsonify({'status': 'enabled'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
+        @self.app.route('/api/runners/<runner_id>/disable', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def disable_runner(runner_id):
+            """Disable a runner from receiving task assignments."""
+            success = self.db.disable_runner(runner_id)
+
+            if success:
+                self.broadcast_event('runner_enabled', {
+                    'runner_id': runner_id,
+                    'enabled': False,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                return jsonify({'status': 'disabled'}), 200
             else:
                 return jsonify({'error': 'Runner not found'}), 404
 
@@ -1626,7 +1691,7 @@ class ChallengeCtlAPI:
             stats = self.db.get_dashboard_stats()
             emit('initial_state', {
                 'stats': stats,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
         @self.socketio.on('disconnect')

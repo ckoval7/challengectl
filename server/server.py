@@ -53,9 +53,17 @@ class ChallengeCtlServer:
         def cleanup_stale_runners():
             """Cleanup task to mark offline runners."""
             try:
-                count = self.db.cleanup_stale_runners(timeout_seconds=90)
-                if count > 0:
-                    logger.info(f"Cleanup: marked {count} runner(s) as offline")
+                offline_runners = self.db.cleanup_stale_runners(timeout_seconds=90)
+                if offline_runners:
+                    logger.info(f"Cleanup: marked {len(offline_runners)} runner(s) as offline")
+                    # Broadcast WebSocket events for each runner marked offline
+                    from datetime import timezone
+                    for runner_id in offline_runners:
+                        self.api.broadcast_event('runner_status', {
+                            'runner_id': runner_id,
+                            'status': 'offline',
+                            'timestamp': datetime.now(timezone.utc).isoformat()
+                        })
             except Exception as e:
                 logger.error(f"Error in cleanup_stale_runners: {e}")
 
@@ -240,7 +248,9 @@ class ChallengeCtlServer:
     def shutdown(self):
         """Graceful shutdown."""
         logger.info("Shutting down server...")
-        self.scheduler.shutdown(wait=False)
+        # Only shutdown scheduler if it's running
+        if self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
         logger.info("Server stopped")
 
 
