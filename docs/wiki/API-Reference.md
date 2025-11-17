@@ -962,24 +962,6 @@ Cookie: session=...
 }
 ```
 
-#### POST /api/control/stop
-
-Stop the server (graceful shutdown).
-
-**Request:**
-```http
-POST /api/control/stop HTTP/1.1
-Cookie: session=...
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Server stopping..."
-}
-```
-
 ---
 
 ### File Management

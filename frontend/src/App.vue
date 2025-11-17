@@ -36,13 +36,6 @@
           Pause
         </el-button>
         <el-button
-          type="danger"
-          style="margin-right: 10px"
-          @click="stopSystem"
-        >
-          Stop
-        </el-button>
-        <el-button
           @click="handleLogout"
         >
           Logout
@@ -99,7 +92,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Document, Notebook, User, Moon, Sunny } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth } from './auth'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 export default {
   name: 'App',
@@ -180,28 +173,6 @@ export default {
       }
     }
 
-    const stopSystem = async () => {
-      try {
-        await ElMessageBox.confirm(
-          'This will stop all transmissions immediately. Continue?',
-          'Stop All Transmissions',
-          {
-            confirmButtonText: 'Stop All',
-            cancelButtonText: 'Cancel',
-            type: 'error'
-          }
-        )
-
-        await api.post('/control/stop')
-        systemPaused.value = true
-        ElMessage.success('All transmissions stopped')
-      } catch (error) {
-        if (error !== 'cancel') {
-          ElMessage.error('Stop failed')
-        }
-      }
-    }
-
     return {
       showAdminLayout,
       systemPaused,
@@ -211,8 +182,7 @@ export default {
       toggleTheme,
       handleLogout,
       pauseSystem,
-      resumeSystem,
-      stopSystem
+      resumeSystem
     }
   }
 }

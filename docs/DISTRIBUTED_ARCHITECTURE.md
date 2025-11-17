@@ -256,7 +256,6 @@ radios:
 - `POST /api/challenges/{id}/disable` - Disable challenge from queue
 - `POST /api/control/pause` - Pause entire system (no new assignments)
 - `POST /api/control/resume` - Resume system operation
-- `POST /api/control/stop` - Emergency stop all transmissions
 - `GET /api/logs` - Retrieve historical log entries
 
 ### WebSocket Events

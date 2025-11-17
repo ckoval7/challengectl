@@ -1594,32 +1594,6 @@ class ChallengeCtlAPI:
 
             return jsonify({'status': 'resumed'}), 200
 
-        @self.app.route('/api/control/stop', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def stop_system():
-            """Stop all operations."""
-            self.db.set_system_state('paused', 'true')
-
-            # Requeue all assigned challenges
-            with self.db.get_connection() as conn:
-                conn.execute('''
-                    UPDATE challenges
-                    SET status = 'queued',
-                        assigned_to = NULL,
-                        assigned_at = NULL,
-                        assignment_expires = NULL
-                    WHERE status = 'assigned'
-                ''')
-                conn.commit()
-
-            self.broadcast_event('system_control', {
-                'action': 'stop',
-                'timestamp': datetime.now().isoformat()
-            })
-
-            return jsonify({'status': 'stopped'}), 200
-
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])
         @self.require_api_key
