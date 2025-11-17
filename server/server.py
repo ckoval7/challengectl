@@ -235,6 +235,7 @@ class ChallengeCtlServer:
 
         # Handle shutdown gracefully
         def shutdown_handler(signum, frame):
+            print("\nShutdown signal received...", flush=True)
             logger.info("Shutdown signal received")
             self.shutdown()
 
@@ -251,20 +252,25 @@ class ChallengeCtlServer:
             return
 
         self._shutdown_initiated = True
+        print("Shutting down server...", flush=True)
         logger.info("Shutting down server...")
 
         # Stop the SocketIO server to unblock the run() call
         try:
             self.api.socketio.stop()
+            print("SocketIO server stopped", flush=True)
             logger.info("SocketIO server stopped")
         except Exception as e:
+            print(f"Error stopping SocketIO server: {e}", flush=True)
             logger.error(f"Error stopping SocketIO server: {e}")
 
         # Shutdown scheduler if it's running
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
+            print("Background scheduler stopped", flush=True)
             logger.info("Background scheduler stopped")
 
+        print("Server stopped", flush=True)
         logger.info("Server stopped")
 
 
