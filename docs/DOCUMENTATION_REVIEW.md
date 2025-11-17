@@ -106,32 +106,6 @@ def cleanup_stale_assignments(self, timeout_minutes: int = 5) -> int:
 
 **Observation**: When an assignment times out, it goes to 'waiting' (respects delay timer) rather than immediately to 'queued'. This is actually documented correctly but worth noting explicitly.
 
-### 4. Stop System Behavior
-
-**Status**: ✅ FIXED in previous update
-
-The documentation now correctly states that Stop:
-- Pauses the system
-- Requeues all assigned challenges (to 'queued', not 'waiting')
-- Does NOT shut down the server
-
-**Actual code** (api.py:1597-1621):
-```python
-def stop_system():
-    self.db.set_system_state('paused', 'true')
-    # Requeue all assigned challenges
-    conn.execute('''
-        UPDATE challenges
-        SET status = 'queued',  # Goes directly to queued, bypassing delay
-            assigned_to = NULL,
-            assigned_at = NULL,
-            assignment_expires = NULL
-        WHERE status = 'assigned'
-    ''')
-```
-
-**Note**: Stop button requeues to 'queued' (immediate availability), while timeout cleanup requeues to 'waiting' (respects delay). This distinction could be documented.
-
 ## Previously Fixed Issues
 
 ### ✅ 1. Database Schema (FIXED)
@@ -190,12 +164,7 @@ Server-Setup.md now correctly shows:
 
 ### Medium Priority
 
-3. **Document Stop vs Timeout Behavior**
-   - Stop button: assigned → 'queued' (immediate availability)
-   - Timeout cleanup: assigned → 'waiting' (respects delay timer)
-   - Explain why they differ
-
-4. **Add Challenge State Diagram**
+3. **Add Challenge State Diagram**
    - Visual diagram showing: queued → assigned → waiting → queued
    - Show when transitions occur (runner poll, completion, timeout)
 
@@ -286,43 +255,18 @@ self.poll_interval = self.config['runner'].get('poll_interval', 10)
 - ✅ TOTP two-factor authentication flow
 - ✅ Dark mode support
 
-**System Controls** (App.vue:163-203):
+**System Controls** (App.vue):
 - ✅ Pause button: Calls `/api/control/pause`
 - ✅ Resume button: Calls `/api/control/resume`, shown when system paused
-- ✅ Stop button: Calls `/api/control/stop`, shows confirmation dialog
-- ✅ Stop confirmation message: "This will stop all transmissions immediately"
 - ✅ Buttons located in header bar (not Dashboard page)
-- ✅ Stop sets `systemPaused.value = true` (behaves like pause after stopping)
 
 **Missing from Documentation**:
 
 ### 6. System Control Button Locations
 
-**Web Interface Guide** does not specify **where** the Pause/Resume/Stop buttons are located.
+**Web Interface Guide** specifies where the Pause/Resume buttons are located.
 
 **Actual location** (App.vue):
 - Buttons are in the **header bar** at the top of every page
 - Resume button only visible when system is paused
-- Stop button always visible
 - Pause button visible when system not paused
-
-**Recommendation**: Add section to Web Interface Guide explaining header controls.
-
-### 7. Stop Button Confirmation Dialog
-
-**Web Interface Guide** does not mention the confirmation dialog for Stop.
-
-**Actual behavior** (App.vue:185-193):
-```javascript
-await ElMessageBox.confirm(
-  'This will stop all transmissions immediately. Continue?',
-  'Stop All Transmissions',
-  {
-    confirmButtonText: 'Stop All',
-    cancelButtonText: 'Cancel',
-    type: 'error'
-  }
-)
-```
-
-**Recommendation**: Document that Stop requires confirmation to prevent accidental use.

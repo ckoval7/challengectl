@@ -25,7 +25,7 @@ The ChallengeCtl web interface provides a comprehensive view of your RF challeng
 - **Runner control**: Monitor runner status and manage connections
 - **Log streaming**: Real-time logs from server and all runners
 - **User administration**: Manage admin accounts and credentials
-- **System controls**: Pause, resume, and stop operations
+- **System controls**: Pause and resume operations
 
 ## Accessing the Web Interface
 
@@ -355,13 +355,8 @@ System control buttons are located in the **header bar** at the top of every pag
 
 - **Pause button**: Visible when system is running normally
 - **Resume button**: Visible when system is paused (replaces Pause button)
-- **Stop button**: Always visible
 
-The Stop button includes a confirmation dialog to prevent accidental use:
-- Message: "This will stop all transmissions immediately. Continue?"
-- You must click "Stop All" to confirm the action
-
-### Pause vs Stop vs Disable
+### Pause vs Disable
 
 Understanding the differences between these operations is critical:
 
@@ -392,33 +387,7 @@ Understanding the differences between these operations is critical:
 - **Runners**: Stay connected and idle
 - **Web UI**: Fully functional
 
-#### Stop System
-
-**What it does**:
-- Pauses the system (same as Pause button)
-- Requeues all currently assigned challenges
-- Runners remain connected and send heartbeats
-- Web interface remains accessible
-- Does NOT shut down the server
-
-**When to use**:
-- Quickly stopping all operations without disconnecting runners
-- Emergency halt of all transmissions
-- Resetting all assigned tasks to waiting state
-
-**How to resume**:
-- Click "Resume" button (system is paused after stop)
-- Challenge queueing resumes immediately
-- System returns to normal operation
-
-**Effect on**:
-- **Active transmissions**: Interrupted and requeued
-- **Assigned challenges**: Requeued to waiting state
-- **Queued challenges**: Remain queued
-- **Runners**: Stay connected and idle
-- **Web UI**: Fully functional
-
-**Note**: The "Stop" button does not shut down the ChallengeCtl server. To shut down the server, use `Ctrl+C` in the terminal or `systemctl stop challengectl` if running as a service.
+**Note**: To shut down the ChallengeCtl server, use `Ctrl+C` in the terminal or `systemctl stop challengectl` if running as a service.
 
 #### Disable (Runner-specific)
 
