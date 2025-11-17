@@ -7,6 +7,7 @@ Handles runner communication, challenge distribution, and WebUI serving.
 from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+from werkzeug.security import safe_join
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
@@ -655,8 +656,9 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Invalid or expired session'}), 401
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1735,8 +1737,9 @@ class ChallengeCtlAPI:
                 return send_from_directory(self.frontend_dir, 'index.html')
 
             # Check if the requested path is an actual file (like CSS, JS, images)
-            file_path = os.path.join(self.frontend_dir, path)
-            if os.path.isfile(file_path):
+            # SECURITY: Use safe_join to prevent path traversal attacks
+            file_path = safe_join(self.frontend_dir, path)
+            if file_path and os.path.isfile(file_path):
                 return send_from_directory(self.frontend_dir, path)
 
             # For all other paths (like /public, /runners, etc.), serve index.html
@@ -1768,8 +1771,9 @@ class ChallengeCtlAPI:
                 return False  # Reject connection
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 logger.warning(f"WebSocket connection rejected: Expired session from {request.remote_addr}")
                 return False  # Reject connection
