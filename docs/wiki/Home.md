@@ -28,6 +28,7 @@ ChallengeCtl consists of three main components:
 ### Technical Documentation
 - **[Architecture Overview](Architecture)** - How the system works under the hood
 - **[API Reference](API-Reference)** - REST API endpoints and WebSocket events
+- **[Challenge Development](Challenge-Development)** - Creating new challenge types and modulations
 - **[Troubleshooting](Troubleshooting)** - Common issues and solutions
 
 ## Key Features
