@@ -33,35 +33,27 @@ pip install -r requirements-runner.txt
 
 ## Step 2: Set Up the Server
 
-### Initialize the Database
+### Generate Runner API Keys
+
+First, generate API keys for your runners:
 
 ```bash
-python -m challengectl.server.database init
+python3 generate-api-key.py --count 1
 ```
 
-This creates a new SQLite database with the required schema.
-
-### Create an Admin User
-
-```bash
-python -m challengectl.server.database add-user admin
-```
-
-You'll be prompted to set a password. The system will generate a TOTP secret for two-factor authentication. Save this secret in your authenticator app.
-
-### Create a Runner API Key
-
-```bash
-python -m challengectl.server.database add-runner-key runner1
-```
-
-Save the generated API key. You'll need it to configure your runner.
+Save the generated key - you'll need it for runner configuration.
 
 ### Configure the Server
 
 Create a `server-config.yml` file:
 
 ```yaml
+server:
+  bind: "0.0.0.0"
+  port: 8443
+  api_keys:
+    runner-1: "your-generated-api-key-here"
+
 challenges:
   - name: NBFM_Example
     frequency: 146550000
@@ -72,6 +64,8 @@ challenges:
     enabled: true
 ```
 
+Replace `your-generated-api-key-here` with the API key you generated earlier.
+
 Place your challenge files (like `example.wav`) in the `challenges/` directory.
 
 ### Start the Server
@@ -80,7 +74,27 @@ Place your challenge files (like `example.wav`) in the `challenges/` directory.
 python -m challengectl.server.server
 ```
 
-The server will start on port 8443. Access the web interface at `http://localhost:8443`.
+The server will start on port 8443 and automatically create a default admin account.
+
+### Complete Initial Setup
+
+1. **Check the server output** for the temporary admin credentials:
+   ```
+   ================================================================================
+   DEFAULT ADMIN USER CREATED
+   ================================================================================
+   Username: admin
+   Password: aB3xK9mN2pQ7rT5w
+   ```
+
+2. **Navigate to** `http://localhost:8443` in your web browser
+
+3. **Log in** with the temporary credentials
+
+4. **Complete the setup wizard**:
+   - Create your admin user with a strong password
+   - Set up TOTP two-factor authentication by scanning the QR code
+   - Log out and log back in with your new account
 
 ## Step 3: Set Up a Runner
 

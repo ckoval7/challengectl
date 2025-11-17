@@ -100,70 +100,102 @@ The database includes the following tables:
 - **users**: Admin user accounts with hashed passwords
 - **runner_keys**: API keys for runner authentication
 
-## User Management
+## Initial Setup and User Management
 
-### Creating Admin Users
+### First-Time Setup
 
-Admin users can access the web interface and manage the system. Create your first admin user:
+When you start the server for the first time, it automatically creates a default admin account with a randomly generated password. This password is logged to the server log file for security.
+
+**Check the server logs** for the initial credentials:
 
 ```bash
-python -m challengectl.server.database add-user admin
+# If running in terminal, you'll see it in the output
+# Or check the log file:
+cat challengectl.server.log | grep "DEFAULT ADMIN USER"
 ```
 
-You'll be prompted to enter a password. The command will generate a TOTP secret for two-factor authentication:
+You'll see output like:
 
 ```
-Enter password for user 'admin':
-TOTP Secret: JBSWY3DPEHPK3PXP
-Add this to your authenticator app.
-User 'admin' created successfully.
+================================================================================
+DEFAULT ADMIN USER CREATED
+================================================================================
+Username: admin
+Password: aB3xK9mN2pQ7rT5w
+
+IMPORTANT: Log in with these credentials to create your admin account.
+You will be prompted to create a new user with TOTP 2FA on first login.
+After setup, you can delete this default admin account.
+================================================================================
 ```
 
-**Important**: Save the TOTP secret immediately. Add it to an authenticator app like Google Authenticator, Authy, or 1Password.
+### Creating Your Admin Account
+
+1. **Navigate to the web interface**: `http://localhost:8443` (or your server URL)
+
+2. **Log in with the temporary credentials** shown in the server logs
+
+3. **Complete the initial setup wizard**:
+   - You'll be prompted to create a new admin user
+   - Choose a strong username and password
+   - Set up TOTP two-factor authentication
+   - Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.)
+
+4. **Log out and log in** with your new account
+
+5. **Optional**: Delete the default admin account through the web interface for security
+
+### Managing Users Through Web Interface
+
+After initial setup, all user management is done through the web interface:
+
+- **Add users**: Go to Users page → Add User button
+- **Change passwords**: Users page → Edit user
+- **Reset TOTP**: Users page → Reset TOTP button
+- **Enable/Disable users**: Users page → Enable/Disable button
+- **Delete users**: Users page → Delete button
+
+See the [Web Interface Guide](Web-Interface-Guide#user-management) for detailed instructions.
 
 ### Managing API Keys
 
-Runners authenticate using API keys. Create an API key for each runner:
+Runner API keys are configured in the server configuration file, not in the database.
+
+**Generate API keys**:
 
 ```bash
-python -m challengectl.server.database add-runner-key runner1
+python3 generate-api-key.py --count 3
 ```
 
-This generates a unique API key:
+This outputs:
 
 ```
-API Key: ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4
+Generated 3 API keys (length: 32):
+
+Key 1: ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4
+Key 2: ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6
+Key 3: ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8
 ```
 
-**Important**: Save this key securely. You'll need it when configuring the runner. Each runner should have its own unique API key.
+**Add keys to server configuration**:
 
-### Listing Users and Keys
+Edit `server-config.yml`:
 
-To view all admin users:
+```yaml
+server:
+  api_keys:
+    runner-1: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"
+    runner-2: "ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6"
+    runner-3: "ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8"
+```
+
+**Restart the server** to apply changes:
 
 ```bash
-python -m challengectl.server.database list-users
+sudo systemctl restart challengectl
 ```
 
-To view all API keys:
-
-```bash
-python -m challengectl.server.database list-keys
-```
-
-### Removing Users or Keys
-
-Remove an admin user:
-
-```bash
-python -m challengectl.server.database remove-user admin
-```
-
-Remove an API key:
-
-```bash
-python -m challengectl.server.database remove-key ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4
-```
+**Important**: Keep API keys confidential. Each runner should have a unique key.
 
 ## Challenge Configuration
 

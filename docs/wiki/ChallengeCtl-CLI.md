@@ -1,11 +1,10 @@
 # ChallengeCtl Command-Line Interface
 
-ChallengeCtl provides several command-line utilities for managing the system and running challenges. This guide covers the standalone challenge runner, user management, and API key generation tools.
+ChallengeCtl provides several command-line utilities for managing the system and running challenges. This guide covers the standalone challenge runner and API key generation tools.
 
 ## Table of Contents
 
 - [Standalone Challenge Runner](#standalone-challenge-runner)
-- [User Management](#user-management)
 - [API Key Generation](#api-key-generation)
 
 ## Standalone Challenge Runner
@@ -220,121 +219,6 @@ The standalone runner has some limitations compared to the distributed server/ru
 
 For production deployments or multi-device setups, consider using the [server/runner architecture](Architecture).
 
-## User Management
-
-The `manage-users.py` script provides user management capabilities for the ChallengeCtl server. It allows you to create, list, and remove admin users with password and TOTP two-factor authentication.
-
-### Prerequisites
-
-Ensure you have the following Python packages installed:
-
-```bash
-pip install bcrypt pyotp qrcode
-```
-
-### Creating a User
-
-Create a new admin user:
-
-```bash
-python3 manage-users.py add <username>
-```
-
-You will be prompted to:
-1. Enter a password (minimum 8 characters)
-2. Confirm the password
-3. Scan a QR code or manually enter the TOTP secret in your authenticator app
-4. Optionally test your TOTP code before completing
-
-Example output:
-
-```
-$ python3 manage-users.py add admin
-Enter password:
-Confirm password:
-
-User 'admin' created successfully!
-
-TOTP Secret: JBSWY3DPEHPK3PXP
-
-Setup TOTP in your authenticator app:
-1. Scan the QR code below, OR
-2. Manually enter the secret above
-
- QR Code:
-████████████████████████████████
-████ ▄▄▄▄▄ █▀ █▀▀██ ▄▄▄▄▄ ████
-████ █   █ █▀▀▀ ▀▀█ █   █ ████
-████ █▄▄▄█ ██ ▀█ ██ █▄▄▄█ ████
-...
-
-Provisioning URI: otpauth://totp/ChallengeCtl:admin?secret=JBSWY3DPEHPK3PXP&issuer=ChallengeCtl
-
-Test your TOTP code before logging in:
-Enter TOTP code (or 'skip' to continue): 123456
-✓ TOTP code is valid!
-```
-
-### Listing Users
-
-Display all admin users:
-
-```bash
-python3 manage-users.py list
-```
-
-Example output:
-
-```
-Admin Users:
-  1. admin (created: 2024-01-15 10:30:00)
-  2. operator (created: 2024-01-15 11:45:00)
-```
-
-### Removing a User
-
-Delete an admin user:
-
-```bash
-python3 manage-users.py remove <username>
-```
-
-Example:
-
-```bash
-python3 manage-users.py remove operator
-User 'operator' removed successfully.
-```
-
-### Using a Custom Database
-
-By default, `manage-users.py` uses the database at `challengectl.db`. To use a custom database location:
-
-```bash
-export DATABASE_PATH=/var/lib/challengectl/challengectl.db
-python3 manage-users.py add admin
-```
-
-### Password Requirements
-
-Passwords must meet the following requirements:
-
-- Minimum length: 8 characters
-- Stored as bcrypt hashes (not plaintext)
-- No maximum length restriction
-
-For security, use strong passwords with a mix of uppercase, lowercase, numbers, and special characters.
-
-### TOTP Authenticator Apps
-
-Use any TOTP-compatible authenticator app:
-
-- Google Authenticator (iOS, Android)
-- Authy (iOS, Android, Desktop)
-- 1Password (cross-platform)
-- Microsoft Authenticator (iOS, Android)
-- FreeOTP (iOS, Android, open source)
-
 ## API Key Generation
 
 The `generate-api-key.py` script creates cryptographically secure API keys for runner authentication.
@@ -406,22 +290,28 @@ python3 generate-api-key.py --length 48 --count 3
 - For production use, 32-character keys provide adequate security
 - Longer keys (48 or 64 characters) provide additional security margin
 
-### Adding Keys to the Database
+### Adding Keys to Server Configuration
 
-After generating an API key, add it to the server database using the database CLI:
+After generating an API key, add it to your server configuration file:
 
+1. **Generate the key**:
 ```bash
-# Generate a key
-API_KEY=$(python3 generate-api-key.py)
-
-# Add it to the database (requires database CLI implementation)
-python3 -c "from server.database import Database; db = Database(); db.add_runner_key('runner1', '$API_KEY')"
+python3 generate-api-key.py
 ```
 
-Alternatively, you can manually insert the key into the database:
+2. **Edit `server-config.yml`**:
+```yaml
+server:
+  api_keys:
+    runner-1: "ck_abc123def456..."  # Your generated key
+    runner-2: "ck_def456ghi789..."  # Another generated key
+```
 
+3. **Restart the server** to apply changes:
 ```bash
-sqlite3 challengectl.db "INSERT INTO runner_keys (key_id, api_key, created_at) VALUES ('runner1', '$API_KEY', datetime('now'));"
+sudo systemctl restart challengectl
+# Or if running manually:
+# Press Ctrl+C and restart: python -m challengectl.server.server
 ```
 
 ### Key Format
@@ -449,5 +339,6 @@ Now that you're familiar with the command-line utilities, you can:
 
 - [Configure the server](Server-Setup) for distributed challenge management
 - [Set up runners](Runner-Setup) to connect to your server
+- [Use the Web Interface](Web-Interface-Guide) to manage users and monitor the system
 - [Review the Configuration Reference](Configuration-Reference) for all available options
 - [Understand the system architecture](Architecture) to learn how components interact
