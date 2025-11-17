@@ -50,22 +50,26 @@ The central controller that:
 - `database.py` - SQLite database management
 
 **Database Schema:**
-- `runners` - Registered runner nodes
+- `runners` - Registered runner nodes with status and enabled state
 - `challenges` - Challenge definitions and state
 - `transmissions` - History of all transmissions
 - `files` - Challenge file metadata
 - `system_state` - Global configuration
+- `users` - Admin user accounts with TOTP authentication
+- `sessions` - Active user sessions for web interface
 
 ### 2. Runner (`challengectl-runner`)
 
 **Location:** `/runner/`
 
 Client that runs on each SDR host to:
-- Register with server and send heartbeats
-- Poll for challenge assignments
-- Download required files (WAV, etc.)
+- Register with server and send periodic heartbeats
+- Poll for challenge assignments when enabled
+- Download required files with content verification
 - Execute challenges on local SDR devices
-- Report completion status
+- Report completion status and errors
+- Gracefully sign out when terminated
+- Forward logs to server in real-time
 
 **Key Files:**
 - `runner.py` - Main runner implementation
@@ -86,10 +90,11 @@ All existing challengectl-v2 modulations:
 **Location:** `/frontend/`
 
 Vue.js 3 single-page application with:
-- **Dashboard** - Real-time system overview
-- **Runners** - Manage connected runners
-- **Challenges** - Enable/disable/trigger challenges
-- **Logs** - Live log streaming
+- **Dashboard** - Real-time system overview with WebSocket updates
+- **Runners** - Manage connected runners, enable/disable, and kick
+- **Challenges** - Enable/disable/trigger challenges with instant feedback
+- **Logs** - Live log streaming from server and all runners
+- **Users** - Manage admin accounts with TOTP authentication
 
 **Technology Stack:**
 - Vue.js 3
@@ -229,29 +234,53 @@ radios:
 
 ### Runner Endpoints (Requires Runner API Key)
 
-- `POST /api/runners/register` - Register runner
-- `POST /api/runners/{id}/heartbeat` - Send heartbeat
-- `GET /api/runners/{id}/task` - Get next challenge
-- `POST /api/runners/{id}/complete` - Report completion
-- `GET /api/files/{hash}` - Download file
+- `POST /api/runners/register` - Register runner with server
+- `POST /api/runners/{id}/heartbeat` - Send periodic heartbeat (every 30 seconds)
+- `POST /api/runners/{id}/signout` - Graceful signout on shutdown
+- `GET /api/runners/{id}/task` - Request next challenge assignment
+- `POST /api/runners/{id}/complete` - Report challenge completion or failure
+- `POST /api/runners/{id}/log` - Forward log entries to server
+- `GET /api/files/{hash}` - Download challenge file by SHA-256 hash
 
-### Admin Endpoints (Requires Admin API Key)
+### Admin Endpoints (Requires Admin Authentication and CSRF Token)
 
-- `GET /api/dashboard` - Dashboard statistics
-- `GET /api/runners` - List all runners
-- `GET /api/challenges` - List all challenges
-- `POST /api/challenges/{id}/trigger` - Trigger challenge now
-- `POST /api/control/pause` - Pause system
-- `POST /api/control/resume` - Resume system
-- `POST /api/control/stop` - Stop all transmissions
+- `GET /api/dashboard` - Retrieve dashboard statistics and runner status
+- `GET /api/runners` - List all registered runners
+- `GET /api/runners/{id}` - Get detailed runner information
+- `POST /api/runners/{id}/enable` - Enable runner to receive task assignments
+- `POST /api/runners/{id}/disable` - Disable runner from receiving tasks
+- `DELETE /api/runners/{id}` - Kick runner (forcefully disconnect)
+- `GET /api/challenges` - List all challenges with current status
+- `POST /api/challenges/{id}/trigger` - Trigger immediate challenge execution
+- `POST /api/challenges/{id}/enable` - Enable challenge for transmission
+- `POST /api/challenges/{id}/disable` - Disable challenge from queue
+- `POST /api/control/pause` - Pause entire system (no new assignments)
+- `POST /api/control/resume` - Resume system operation
+- `POST /api/control/stop` - Emergency stop all transmissions
+- `GET /api/logs` - Retrieve historical log entries
 
 ### WebSocket Events
 
-Server broadcasts these events to WebUI:
-- `runner_status` - Runner online/offline
-- `challenge_assigned` - Challenge assigned to runner
-- `transmission_complete` - Transmission finished
-- `log` - Log entry from runner or server
+The server broadcasts real-time events to all connected web clients via WebSocket:
+
+- `runner_status` - Runner connection status changed (online/offline)
+  - Sent when runner registers, sends heartbeat after being offline, or disconnects
+  - Includes runner ID, status, and timestamp
+  - Includes last heartbeat timestamp when available
+- `runner_enabled` - Runner enabled/disabled state changed
+  - Sent when admin enables or disables a runner
+  - Includes runner ID, enabled status, and timestamp
+- `challenge_assigned` - Challenge assigned to runner for transmission
+  - Sent when server assigns challenge to runner
+  - Includes runner ID, challenge ID, challenge name, and timestamp
+- `transmission_complete` - Challenge transmission completed
+  - Sent when runner reports challenge completion
+  - Includes success/failure status, runner ID, frequency, and error message if applicable
+- `log` - Real-time log entry from server or runner
+  - Sent for all INFO and higher level logs
+  - Includes source (server or runner ID), level, message, and timestamp
+
+**Note:** All timestamps use UTC (Coordinated Universal Time) for consistency across different timezones.
 
 ## Security
 
@@ -276,10 +305,22 @@ Challenges use **pessimistic locking** in SQLite:
 
 ### Timeout Handling
 
-- Runners send heartbeats every 30 seconds
-- Server marks offline after 90 seconds of missed heartbeats
-- Challenge assignments timeout after 5 minutes
-- Stale assignments automatically requeued
+**Runner Heartbeats:**
+- Runners send heartbeats every thirty seconds by default (configurable).
+- Server monitors heartbeat timestamps and runs cleanup every thirty seconds.
+- Runners are marked offline after ninety seconds of missed heartbeats.
+- Offline status is broadcast immediately via WebSocket for real-time UI updates.
+
+**Graceful Shutdown:**
+- When a runner receives SIGINT or SIGTERM, it performs graceful shutdown.
+- Runner sends signout request to server before terminating.
+- Server immediately marks runner offline and broadcasts status change.
+- This eliminates the ninety-second timeout delay for intentional shutdowns.
+
+**Challenge Assignments:**
+- Challenge assignments expire after five minutes if not completed.
+- Stale assignments are automatically requeued for other runners.
+- Failed or timed-out assignments are returned to the queue with delay timer reset.
 
 ## File Management
 
@@ -332,9 +373,13 @@ Runner maintains cache in local `cache/` directory (configurable):
 
 ### Monitoring
 
-- **Dashboard:** Real-time stats and recent activity
-- **Runners:** Check online/offline status
-- **Logs:** Live stream of all events
+- **Dashboard:** Real-time statistics and recent activity with automatic WebSocket updates
+- **Runners:** Monitor online/offline status, enabled/disabled state, and heartbeat timestamps
+  - Enable or disable individual runners to control task assignment
+  - Kick runners to forcefully disconnect them
+  - All status changes update in real-time without page refresh
+- **Logs:** Live stream of all server and runner log events with filtering by source and level
+- **Challenges:** View current queue status, transmission history, and success rates
 
 ## Troubleshooting
 
