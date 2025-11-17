@@ -68,6 +68,10 @@ class WebSocketHandler(logging.Handler):
 class ChallengeCtlAPI:
     """Main API server for challengectl."""
 
+    # File upload security restrictions
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+    ALLOWED_EXTENSIONS = {'.wav', '.bin', '.txt', '.yml', '.yaml', '.py', '.grc'}
+
     def __init__(self, config_path: str, db: Database, files_dir: str):
         # Don't use Flask's static file serving - we'll handle it manually for SPA routing
         # Configuration
@@ -1603,7 +1607,7 @@ class ChallengeCtlAPI:
         @self.app.route('/api/files/upload', methods=['POST'])
         @self.require_api_key
         def upload_file():
-            """Upload a new challenge file."""
+            """Upload a new challenge file with security restrictions."""
             if 'file' not in request.files:
                 return jsonify({'error': 'No file provided'}), 400
 
@@ -1612,8 +1616,36 @@ class ChallengeCtlAPI:
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
 
+            # SECURITY: Validate file extension
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in self.ALLOWED_EXTENSIONS:
+                logger.warning(
+                    f"SECURITY: File upload rejected - invalid extension '{file_ext}' "
+                    f"from {request.remote_addr} (file: {file.filename})"
+                )
+                return jsonify({
+                    'error': f'Invalid file type. Allowed: {", ".join(sorted(self.ALLOWED_EXTENSIONS))}'
+                }), 400
+
             try:
-                # Read file data
+                # SECURITY: Validate file size before reading entire file
+                # Seek to end to get size, then back to beginning
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(0)
+
+                if file_size > self.MAX_FILE_SIZE:
+                    max_mb = self.MAX_FILE_SIZE / (1024 * 1024)
+                    actual_mb = file_size / (1024 * 1024)
+                    logger.warning(
+                        f"SECURITY: File upload rejected - size {actual_mb:.1f}MB exceeds limit "
+                        f"{max_mb:.0f}MB from {request.remote_addr} (file: {file.filename})"
+                    )
+                    return jsonify({
+                        'error': f'File too large. Maximum size: {max_mb:.0f}MB'
+                    }), 413
+
+                # Read file data (now we know it's safe size)
                 file_data = file.read()
 
                 # Calculate SHA-256 hash
@@ -1633,6 +1665,11 @@ class ChallengeCtlAPI:
                     file_path=file_path
                 )
 
+                logger.info(
+                    f"File uploaded successfully - hash={file_hash[:12]}... "
+                    f"name={file.filename} size={file_size} from {request.remote_addr}"
+                )
+
                 return jsonify({
                     'status': 'uploaded',
                     'file_hash': file_hash,
@@ -1642,7 +1679,7 @@ class ChallengeCtlAPI:
 
             except Exception as e:
                 logger.error(f"Error uploading file: {e}")
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': 'Internal server error'}), 500
 
         # Serve WebUI (Vue.js SPA)
         # This must be the LAST route to catch all non-API requests
