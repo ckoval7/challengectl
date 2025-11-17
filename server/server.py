@@ -47,6 +47,9 @@ class ChallengeCtlServer:
         self.scheduler = BackgroundScheduler()
         self.setup_background_tasks()
 
+        # Shutdown flag to prevent duplicate shutdown attempts
+        self._shutdown_initiated = False
+
     def setup_background_tasks(self):
         """Setup periodic background cleanup tasks."""
 
@@ -234,23 +237,34 @@ class ChallengeCtlServer:
         def shutdown_handler(signum, frame):
             logger.info("Shutdown signal received")
             self.shutdown()
-            sys.exit(0)
 
         signal.signal(signal.SIGINT, shutdown_handler)
         signal.signal(signal.SIGTERM, shutdown_handler)
 
         # Start API server (blocking)
-        try:
-            self.api.run(host=host, port=port, debug=debug)
-        except KeyboardInterrupt:
-            self.shutdown()
+        self.api.run(host=host, port=port, debug=debug)
 
     def shutdown(self):
         """Graceful shutdown."""
+        # Prevent duplicate shutdown attempts
+        if self._shutdown_initiated:
+            return
+
+        self._shutdown_initiated = True
         logger.info("Shutting down server...")
-        # Only shutdown scheduler if it's running
+
+        # Stop the SocketIO server to unblock the run() call
+        try:
+            self.api.socketio.stop()
+            logger.info("SocketIO server stopped")
+        except Exception as e:
+            logger.error(f"Error stopping SocketIO server: {e}")
+
+        # Shutdown scheduler if it's running
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
+            logger.info("Background scheduler stopped")
+
         logger.info("Server stopped")
 
 
