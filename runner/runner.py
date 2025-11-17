@@ -704,6 +704,9 @@ class ChallengeCtlRunner:
         for handler in logging.root.handlers:
             handler.flush()
 
+        # Exit cleanly after shutdown
+        sys.exit(0)
+
 
 def argument_parser():
     """Parse command line arguments."""
