@@ -114,7 +114,12 @@ class ChallengeCtlAPI:
         )
 
         # Initialize SocketIO for real-time updates
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*")
+        # SECURITY: Use same CORS origins as REST API to prevent unauthorized WebSocket connections
+        self.socketio = SocketIO(
+            self.app,
+            cors_allowed_origins=allowed_origins,
+            cookie='session_token'  # Tie to session cookie for additional security
+        )
 
         # Initialize rate limiter for authentication endpoints
         # Note: No default limits - only specific endpoints (login, TOTP) are rate-limited
