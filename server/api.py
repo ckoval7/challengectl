@@ -7,6 +7,7 @@ Handles runner communication, challenge distribution, and WebUI serving.
 from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+from werkzeug.security import safe_join
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
@@ -68,6 +69,10 @@ class WebSocketHandler(logging.Handler):
 class ChallengeCtlAPI:
     """Main API server for challengectl."""
 
+    # File upload security restrictions
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+    ALLOWED_EXTENSIONS = {'.wav', '.bin', '.txt', '.yml', '.yaml', '.py', '.grc'}
+
     def __init__(self, config_path: str, db: Database, files_dir: str):
         # Don't use Flask's static file serving - we'll handle it manually for SPA routing
         # Configuration
@@ -114,15 +119,21 @@ class ChallengeCtlAPI:
         )
 
         # Initialize SocketIO for real-time updates
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*")
+        # SECURITY: Use same CORS origins as REST API to prevent unauthorized WebSocket connections
+        self.socketio = SocketIO(
+            self.app,
+            cors_allowed_origins=allowed_origins,
+            cookie='session_token'  # Tie to session cookie for additional security
+        )
 
-        # Initialize rate limiter for authentication endpoints
-        # Note: No default limits - only specific endpoints (login, TOTP) are rate-limited
-        # to prevent brute force attacks. Runner endpoints need high frequency access.
+        # Initialize rate limiter with default limits for security
+        # SECURITY: Default limits protect against DoS and API abuse
+        # Runner endpoints get higher limits (overridden per-endpoint)
+        # Authentication endpoints get stricter limits (brute force protection)
         self.limiter = Limiter(
             app=self.app,
             key_func=get_remote_address,
-            default_limits=[],  # No default limits
+            default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
             storage_uri="memory://",
             strategy="fixed-window"
         )
@@ -224,7 +235,7 @@ class ChallengeCtlAPI:
             }
         except Exception as e:
             logger.error(f"Error checking config sync: {e}")
-            return {'in_sync': None, 'error': str(e)}
+            return {'in_sync': None, 'error': 'Failed to check configuration sync'}
 
     def _parse_runner_devices(self, runner: Dict) -> Dict:
         """Parse devices JSON field in runner dict.
@@ -275,6 +286,26 @@ class ChallengeCtlAPI:
         """Generate a random CSRF token."""
         return secrets.token_urlsafe(32)
 
+    def get_cookie_security_settings(self) -> dict:
+        """
+        Determine secure cookie settings based on environment.
+
+        Returns dict with 'secure' and 'samesite' settings:
+        - In development (HTTP): secure=False, samesite='Lax'
+        - In production (HTTPS or behind reverse proxy): secure=True, samesite='Lax'
+
+        Detects HTTPS by checking:
+        1. request.is_secure (direct HTTPS)
+        2. X-Forwarded-Proto header (nginx reverse proxy with HTTPS termination)
+        """
+        # Check if we're running on HTTPS (direct or via reverse proxy)
+        is_https = request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'
+
+        return {
+            'secure': is_https,
+            'samesite': 'Lax'  # Lax allows cookies on top-level navigation (safer than None, works with redirects)
+        }
+
     def require_csrf(self, f):
         """Decorator to require CSRF token validation for state-changing operations."""
         @wraps(f)
@@ -319,14 +350,19 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             # Note: expires is stored as ISO format string in database
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
             # Check if TOTP was verified
             if not session.get('totp_verified', False):
                 return jsonify({'error': 'TOTP verification required'}), 401
+
+            # SECURITY: Sliding session - renew expiry on activity
+            # Extends session by 24 hours from now
+            self.renew_session(session_token)
 
             # Add username to request context
             request.admin_username = session['username']
@@ -336,9 +372,13 @@ class ChallengeCtlAPI:
         return decorated_function
 
     def create_session(self, username: str, totp_verified: bool = False) -> str:
-        """Create a new session token for a user (stored in database)."""
+        """Create a new session token for a user (stored in database).
+
+        SECURITY: Uses UTC timestamps to prevent timezone manipulation issues.
+        """
         session_token = secrets.token_urlsafe(32)
-        expires = datetime.now() + timedelta(hours=24)
+        # Use UTC to prevent timezone manipulation
+        expires = datetime.utcnow() + timedelta(hours=24)
 
         # Store session in database instead of memory
         self.db.create_session(
@@ -353,6 +393,15 @@ class ChallengeCtlAPI:
     def update_session_totp(self, session_token: str) -> bool:
         """Mark session as TOTP verified (in database)."""
         return self.db.update_session_totp(session_token)
+
+    def renew_session(self, session_token: str) -> bool:
+        """Renew session expiry (sliding session).
+
+        SECURITY: Extends session by 24 hours from current time on activity.
+        Uses UTC timestamps to prevent timezone manipulation.
+        """
+        new_expires = datetime.utcnow() + timedelta(hours=24)
+        return self.db.update_session_expires(session_token, new_expires.isoformat())
 
     def destroy_session(self, session_token: str) -> bool:
         """Destroy a session (from database)."""
@@ -502,15 +551,16 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
+                # Get security settings (auto-detects HTTP vs HTTPS)
+                cookie_settings = self.get_cookie_security_settings()
+
                 # Set secure httpOnly cookie for session token
-                # NOTE: Using samesite=None to allow WebSocket connections
-                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=False,   # Set to True in production with HTTPS
-                    samesite=None,  # Allow WebSocket connections (was 'Lax')
+                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
+                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -519,8 +569,8 @@ class ChallengeCtlAPI:
                     'csrf_token',
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
-                    secure=False,    # Set to True in production with HTTPS
-                    samesite=None,   # Match session cookie setting
+                    secure=cookie_settings['secure'],  # Match session cookie security
+                    samesite=cookie_settings['samesite'],  # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -558,15 +608,16 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
+                # Get security settings (auto-detects HTTP vs HTTPS)
+                cookie_settings = self.get_cookie_security_settings()
+
                 # Set secure httpOnly cookie for session token
-                # NOTE: Using samesite=None to allow WebSocket connections
-                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=False,   # Set to True in production with HTTPS
-                    samesite=None,  # Allow WebSocket connections (was 'Lax')
+                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
+                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -575,8 +626,8 @@ class ChallengeCtlAPI:
                     'csrf_token',
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
-                    secure=False,    # Set to True in production with HTTPS
-                    samesite=None,   # Match session cookie setting
+                    secure=cookie_settings['secure'],  # Match session cookie security
+                    samesite=cookie_settings['samesite'],  # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -605,8 +656,9 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Invalid or expired session'}), 401
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -695,14 +747,19 @@ class ChallengeCtlAPI:
                 return jsonify({'authenticated': False, 'error': 'Invalid session'}), 401
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
 
             # Check if TOTP was verified (required for full authentication)
             if not session.get('totp_verified', False):
                 return jsonify({'authenticated': False, 'error': 'TOTP verification required'}), 401
+
+            # SECURITY: Sliding session - renew expiry on session check
+            # This is called on page refresh and navigation
+            self.renew_session(session_token)
 
             # Session is valid
             username = session['username']
@@ -729,21 +786,22 @@ class ChallengeCtlAPI:
             # Clear both session and CSRF cookies
             # NOTE: Cookie attributes must match exactly how they were set during login
             # Otherwise browsers won't delete them
+            cookie_settings = self.get_cookie_security_settings()
             response = make_response(jsonify({'status': 'logged out'}), 200)
             response.set_cookie(
                 'session_token',
                 '',
                 httponly=True,
-                secure=False,    # Must match login cookie setting
-                samesite=None,
+                secure=cookie_settings['secure'],  # Must match login cookie setting
+                samesite=cookie_settings['samesite'],
                 max_age=0        # Use max_age=0 to delete cookie (matches login style)
             )
             response.set_cookie(
                 'csrf_token',
                 '',
                 httponly=False,
-                secure=False,    # Must match login cookie setting
-                samesite=None,
+                secure=cookie_settings['secure'],  # Must match login cookie setting
+                samesite=cookie_settings['samesite'],
                 max_age=0        # Use max_age=0 to delete cookie (matches login style)
             )
 
@@ -1025,8 +1083,10 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Internal server error'}), 500
 
         # Runner endpoints
+        # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats
         @self.app.route('/api/runners/register', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Registration not frequent
         def register_runner():
             """Register a runner with the server."""
             data = request.json
@@ -1070,6 +1130,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/heartbeat', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent heartbeats (every 30s)
         def heartbeat(runner_id):
             """Update runner heartbeat."""
             if request.runner_id != runner_id:
@@ -1093,6 +1154,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/signout', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Signout not frequent
         def signout(runner_id):
             """Runner graceful signout."""
             if request.runner_id != runner_id:
@@ -1115,6 +1177,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/task', methods=['GET'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent task polling
         def get_task(runner_id):
             """Get next challenge assignment for runner."""
             if request.runner_id != runner_id:
@@ -1148,6 +1211,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/complete', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent task completions
         def complete_task(runner_id):
             """Mark challenge as completed."""
             if request.runner_id != runner_id:
@@ -1215,6 +1279,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/log', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent logging
         def upload_log(runner_id):
             """Receive log entries from runner."""
             if request.runner_id != runner_id:
@@ -1491,7 +1556,7 @@ class ChallengeCtlAPI:
                 }), 200
             except Exception as e:
                 logger.error(f"Error reloading challenges: {e}")
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': 'Failed to reload challenges'}), 500
 
         @self.app.route('/api/transmissions', methods=['GET'])
         @self.require_admin_auth
@@ -1558,6 +1623,7 @@ class ChallengeCtlAPI:
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])
         @self.require_api_key
+        @self.limiter.limit("500 per minute")  # Liberal limit for runner file downloads
         def download_file(file_hash):
             """Download a challenge file."""
             file_info = self.db.get_file(file_hash)
@@ -1574,8 +1640,9 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/files/upload', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Moderate limit for file uploads
         def upload_file():
-            """Upload a new challenge file."""
+            """Upload a new challenge file with security restrictions."""
             if 'file' not in request.files:
                 return jsonify({'error': 'No file provided'}), 400
 
@@ -1584,8 +1651,36 @@ class ChallengeCtlAPI:
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
 
+            # SECURITY: Validate file extension
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in self.ALLOWED_EXTENSIONS:
+                logger.warning(
+                    f"SECURITY: File upload rejected - invalid extension '{file_ext}' "
+                    f"from {request.remote_addr} (file: {file.filename})"
+                )
+                return jsonify({
+                    'error': f'Invalid file type. Allowed: {", ".join(sorted(self.ALLOWED_EXTENSIONS))}'
+                }), 400
+
             try:
-                # Read file data
+                # SECURITY: Validate file size before reading entire file
+                # Seek to end to get size, then back to beginning
+                file.seek(0, os.SEEK_END)
+                file_size = file.tell()
+                file.seek(0)
+
+                if file_size > self.MAX_FILE_SIZE:
+                    max_mb = self.MAX_FILE_SIZE / (1024 * 1024)
+                    actual_mb = file_size / (1024 * 1024)
+                    logger.warning(
+                        f"SECURITY: File upload rejected - size {actual_mb:.1f}MB exceeds limit "
+                        f"{max_mb:.0f}MB from {request.remote_addr} (file: {file.filename})"
+                    )
+                    return jsonify({
+                        'error': f'File too large. Maximum size: {max_mb:.0f}MB'
+                    }), 413
+
+                # Read file data (now we know it's safe size)
                 file_data = file.read()
 
                 # Calculate SHA-256 hash
@@ -1605,6 +1700,11 @@ class ChallengeCtlAPI:
                     file_path=file_path
                 )
 
+                logger.info(
+                    f"File uploaded successfully - hash={file_hash[:12]}... "
+                    f"name={file.filename} size={file_size} from {request.remote_addr}"
+                )
+
                 return jsonify({
                     'status': 'uploaded',
                     'file_hash': file_hash,
@@ -1614,7 +1714,7 @@ class ChallengeCtlAPI:
 
             except Exception as e:
                 logger.error(f"Error uploading file: {e}")
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': 'Internal server error'}), 500
 
         # Serve WebUI (Vue.js SPA)
         # This must be the LAST route to catch all non-API requests
@@ -1637,8 +1737,9 @@ class ChallengeCtlAPI:
                 return send_from_directory(self.frontend_dir, 'index.html')
 
             # Check if the requested path is an actual file (like CSS, JS, images)
-            file_path = os.path.join(self.frontend_dir, path)
-            if os.path.isfile(file_path):
+            # SECURITY: Use safe_join to prevent path traversal attacks
+            file_path = safe_join(self.frontend_dir, path)
+            if file_path and os.path.isfile(file_path):
                 return send_from_directory(self.frontend_dir, path)
 
             # For all other paths (like /public, /runners, etc.), serve index.html
@@ -1670,8 +1771,9 @@ class ChallengeCtlAPI:
                 return False  # Reject connection
 
             # Check if session is expired
+            # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
+            if datetime.utcnow() > expires:
                 self.db.delete_session(session_token)
                 logger.warning(f"WebSocket connection rejected: Expired session from {request.remote_addr}")
                 return False  # Reject connection
