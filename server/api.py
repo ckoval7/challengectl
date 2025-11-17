@@ -280,6 +280,26 @@ class ChallengeCtlAPI:
         """Generate a random CSRF token."""
         return secrets.token_urlsafe(32)
 
+    def get_cookie_security_settings(self) -> dict:
+        """
+        Determine secure cookie settings based on environment.
+
+        Returns dict with 'secure' and 'samesite' settings:
+        - In development (HTTP): secure=False, samesite='Lax'
+        - In production (HTTPS or behind reverse proxy): secure=True, samesite='Lax'
+
+        Detects HTTPS by checking:
+        1. request.is_secure (direct HTTPS)
+        2. X-Forwarded-Proto header (nginx reverse proxy with HTTPS termination)
+        """
+        # Check if we're running on HTTPS (direct or via reverse proxy)
+        is_https = request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'
+
+        return {
+            'secure': is_https,
+            'samesite': 'Lax'  # Lax allows cookies on top-level navigation (safer than None, works with redirects)
+        }
+
     def require_csrf(self, f):
         """Decorator to require CSRF token validation for state-changing operations."""
         @wraps(f)
@@ -507,15 +527,16 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
+                # Get security settings (auto-detects HTTP vs HTTPS)
+                cookie_settings = self.get_cookie_security_settings()
+
                 # Set secure httpOnly cookie for session token
-                # NOTE: Using samesite=None to allow WebSocket connections
-                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=False,   # Set to True in production with HTTPS
-                    samesite=None,  # Allow WebSocket connections (was 'Lax')
+                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
+                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -524,8 +545,8 @@ class ChallengeCtlAPI:
                     'csrf_token',
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
-                    secure=False,    # Set to True in production with HTTPS
-                    samesite=None,   # Match session cookie setting
+                    secure=cookie_settings['secure'],  # Match session cookie security
+                    samesite=cookie_settings['samesite'],  # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -563,15 +584,16 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
+                # Get security settings (auto-detects HTTP vs HTTPS)
+                cookie_settings = self.get_cookie_security_settings()
+
                 # Set secure httpOnly cookie for session token
-                # NOTE: Using samesite=None to allow WebSocket connections
-                # In production, set secure=True when using HTTPS
                 response.set_cookie(
                     'session_token',
                     session_token,
                     httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=False,   # Set to True in production with HTTPS
-                    samesite=None,  # Allow WebSocket connections (was 'Lax')
+                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
+                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
                     max_age=86400   # 24 hours (matches session expiry)
                 )
 
@@ -580,8 +602,8 @@ class ChallengeCtlAPI:
                     'csrf_token',
                     csrf_token,
                     httponly=False,  # JavaScript can read to send in header
-                    secure=False,    # Set to True in production with HTTPS
-                    samesite=None,   # Match session cookie setting
+                    secure=cookie_settings['secure'],  # Match session cookie security
+                    samesite=cookie_settings['samesite'],  # Match session cookie setting
                     max_age=86400    # 24 hours
                 )
 
@@ -734,21 +756,22 @@ class ChallengeCtlAPI:
             # Clear both session and CSRF cookies
             # NOTE: Cookie attributes must match exactly how they were set during login
             # Otherwise browsers won't delete them
+            cookie_settings = self.get_cookie_security_settings()
             response = make_response(jsonify({'status': 'logged out'}), 200)
             response.set_cookie(
                 'session_token',
                 '',
                 httponly=True,
-                secure=False,    # Must match login cookie setting
-                samesite=None,
+                secure=cookie_settings['secure'],  # Must match login cookie setting
+                samesite=cookie_settings['samesite'],
                 max_age=0        # Use max_age=0 to delete cookie (matches login style)
             )
             response.set_cookie(
                 'csrf_token',
                 '',
                 httponly=False,
-                secure=False,    # Must match login cookie setting
-                samesite=None,
+                secure=cookie_settings['secure'],  # Must match login cookie setting
+                samesite=cookie_settings['samesite'],
                 max_age=0        # Use max_age=0 to delete cookie (matches login style)
             )
 
