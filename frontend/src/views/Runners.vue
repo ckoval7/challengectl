@@ -23,15 +23,24 @@
       />
       <el-table-column
         label="Status"
-        width="100"
+        width="150"
       >
         <template #default="scope">
-          <el-tag
-            :type="scope.row.status === 'online' ? 'success' : 'info'"
-            size="small"
-          >
-            {{ scope.row.status }}
-          </el-tag>
+          <el-space>
+            <el-tag
+              :type="scope.row.status === 'online' ? 'success' : 'info'"
+              size="small"
+            >
+              {{ scope.row.status }}
+            </el-tag>
+            <el-tag
+              v-if="!scope.row.enabled"
+              type="warning"
+              size="small"
+            >
+              disabled
+            </el-tag>
+          </el-space>
         </template>
       </el-table-column>
       <el-table-column
@@ -52,16 +61,34 @@
       </el-table-column>
       <el-table-column
         label="Actions"
-        width="150"
+        width="220"
       >
         <template #default="scope">
-          <el-button
-            size="small"
-            type="danger"
-            @click="kickRunner(scope.row.runner_id)"
-          >
-            Kick
-          </el-button>
+          <el-space>
+            <el-button
+              v-if="scope.row.enabled"
+              size="small"
+              type="warning"
+              @click="disableRunner(scope.row.runner_id)"
+            >
+              Disable
+            </el-button>
+            <el-button
+              v-else
+              size="small"
+              type="success"
+              @click="enableRunner(scope.row.runner_id)"
+            >
+              Enable
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              @click="kickRunner(scope.row.runner_id)"
+            >
+              Kick
+            </el-button>
+          </el-space>
         </template>
       </el-table-column>
       <el-table-column type="expand">
@@ -121,6 +148,28 @@ export default {
       }
     }
 
+    const enableRunner = async (runnerId) => {
+      try {
+        await api.post(`/runners/${runnerId}/enable`)
+        ElMessage.success('Runner enabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error enabling runner:', error)
+        ElMessage.error('Failed to enable runner')
+      }
+    }
+
+    const disableRunner = async (runnerId) => {
+      try {
+        await api.post(`/runners/${runnerId}/disable`)
+        ElMessage.success('Runner disabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error disabling runner:', error)
+        ElMessage.error('Failed to disable runner')
+      }
+    }
+
     const kickRunner = async (runnerId) => {
       try {
         await ElMessageBox.confirm(
@@ -143,7 +192,7 @@ export default {
       }
     }
 
-    const handleWebSocketEvent = (event) => {
+    const handleRunnerStatusEvent = (event) => {
       console.log('Runners page received runner_status event:', event)
 
       const runner = runners.value.find(r => r.runner_id === event.runner_id)
@@ -170,20 +219,34 @@ export default {
       }
     }
 
+    const handleRunnerEnabledEvent = (event) => {
+      console.log('Runners page received runner_enabled event:', event)
+
+      const runner = runners.value.find(r => r.runner_id === event.runner_id)
+      if (runner) {
+        runner.enabled = event.enabled
+        console.log(`Updated runner ${event.runner_id} enabled status to:`, event.enabled)
+      }
+    }
+
     onMounted(() => {
       loadRunners()
 
       // Connect WebSocket for real-time updates
       websocket.connect()
-      websocket.on('runner_status', handleWebSocketEvent)
+      websocket.on('runner_status', handleRunnerStatusEvent)
+      websocket.on('runner_enabled', handleRunnerEnabledEvent)
     })
 
     onUnmounted(() => {
-      websocket.off('runner_status', handleWebSocketEvent)
+      websocket.off('runner_status', handleRunnerStatusEvent)
+      websocket.off('runner_enabled', handleRunnerEnabledEvent)
     })
 
     return {
       runners,
+      enableRunner,
+      disableRunner,
       kickRunner,
       formatTimestamp: formatDateTime
     }

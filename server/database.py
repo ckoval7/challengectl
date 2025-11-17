@@ -60,6 +60,7 @@ class Database:
                     hostname TEXT,
                     ip_address TEXT,
                     status TEXT DEFAULT 'offline',
+                    enabled BOOLEAN DEFAULT 1,
                     last_heartbeat TIMESTAMP,
                     devices JSON,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -211,6 +212,14 @@ class Database:
                 print("After setup, you can delete this default admin account.", flush=True)
                 print("=" * 80 + "\n", flush=True)
 
+            # Migrations for existing databases
+            # Add enabled column to runners table if it doesn't exist
+            cursor.execute("PRAGMA table_info(runners)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'enabled' not in columns:
+                logger.info("Adding 'enabled' column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
+
             # Create indexes
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_challenges_status
@@ -307,6 +316,34 @@ class Database:
                 WHERE runner_id = ?
             ''', (runner_id,))
             conn.commit()
+            return cursor.rowcount > 0
+
+    def enable_runner(self, runner_id: str) -> bool:
+        """Enable a runner to receive task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE runners
+                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (runner_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Enabled runner: {runner_id}")
+            return cursor.rowcount > 0
+
+    def disable_runner(self, runner_id: str) -> bool:
+        """Disable a runner from receiving task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE runners
+                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (runner_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Disabled runner: {runner_id}")
             return cursor.rowcount > 0
 
     def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
@@ -411,6 +448,14 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
+                # Check if runner is enabled
+                cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
+                runner_row = cursor.fetchone()
+                if not runner_row or not runner_row['enabled']:
+                    conn.rollback()
+                    logger.debug(f"Runner {runner_id} is disabled, skipping task assignment")
+                    return None
+
                 # Find next available challenge (queued or waiting with expired delay)
                 cursor.execute('''
                     SELECT * FROM challenges

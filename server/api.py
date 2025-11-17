@@ -1330,6 +1330,40 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Runner not found'}), 404
 
+        @self.app.route('/api/runners/<runner_id>/enable', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def enable_runner(runner_id):
+            """Enable a runner to receive task assignments."""
+            success = self.db.enable_runner(runner_id)
+
+            if success:
+                self.broadcast_event('runner_enabled', {
+                    'runner_id': runner_id,
+                    'enabled': True,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                return jsonify({'status': 'enabled'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
+        @self.app.route('/api/runners/<runner_id>/disable', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def disable_runner(runner_id):
+            """Disable a runner from receiving task assignments."""
+            success = self.db.disable_runner(runner_id)
+
+            if success:
+                self.broadcast_event('runner_enabled', {
+                    'runner_id': runner_id,
+                    'enabled': False,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                return jsonify({'status': 'disabled'}), 200
+            else:
+                return jsonify({'error': 'Runner not found'}), 404
+
         @self.app.route('/api/challenges', methods=['GET'])
         @self.require_admin_auth
         def get_challenges():
