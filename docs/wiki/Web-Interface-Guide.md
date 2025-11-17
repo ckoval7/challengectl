@@ -25,7 +25,7 @@ The ChallengeCtl web interface provides a comprehensive view of your RF challeng
 - **Runner control**: Monitor runner status and manage connections
 - **Log streaming**: Real-time logs from server and all runners
 - **User administration**: Manage admin accounts and credentials
-- **System controls**: Pause, resume, and stop operations
+- **System controls**: Pause and resume operations
 
 ## Accessing the Web Interface
 
