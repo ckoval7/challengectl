@@ -96,6 +96,7 @@ class ChallengeCtlRunner:
         # Running state
         self.running = False
         self.current_task = None
+        self._shutdown_initiated = False
 
         # HTTP session for connection pooling
         self.session = requests.Session()
@@ -231,13 +232,16 @@ class ChallengeCtlRunner:
             )
 
             if response.status_code == 200:
+                print("Signed out successfully", flush=True)
                 logger.info("Signed out successfully")
                 return True
             else:
+                print(f"Signout failed: {response.status_code}", flush=True)
                 logger.warning(f"Signout failed: {response.status_code}")
                 return False
 
         except Exception as e:
+            print(f"Error during signout: {e}", flush=True)
             logger.error(f"Error during signout: {e}")
             return False
 
@@ -627,27 +631,39 @@ class ChallengeCtlRunner:
 
     def start(self):
         """Start the runner."""
+        print("="*60)
+        print("ChallengeCtl Runner Starting")
+        print("="*60)
+        print(f"Runner ID: {self.runner_id}")
+        print(f"Server: {self.server_url}")
+        print(f"Devices: {len(self.devices)}")
+        print("="*60)
+
         logger.info(f"Runner {self.runner_id} starting")
         logger.info(f"Server: {self.server_url}, Devices: {len(self.devices)}")
 
         # Set up signal handlers for graceful shutdown
         def signal_handler(signum, frame):
             sig_name = signal.Signals(signum).name
+            print(f"\n{sig_name} signal received...", flush=True)
             logger.info(f"Received {sig_name} signal, shutting down...")
             self.stop()
-            sys.exit(0)
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
         # Register with server
+        print("Registering with server...")
         if not self.register():
+            print("Failed to register with server. Exiting.")
             logger.error("Failed to register with server. Exiting.")
             sys.exit(1)
+        print("Registration successful")
 
         # Add server log handler to forward logs
         server_handler = ServerLogHandler(self)
         logging.root.addHandler(server_handler)
+        print("Log forwarding to server enabled")
         logger.info("Log forwarding to server enabled")
 
         self.running = True
@@ -655,30 +671,41 @@ class ChallengeCtlRunner:
         # Start heartbeat thread
         heartbeat_thread = threading.Thread(target=self.heartbeat_loop, daemon=True)
         heartbeat_thread.start()
+        print("Heartbeat thread started")
         logger.info("Heartbeat thread started")
 
         # Start task loop (blocking)
-        try:
-            self.task_loop()
-        except KeyboardInterrupt:
-            logger.info("Shutdown requested")
-            self.stop()
+        print("Starting task loop...")
+        print("Press Ctrl+C to shutdown")
+        print()
+        self.task_loop()
 
     def stop(self):
         """Stop the runner."""
+        # Prevent duplicate shutdown attempts
+        if self._shutdown_initiated:
+            return
+
+        self._shutdown_initiated = True
+        print("Stopping runner...", flush=True)
         logger.info("Stopping runner...")
         self.running = False
 
         # Sign out from server
+        print("Signing out from server...", flush=True)
         self.signout()
 
         # Give threads time to finish
         time.sleep(1)
+        print("Runner stopped", flush=True)
         logger.info("Runner stopped")
 
         # Flush all log handlers to ensure messages are written
         for handler in logging.root.handlers:
             handler.flush()
+
+        # Exit cleanly after shutdown
+        sys.exit(0)
 
 
 def argument_parser():
@@ -751,22 +778,17 @@ def main():
     date_format = '%Y-%m-%dT%H:%M:%S'
     formatter = logging.Formatter(log_format, datefmt=date_format)
 
-    # File handler
+    # File handler (only log to file, use print() for user-facing messages)
     file_handler = logging.FileHandler(log_file, mode='w')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
     logging.root.addHandler(file_handler)
 
-    # Console handler for important messages
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)  # Always show INFO and above on console
-    console_handler.setFormatter(formatter)
-    logging.root.addHandler(console_handler)
-
     # Set root logger level
     logging.root.setLevel(log_level)
 
     logging.info(f"Logging initialized at {args.log_level} level")
+    print(f"Logging to {log_file}")
 
     # Create and start runner
     runner = ChallengeCtlRunner(args.config)
