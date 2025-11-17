@@ -31,6 +31,8 @@ The runner requires additional software for SDR operations:
 
 - **GNU Radio**: Version 3.8 or higher (for signal generation and transmission)
 - **gr-osmosdr**: For SDR hardware interface
+- **gr-paint**: For spectrum painting challenges (must be compiled from source)
+- **gr-mixalot**: For POCSAG paging challenges (must be compiled from source)
 - **SoapySDR**: Universal SDR hardware abstraction layer (recommended)
 
 ### Supported SDR Devices
@@ -57,13 +59,60 @@ sudo apt-get install hackrf libhackrf-dev  # For HackRF
 sudo apt-get install limesuite liblimesuite-dev  # For LimeSDR
 ```
 
+**Install build dependencies for GNU Radio modules:**
+
+```bash
+sudo apt-get install git cmake g++ libboost-all-dev libgmp-dev swig \
+  python3-numpy python3-mako python3-sphinx python3-lxml doxygen \
+  libfftw3-dev libsdl1.2-dev libgsl-dev libqwt-qt5-dev libqt5opengl5-dev \
+  python3-pyqt5 liblog4cpp5-dev libzmq3-dev python3-yaml python3-click \
+  python3-click-plugins python3-zmq python3-scipy python3-gi \
+  python3-gi-cairo gobject-introspection gir1.2-gtk-3.0
+```
+
+**Install gr-paint (required for spectrum painting challenges):**
+
+```bash
+cd /tmp
+git clone https://github.com/drmpeg/gr-paint.git
+cd gr-paint
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+sudo ldconfig
+```
+
+**Install gr-mixalot (required for POCSAG paging challenges):**
+
+```bash
+cd /tmp
+git clone https://github.com/unsynchronized/gr-mixalot.git
+cd gr-mixalot
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+sudo ldconfig
+```
+
 #### Fedora/RHEL
 
 ```bash
 sudo dnf install python3 python3-pip
 sudo dnf install gnuradio gr-osmosdr
 sudo dnf install hackrf  # For HackRF
+
+# Build dependencies
+sudo dnf install git cmake gcc-c++ boost-devel gmp-devel swig \
+  python3-numpy python3-mako python3-sphinx fftw-devel \
+  SDL-devel gsl-devel qwt-qt5-devel python3-pyqt5 \
+  log4cpp-devel zeromq-devel python3-pyyaml
 ```
+
+Then compile gr-paint and gr-mixalot following the Ubuntu instructions above.
 
 #### macOS
 
@@ -72,7 +121,12 @@ brew install python3
 brew install gnuradio
 brew install hackrf  # For HackRF
 brew install limesuite  # For LimeSDR
+
+# Build dependencies
+brew install cmake boost gmp swig fftw sdl gsl qwt qt@5 log4cpp zeromq
 ```
+
+Then compile gr-paint and gr-mixalot following the Ubuntu instructions above.
 
 ### Clone the Repository
 
@@ -83,22 +137,39 @@ cd challengectl
 
 ### Create a Virtual Environment
 
+Create a Python virtual environment with access to system-installed GNU Radio libraries:
+
 ```bash
-python3 -m venv venv
+python3 -m venv --system-site-packages venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
+
+**Important**: The `--system-site-packages` flag is required so the virtual environment can access GNU Radio and the gr-* modules installed system-wide.
 
 ### Install Python Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-runner.txt
 ```
 
 ### Verify Installation
 
+Verify Python modules:
+
 ```bash
 python -c "from challengectl.runner import runner; print('Installation successful')"
 ```
+
+Verify GNU Radio modules:
+
+```bash
+python3 -c "from gnuradio import gr; print('GNU Radio OK')"
+python3 -c "import osmosdr; print('gr-osmosdr OK')"
+python3 -c "import paint; print('gr-paint OK')"
+python3 -c "import mixalot; print('gr-mixalot OK')"
+```
+
+If any module fails to import, revisit the installation steps for that component.
 
 ## SDR Hardware Setup
 

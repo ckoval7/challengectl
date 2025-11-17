@@ -8,7 +8,10 @@ Before you begin, ensure you have the following:
 
 - Python 3.8 or higher
 - For runners: SDR hardware (HackRF, LimeSDR, or compatible device)
+- For runners: GNU Radio 3.8 or higher with gr-osmosdr, gr-paint, and gr-mixalot
 - Basic understanding of software defined radio concepts
+
+**Note**: Runners require additional GNU Radio modules that must be compiled from source. See the [Runner Setup Guide](Runner-Setup#install-system-dependencies) for detailed installation instructions.
 
 ## Step 1: Install Dependencies
 
@@ -17,8 +20,16 @@ Clone the repository and install the required Python packages:
 ```bash
 git clone https://github.com/ckoval7/challengectl.git
 cd challengectl
-pip install -r requirements.txt
+
+# For server only
+pip install -r requirements-server.txt
+
+# For runners, also install GNU Radio and compile gr-paint and gr-mixalot
+# See the Runner Setup guide for detailed instructions
+pip install -r requirements-runner.txt
 ```
+
+**Important for runners**: You must install GNU Radio, gr-osmosdr, gr-paint, and gr-mixalot before running a runner. These cannot be installed via pip. See the [Runner Setup Guide](Runner-Setup) for complete instructions.
 
 ## Step 2: Set Up the Server
 
@@ -72,6 +83,20 @@ python -m challengectl.server.server
 The server will start on port 8443. Access the web interface at `http://localhost:8443`.
 
 ## Step 3: Set Up a Runner
+
+**Prerequisites**: Before configuring a runner, ensure you have installed GNU Radio, gr-osmosdr, gr-paint, and gr-mixalot. See the [Runner Setup Guide](Runner-Setup#install-system-dependencies) for instructions.
+
+### Create Virtual Environment with System Packages
+
+Create a Python virtual environment that can access system-installed GNU Radio:
+
+```bash
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+pip install -r requirements-runner.txt
+```
+
+**Important**: The `--system-site-packages` flag allows the virtual environment to access GNU Radio and its modules.
 
 ### Configure the Runner
 

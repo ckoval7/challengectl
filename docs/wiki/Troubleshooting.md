@@ -154,6 +154,69 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 
 ## Runner Issues
 
+### GNU Radio Module Import Errors
+
+**Symptoms**: ImportError when runner tries to import GNU Radio modules.
+
+**Possible Causes and Solutions**:
+
+1. **gr-paint or gr-mixalot not installed**
+   ```
+   ModuleNotFoundError: No module named 'paint'
+   ModuleNotFoundError: No module named 'mixalot'
+   ```
+   **Solution**: Compile and install the missing modules:
+   ```bash
+   # Install gr-paint
+   cd /tmp
+   git clone https://github.com/drmpeg/gr-paint.git
+   cd gr-paint
+   mkdir build && cd build
+   cmake ..
+   make
+   sudo make install
+   sudo ldconfig
+
+   # Install gr-mixalot
+   cd /tmp
+   git clone https://github.com/unsynchronized/gr-mixalot.git
+   cd gr-mixalot
+   mkdir build && cd build
+   cmake ..
+   make
+   sudo make install
+   sudo ldconfig
+   ```
+
+2. **Virtual environment without system packages**
+   ```
+   ModuleNotFoundError: No module named 'gnuradio'
+   ```
+   **Solution**: Recreate the virtual environment with `--system-site-packages`:
+   ```bash
+   deactivate  # Exit current venv
+   rm -rf venv
+   python3 -m venv --system-site-packages venv
+   source venv/bin/activate
+   pip install -r requirements-runner.txt
+   ```
+
+3. **GNU Radio not in Python path**
+   **Solution**: Verify GNU Radio installation:
+   ```bash
+   python3 -c "from gnuradio import gr; print(gr.version())"
+   ```
+   If this fails, reinstall GNU Radio:
+   ```bash
+   sudo apt-get install --reinstall gnuradio
+   ```
+
+4. **Library cache not updated**
+   **Solution**: Update the library cache after installing GNU Radio modules:
+   ```bash
+   sudo ldconfig
+   ```
+
 ### Runner Won't Connect to Server
 
 **Symptoms**: Runner fails to register or connect to server.
