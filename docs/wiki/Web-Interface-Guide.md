@@ -383,29 +383,30 @@ Understanding the differences between these operations is critical:
 #### Stop System
 
 **What it does**:
-- Initiates graceful server shutdown
-- Completes active transmissions first
-- Disconnects all runners
-- Closes database connections
-- Stops the web server
-- Web interface becomes inaccessible
+- Pauses the system (same as Pause button)
+- Requeues all currently assigned challenges
+- Runners remain connected and send heartbeats
+- Web interface remains accessible
+- Does NOT shut down the server
 
 **When to use**:
-- Ending a CTF event
-- Major server maintenance
-- Applying configuration changes that require restart
-- Shutting down the infrastructure
+- Quickly stopping all operations without disconnecting runners
+- Emergency halt of all transmissions
+- Resetting all assigned tasks to waiting state
 
 **How to resume**:
-- Manually restart the server process
-- Runners will automatically reconnect
+- Click "Resume" button (system is paused after stop)
+- Challenge queueing resumes immediately
+- System returns to normal operation
 
 **Effect on**:
-- **Active transmissions**: Allowed to complete
-- **Waiting challenges**: Cleared from queue
-- **Queued challenges**: Cleared from queue
-- **Runners**: Disconnect cleanly
-- **Web UI**: Becomes unavailable
+- **Active transmissions**: Interrupted and requeued
+- **Assigned challenges**: Requeued to waiting state
+- **Queued challenges**: Remain queued
+- **Runners**: Stay connected and idle
+- **Web UI**: Fully functional
+
+**Note**: The "Stop" button does not shut down the ChallengeCtl server. To shut down the server, use `Ctrl+C` in the terminal or `systemctl stop challengectl` if running as a service.
 
 #### Disable (Runner-specific)
 
@@ -436,7 +437,7 @@ Understanding the differences between these operations is critical:
 | Operation | New Tasks | Active Tasks | Runners Connected | Web UI | Restart Required |
 |-----------|-----------|--------------|-------------------|--------|------------------|
 | **Pause** | Stopped | Complete | Yes | Yes | No |
-| **Stop** | Stopped | Complete | No | No | Yes |
+| **Stop** | Stopped | Requeued | Yes | Yes | No |
 | **Disable Runner** | Stopped (1 runner) | Complete | Yes | Yes | No |
 
 ### Reload Configuration

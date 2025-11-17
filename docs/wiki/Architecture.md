@@ -114,6 +114,19 @@ Real-time event broadcasting to connected web clients:
 - Transmission events
 - Log messages
 
+#### 5. Background Tasks
+
+The server runs periodic background tasks for system maintenance:
+
+| Task | Interval | Description |
+|------|----------|-------------|
+| Cleanup stale runners | 30 seconds | Marks runners offline if heartbeat timeout exceeded (90s) |
+| Cleanup stale assignments | 30 seconds | Requeues challenges with expired assignments (5 minutes) |
+| Cleanup expired sessions | 60 seconds | Removes expired user sessions from database |
+| Cleanup expired TOTP codes | 60 seconds | Removes old TOTP verification codes |
+
+These tasks ensure system reliability by automatically detecting and recovering from failures without manual intervention.
+
 ### Runner Components
 
 Each runner is a long-running Python process that:
@@ -181,11 +194,10 @@ The frontend communicates with the server via:
 
 3. Server Assigns Task (Atomic)
    ├─ BEGIN IMMEDIATE transaction
-   ├─ SELECT challenge WHERE state='waiting' FOR UPDATE
+   ├─ SELECT challenge WHERE status='waiting' FOR UPDATE
    ├─ Filter by runner's frequency limits
    ├─ SELECT first matching challenge
-   ├─ UPDATE challenge SET state='assigned'
-   ├─ INSERT assignment record
+   ├─ UPDATE challenge SET status='assigned', assigned_to=runner_id
    ├─ COMMIT transaction
    └─ Return challenge details to runner
 
@@ -208,10 +220,10 @@ The frontend communicates with the server via:
 
 7. Server Processes Completion
    ├─ BEGIN IMMEDIATE transaction
-   ├─ UPDATE challenge SET state='queued'
-   ├─ UPDATE challenge SET last_run=now()
-   ├─ DELETE assignment record
-   ├─ INSERT transmission_log entry
+   ├─ UPDATE challenge SET status='queued'
+   ├─ UPDATE challenge SET last_tx_time=now()
+   ├─ UPDATE challenge SET assigned_to=NULL
+   ├─ INSERT transmissions entry
    ├─ COMMIT transaction
    └─ Broadcast WebSocket event
 ```
@@ -245,60 +257,75 @@ Stores registered runners and their status.
 | Column | Type | Description |
 |--------|------|-------------|
 | `runner_id` | TEXT PRIMARY KEY | Unique runner identifier |
-| `api_key` | TEXT | Hashed API key for authentication |
-| `last_heartbeat` | TIMESTAMP | Last received heartbeat |
+| `hostname` | TEXT | Runner machine hostname |
+| `ip_address` | TEXT | Runner IP address |
 | `status` | TEXT | online, offline, or busy |
-| `frequency_limits` | TEXT | JSON array of supported frequency ranges |
-| `registered_at` | TIMESTAMP | Initial registration time |
+| `enabled` | BOOLEAN | Whether runner can receive tasks |
+| `last_heartbeat` | TIMESTAMP | Last received heartbeat |
+| `devices` | TEXT | JSON array of SDR devices and their capabilities |
+| `created_at` | TIMESTAMP | Initial registration time |
+| `updated_at` | TIMESTAMP | Last update time |
 
 ### challenges
 
-Stores challenge definitions and current state.
+Stores challenge definitions and current state. Challenge configuration is stored as a JSON blob in the `config` column.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `challenge_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
 | `name` | TEXT UNIQUE | Challenge name |
-| `frequency` | INTEGER | Transmission frequency (Hz) |
-| `modulation` | TEXT | Modulation type |
-| `flag_file` | TEXT | Path to challenge file |
-| `flag_hash` | TEXT | SHA-256 hash of file |
-| `min_delay` | INTEGER | Minimum seconds between runs |
-| `max_delay` | INTEGER | Maximum seconds between runs |
-| `state` | TEXT | queued, waiting, assigned, or disabled |
-| `last_run` | TIMESTAMP | Last transmission time |
+| `config` | TEXT | JSON blob containing all challenge parameters (frequency, modulation, file paths, delays, etc.) |
+| `status` | TEXT | queued, waiting, assigned, or disabled |
+| `priority` | INTEGER | Challenge priority (higher = more important) |
+| `last_tx_time` | TIMESTAMP | Last transmission completion time |
+| `next_tx_time` | TIMESTAMP | Calculated next transmission time |
+| `transmission_count` | INTEGER | Total number of transmissions |
+| `assigned_to` | TEXT | Runner ID currently assigned (NULL if not assigned) |
+| `assigned_at` | TIMESTAMP | When current assignment was made |
+| `assignment_expires` | TIMESTAMP | When assignment will timeout |
 | `enabled` | BOOLEAN | Whether challenge is active |
+| `created_at` | TIMESTAMP | Challenge creation time |
 
-### assignments
+**Note**: There is no separate `assignments` table. Assignment information is tracked directly in the `challenges` table via the `assigned_to`, `assigned_at`, and `assignment_expires` columns.
 
-Tracks active task assignments to runners.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `assignment_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
-| `runner_id` | TEXT | Runner handling this task |
-| `challenge_id` | INTEGER | Challenge being executed |
-| `assigned_at` | TIMESTAMP | When task was assigned |
-
-**Constraints**:
-- `FOREIGN KEY (runner_id) REFERENCES runners(runner_id)`
-- `FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id)`
-- `UNIQUE (challenge_id)` - Each challenge can only be assigned once
-
-### transmission_log
+### transmissions
 
 Historical record of all transmissions.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `log_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
-| `challenge_name` | TEXT | Name of challenge |
-| `runner_id` | TEXT | Runner that executed |
-| `frequency` | INTEGER | Transmission frequency |
-| `modulation` | TEXT | Modulation type |
+| `transmission_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
+| `challenge_id` | INTEGER | Challenge that was transmitted |
+| `runner_id` | TEXT | Runner that executed the transmission |
+| `device_id` | TEXT | Specific SDR device used |
+| `frequency` | INTEGER | Transmission frequency (Hz) |
+| `started_at` | TIMESTAMP | Transmission start time |
+| `completed_at` | TIMESTAMP | Transmission completion time |
 | `status` | TEXT | success or failure |
-| `timestamp` | TIMESTAMP | Completion time |
 | `error_message` | TEXT | Error details (if failed) |
+
+### files
+
+Content-addressed storage for challenge files.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_hash` | TEXT PRIMARY KEY | SHA-256 hash of file content |
+| `filename` | TEXT | Original filename |
+| `size` | INTEGER | File size in bytes |
+| `mime_type` | TEXT | MIME type of file |
+| `file_path` | TEXT | Path to file on server |
+| `created_at` | TIMESTAMP | When file was registered |
+
+### system_state
+
+Key-value store for system-wide state.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `key` | TEXT PRIMARY KEY | State key (e.g., "paused") |
+| `value` | TEXT | State value |
+| `updated_at` | TIMESTAMP | Last update time |
 
 ### users
 
@@ -306,21 +333,27 @@ Admin user accounts.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `user_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
-| `username` | TEXT UNIQUE | Login username |
+| `username` | TEXT PRIMARY KEY | Login username (unique identifier) |
 | `password_hash` | TEXT | Bcrypt password hash |
-| `totp_secret` | TEXT | Encrypted TOTP secret |
+| `totp_secret` | TEXT | Encrypted TOTP secret for 2FA |
+| `enabled` | BOOLEAN | Whether account is active |
+| `password_change_required` | BOOLEAN | Force password change on next login |
 | `created_at` | TIMESTAMP | Account creation time |
+| `last_login` | TIMESTAMP | Last successful login time |
 
-### runner_keys
+### sessions
 
-API keys for runner authentication.
+Session management for web interface.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `key_id` | TEXT PRIMARY KEY | Key identifier (runner name) |
-| `api_key` | TEXT UNIQUE | Actual API key value |
-| `created_at` | TIMESTAMP | Key generation time |
+| `session_token` | TEXT PRIMARY KEY | Unique session identifier |
+| `username` | TEXT | Associated user account |
+| `expires` | TIMESTAMP | Session expiration time (24 hours) |
+| `totp_verified` | BOOLEAN | Whether TOTP has been verified for this session |
+| `created_at` | TIMESTAMP | Session creation time |
+
+**Note**: Runner API keys are **not** stored in the database. They are configured in `server-config.yml` under `server.api_keys` and loaded into memory when the server starts.
 
 ## Mutual Exclusion Mechanism
 
@@ -345,26 +378,24 @@ def assign_task(runner_id, frequency_limits):
         # Find waiting challenge within runner's frequency limits
         challenge = db.query(
             "SELECT * FROM challenges "
-            "WHERE state = 'waiting' "
+            "WHERE status = 'waiting' "
+            "AND assigned_to IS NULL "
             "AND frequency BETWEEN ? AND ? "
-            "ORDER BY RANDOM() LIMIT 1 "
+            "ORDER BY priority DESC, RANDOM() "
+            "LIMIT 1 "
             "FOR UPDATE"  # Row-level lock
         )
 
         if challenge:
-            # Update state atomically
+            # Update state and assignment atomically
             db.execute(
-                "UPDATE challenges SET state = 'assigned' "
+                "UPDATE challenges "
+                "SET status = 'assigned', "
+                "    assigned_to = ?, "
+                "    assigned_at = ?, "
+                "    assignment_expires = ? "
                 "WHERE challenge_id = ?",
-                challenge.id
-            )
-
-            # Record assignment
-            db.execute(
-                "INSERT INTO assignments "
-                "(runner_id, challenge_id, assigned_at) "
-                "VALUES (?, ?, ?)",
-                (runner_id, challenge.id, now())
+                (runner_id, now(), now() + 5_minutes, challenge.id)
             )
 
             return challenge
@@ -376,7 +407,7 @@ def assign_task(runner_id, frequency_limits):
 
 1. **Atomicity**: State changes happen in a single transaction
 2. **Isolation**: Other transactions wait until lock is released
-3. **Consistency**: A challenge in "assigned" state always has an assignment record
+3. **Consistency**: A challenge in "assigned" state always has a non-NULL `assigned_to` value
 4. **Durability**: Committed assignments survive server crashes
 
 ### Handling Concurrent Requests
@@ -440,17 +471,12 @@ def cleanup_stale_runners():
 
         # Requeue assigned tasks
         db.execute(
-            "UPDATE challenges SET state = 'waiting' "
-            "WHERE challenge_id IN ("
-            "  SELECT challenge_id FROM assignments "
-            "  WHERE runner_id = ?"
-            ")",
-            runner.id
-        )
-
-        # Delete assignments
-        db.execute(
-            "DELETE FROM assignments WHERE runner_id = ?",
+            "UPDATE challenges "
+            "SET status = 'waiting', "
+            "    assigned_to = NULL, "
+            "    assigned_at = NULL, "
+            "    assignment_expires = NULL "
+            "WHERE assigned_to = ?",
             runner.id
         )
 ```
@@ -461,25 +487,26 @@ Tasks that remain assigned for too long (5 minutes) are automatically requeued:
 
 ```python
 def cleanup_stale_assignments():
-    timeout = now() - 5_minutes
+    timeout = now()
 
+    # Find challenges where assignment has expired
     stale = db.query(
-        "SELECT * FROM assignments WHERE assigned_at < ?",
+        "SELECT challenge_id, assigned_to FROM challenges "
+        "WHERE assignment_expires < ? "
+        "AND assigned_to IS NOT NULL",
         timeout
     )
 
-    for assignment in stale:
-        # Requeue challenge
+    for challenge in stale:
+        # Requeue challenge and clear assignment
         db.execute(
-            "UPDATE challenges SET state = 'waiting' "
+            "UPDATE challenges "
+            "SET status = 'waiting', "
+            "    assigned_to = NULL, "
+            "    assigned_at = NULL, "
+            "    assignment_expires = NULL "
             "WHERE challenge_id = ?",
-            assignment.challenge_id
-        )
-
-        # Remove assignment
-        db.execute(
-            "DELETE FROM assignments WHERE assignment_id = ?",
-            assignment.id
+            challenge.challenge_id
         )
 ```
 
@@ -489,7 +516,7 @@ If the server crashes or restarts:
 
 1. **Database state is preserved** (SQLite is durable)
 2. **Runners continue heartbeats** and will reconnect
-3. **Assigned tasks are preserved** in the assignments table
+3. **Assigned tasks are preserved** in the challenges table (via `assigned_to`, `assigned_at`, `assignment_expires` columns)
 4. **Background tasks resume** cleanup and queueing
 
 Runners detect server downtime through failed HTTP requests and will retry with exponential backoff.
@@ -554,13 +581,14 @@ def prepare_file(file_hash, cache_dir):
 
 **Runner authentication**:
 - API keys sent in `X-API-Key` header
-- Keys stored hashed in database (bcrypt)
+- Keys configured in `server-config.yml` (not stored in database)
 - Each runner has unique key for accountability
+- Keys loaded into server memory at startup
 
 **Admin authentication**:
-- Username + password (bcrypt hashed)
-- TOTP two-factor authentication (encrypted secrets)
-- Session cookies (24-hour expiry)
+- Username + password (bcrypt hashed in database)
+- TOTP two-factor authentication (encrypted secrets in database)
+- Session cookies (24-hour expiry, stored in database)
 - CSRF protection on state-changing operations
 
 ### Authorization
@@ -583,7 +611,7 @@ def prepare_file(file_hash, cache_dir):
 **Sensitive data**:
 - Passwords: Bcrypt hashed (work factor 12)
 - TOTP secrets: AES-256 encrypted with server master key
-- API keys: Bcrypt hashed
+- API keys: Stored in configuration file (should be protected with file permissions)
 - Session cookies: Signed and HTTPOnly
 
 ## Scalability Considerations
