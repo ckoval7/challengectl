@@ -22,6 +22,7 @@ ChallengeCtl consists of three main components:
 - **[Runner Setup](Runner-Setup)** - Complete guide to configuring and running SDR clients
 
 ### Usage Guides
+- **[Web Interface Guide](Web-Interface-Guide)** - Managing ChallengeCtl through the web dashboard
 - **[Using ChallengeCtl CLI](ChallengeCtl-CLI)** - Working with the standalone command-line interface
 - **[Configuration Reference](Configuration-Reference)** - Detailed configuration options for server and runner
 
