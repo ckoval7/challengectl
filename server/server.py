@@ -131,6 +131,16 @@ class ChallengeCtlServer:
 
     def start(self, host='0.0.0.0', port=8443, debug=False):
         """Start the server and background tasks."""
+        print("="*60)
+        print("ChallengeCtl Server Starting")
+        print("="*60)
+        print(f"Configuration: {self.config_path}")
+        print(f"Database: {self.db_path}")
+        print(f"Files directory: {self.files_dir}")
+        print(f"Listening on http://{host}:{port}")
+        print("For TLS/HTTPS, use nginx reverse proxy (see DEPLOYMENT.md)")
+        print("="*60)
+
         logger.info("="*60)
         logger.info("ChallengeCtl Server Starting")
         logger.info("="*60)
@@ -144,6 +154,7 @@ class ChallengeCtlServer:
         # Ensure system is not paused on startup
         # Pausing is an operational control, not a persistent state
         if self.db.get_system_state('paused', 'false') == 'true':
+            print("System was paused - resuming on startup")
             logger.info("System was paused - resuming on startup")
             self.db.set_system_state('paused', 'false')
 
@@ -181,10 +192,12 @@ class ChallengeCtlServer:
                             del self.db.challenge_timing[cid]
 
             if reset_count > 0:
+                print(f"Reset {reset_count} challenge(s) to queued state on startup")
                 logger.info(f"Reset {reset_count} challenge(s) to queued state on startup")
 
         # Start background scheduler
         self.scheduler.start()
+        print("Background tasks started")
         logger.info("Background tasks started")
 
         # Check if config and database are in sync
@@ -229,8 +242,10 @@ class ChallengeCtlServer:
                 print("  2. OR restart the server after reviewing your configuration file")
                 print("="*60 + "\n")
             elif sync_status.get('in_sync') is True:
+                print(f"Configuration in sync: {sync_status['total_config']} challenges")
                 logger.info(f"Configuration in sync: {sync_status['total_config']} challenges")
             elif sync_status.get('error'):
+                print(f"Warning: Could not check config sync: {sync_status['error']}")
                 logger.error(f"Could not check config sync: {sync_status['error']}")
 
         # Handle shutdown gracefully
@@ -243,6 +258,9 @@ class ChallengeCtlServer:
         signal.signal(signal.SIGTERM, shutdown_handler)
 
         # Start API server (blocking)
+        print("Starting Flask-SocketIO server...")
+        print("Press Ctrl+C to shutdown")
+        print()
         self.api.run(host=host, port=port, debug=debug)
 
     def shutdown(self):
