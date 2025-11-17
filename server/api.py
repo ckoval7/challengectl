@@ -125,13 +125,14 @@ class ChallengeCtlAPI:
             cookie='session_token'  # Tie to session cookie for additional security
         )
 
-        # Initialize rate limiter for authentication endpoints
-        # Note: No default limits - only specific endpoints (login, TOTP) are rate-limited
-        # to prevent brute force attacks. Runner endpoints need high frequency access.
+        # Initialize rate limiter with default limits for security
+        # SECURITY: Default limits protect against DoS and API abuse
+        # Runner endpoints get higher limits (overridden per-endpoint)
+        # Authentication endpoints get stricter limits (brute force protection)
         self.limiter = Limiter(
             app=self.app,
             key_func=get_remote_address,
-            default_limits=[],  # No default limits
+            default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
             storage_uri="memory://",
             strategy="fixed-window"
         )
@@ -1057,8 +1058,10 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Internal server error'}), 500
 
         # Runner endpoints
+        # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats
         @self.app.route('/api/runners/register', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Registration not frequent
         def register_runner():
             """Register a runner with the server."""
             data = request.json
@@ -1102,6 +1105,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/heartbeat', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent heartbeats (every 30s)
         def heartbeat(runner_id):
             """Update runner heartbeat."""
             if request.runner_id != runner_id:
@@ -1125,6 +1129,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/signout', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Signout not frequent
         def signout(runner_id):
             """Runner graceful signout."""
             if request.runner_id != runner_id:
@@ -1147,6 +1152,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/task', methods=['GET'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent task polling
         def get_task(runner_id):
             """Get next challenge assignment for runner."""
             if request.runner_id != runner_id:
@@ -1180,6 +1186,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/complete', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent task completions
         def complete_task(runner_id):
             """Mark challenge as completed."""
             if request.runner_id != runner_id:
@@ -1247,6 +1254,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/runners/<runner_id>/log', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("1000 per minute")  # High limit for frequent logging
         def upload_log(runner_id):
             """Receive log entries from runner."""
             if request.runner_id != runner_id:
@@ -1590,6 +1598,7 @@ class ChallengeCtlAPI:
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])
         @self.require_api_key
+        @self.limiter.limit("500 per minute")  # Liberal limit for runner file downloads
         def download_file(file_hash):
             """Download a challenge file."""
             file_info = self.db.get_file(file_hash)
@@ -1606,6 +1615,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/files/upload', methods=['POST'])
         @self.require_api_key
+        @self.limiter.limit("100 per minute")  # Moderate limit for file uploads
         def upload_file():
             """Upload a new challenge file with security restrictions."""
             if 'file' not in request.files:
