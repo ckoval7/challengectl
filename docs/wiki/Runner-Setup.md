@@ -252,13 +252,21 @@ LimeUtil --make=test --args="freq=146000000"
 
 ### Obtain an API Key
 
-Before configuring the runner, you need an API key from the server administrator. The key is generated using:
+Before configuring the runner, you need an API key from the server administrator. The server administrator generates keys using:
 
 ```bash
-python -m challengectl.server.database add-runner-key runner1
+python3 generate-api-key.py
 ```
 
-Save the generated key (format: `ck_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`).
+The administrator then adds the key to `server-config.yml`:
+
+```yaml
+server:
+  api_keys:
+    runner-1: "ck_abc123def456..."  # Your generated key
+```
+
+And restarts the server. The administrator will provide you with the API key (format: `ck_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`).
 
 ### Create Configuration File
 

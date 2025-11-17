@@ -68,25 +68,21 @@ python -c "from challengectl.server import server; print('Installation successfu
 
 ## Database Setup
 
-ChallengeCtl uses SQLite for data persistence. The database stores runner registrations, challenge states, transmission history, user accounts, and API keys.
+ChallengeCtl uses SQLite for data persistence. The database stores runner registrations, challenge states, transmission history, user accounts, and sessions.
 
-### Initialize the Database
+### Automatic Database Initialization
 
-Create a new database with the required schema:
+The database is automatically created when you first start the server. No manual initialization is required.
 
-```bash
-python -m challengectl.server.database init
-```
-
-By default, this creates `challengectl.db` in the current directory.
+By default, the database file `challengectl.db` is created in the server's working directory.
 
 ### Custom Database Location
 
-To use a custom database location, set the `DATABASE_PATH` environment variable:
+To use a custom database location, set the `DATABASE_PATH` environment variable before starting the server:
 
 ```bash
 export DATABASE_PATH=/var/lib/challengectl/challengectl.db
-python -m challengectl.server.database init
+python -m challengectl.server.server
 ```
 
 ### Database Schema
@@ -94,11 +90,14 @@ python -m challengectl.server.database init
 The database includes the following tables:
 
 - **runners**: Registered runners with heartbeat tracking
-- **challenges**: Challenge definitions and state
-- **assignments**: Active task assignments to runners
-- **transmission_log**: Historical record of all transmissions
+- **challenges**: Challenge definitions and state (assignments tracked here)
+- **transmissions**: Historical record of all transmissions
+- **files**: Content-addressed storage for challenge files
+- **system_state**: Key-value store for system-wide state
 - **users**: Admin user accounts with hashed passwords
-- **runner_keys**: API keys for runner authentication
+- **sessions**: Web interface session management
+
+**Note**: Runner API keys are stored in `server-config.yml`, not in the database.
 
 ## Initial Setup and User Management
 

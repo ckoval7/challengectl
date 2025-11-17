@@ -459,25 +459,45 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 
 **Possible Causes and Solutions**:
 
-1. **Wrong username or password**
-   **Solution**: Reset password:
+1. **First-time setup not completed**
+   **Solution**: Check server logs for the temporary admin password:
    ```bash
-   python3 manage-users.py reset-password admin
+   # If running in terminal, check the output
+   # Or check log file:
+   cat challengectl.server.log | grep "DEFAULT ADMIN USER"
+   ```
+   Use the credentials shown to log in and complete the initial setup wizard.
+
+2. **Wrong username or password**
+   **Solution**: If you have another admin account, log in with that account and reset the password through the Users page in the web interface. If you're completely locked out, you'll need to access the database directly:
+   ```bash
+   # Connect to the database
+   sqlite3 challengectl.db
+   # Delete the locked account
+   DELETE FROM users WHERE username='your-username';
+   # Exit
+   .quit
+   # Restart server - it will create a new default admin account
    ```
 
-2. **TOTP code invalid**
+3. **TOTP code invalid**
    **Solution**: Ensure authenticator app time is synchronized:
    - Check device clock is accurate
    - Resync authenticator app
-   - Reset TOTP secret if needed:
+   - If another admin account exists: Use it to reset TOTP via Users page
+   - If completely locked out: Access database directly:
    ```bash
-   python3 manage-users.py reset-totp admin
+   sqlite3 challengectl.db
+   # Reset TOTP for a user
+   UPDATE users SET totp_secret=NULL WHERE username='your-username';
+   .quit
+   # Log in - you'll be prompted to set up TOTP again
    ```
 
-3. **Session expired**
+4. **Session expired**
    **Solution**: Log out and log in again. Sessions expire after 24 hours.
 
-4. **Rate limit exceeded**
+5. **Rate limit exceeded**
    ```
    Error: 429 Too Many Requests
    ```
