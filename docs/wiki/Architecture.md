@@ -182,51 +182,61 @@ The frontend communicates with the server via:
 ### Challenge Assignment Flow
 
 ```
-1. Background Task Queues Challenge
-   ├─ Checks if min_delay has elapsed since last transmission
-   ├─ Marks challenge as "waiting" in database
-   └─ Updates challenge state
-
-2. Runner Polls for Task
+1. Runner Polls for Task
    ├─ Sends GET request to /api/task
    ├─ Includes runner_id and frequency capabilities
    └─ Waits for server response
 
-3. Server Assigns Task (Atomic)
+2. Server Finds Available Challenge (Atomic)
    ├─ BEGIN IMMEDIATE transaction
-   ├─ SELECT challenge WHERE status='waiting' FOR UPDATE
-   ├─ Filter by runner's frequency limits
-   ├─ SELECT first matching challenge
+   ├─ SELECT challenge WHERE status='queued' OR status='waiting' FOR UPDATE
+   ├─ Filter by runner's frequency limits and enabled=1
+   ├─ Check if 'waiting' challenge's delay has expired
+   ├─   If delay expired: UPDATE status='waiting' → 'queued'
+   ├─ SELECT first 'queued' challenge (by priority, then random)
    ├─ UPDATE challenge SET status='assigned', assigned_to=runner_id
    ├─ COMMIT transaction
-   └─ Return challenge details to runner
+   └─ Return challenge details to runner (or empty if none available)
 
-4. Runner Downloads Files
+3. Runner Downloads Files
    ├─ Checks local cache for file (by SHA-256)
    ├─ If not cached: GET /api/file/<hash>
    ├─ Verifies SHA-256 hash
    └─ Saves to cache
 
-5. Runner Executes Transmission
+4. Runner Executes Transmission
    ├─ Generates signal using GNU Radio
    ├─ Transmits via SDR hardware
    ├─ Monitors for errors
    └─ Logs execution details
 
-6. Runner Reports Completion
+5. Runner Reports Completion
    ├─ POST to /api/complete
    ├─ Includes success/failure status
    └─ Includes any error messages
 
-7. Server Processes Completion
+6. Server Processes Completion
    ├─ BEGIN IMMEDIATE transaction
-   ├─ UPDATE challenge SET status='queued'
+   ├─ UPDATE challenge SET status='waiting' (starts delay timer)
    ├─ UPDATE challenge SET last_tx_time=now()
-   ├─ UPDATE challenge SET assigned_to=NULL
+   ├─ UPDATE challenge SET assigned_to=NULL, assigned_at=NULL
+   ├─ UPDATE challenge SET transmission_count++
    ├─ INSERT transmissions entry
    ├─ COMMIT transaction
    └─ Broadcast WebSocket event
+
+7. Challenge Waits for Next Transmission
+   ├─ Challenge remains in 'waiting' state
+   ├─ Delay timer = (min_delay + max_delay) / 2 seconds
+   ├─ When runner next polls and delay has expired
+   └─ Status transitions from 'waiting' → 'queued' → 'assigned'
 ```
+
+**Challenge State Cycle**:
+- **queued**: Ready to be assigned to a runner
+- **assigned**: Currently being transmitted by a runner
+- **waiting**: Delay timer active, not yet ready for next transmission
+- Flow: `queued` → `assigned` → `waiting` → (delay expires) → `queued`
 
 ### Heartbeat Flow
 
@@ -272,7 +282,7 @@ Stores challenge definitions and current state. Challenge configuration is store
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `challenge_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
+| `challenge_id` | TEXT PRIMARY KEY | Challenge identifier (usually the challenge name) |
 | `name` | TEXT UNIQUE | Challenge name |
 | `config` | TEXT | JSON blob containing all challenge parameters (frequency, modulation, file paths, delays, etc.) |
 | `status` | TEXT | queued, waiting, assigned, or disabled |

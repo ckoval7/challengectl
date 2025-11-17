@@ -1,246 +1,240 @@
-# Documentation Review - Inconsistencies Found
+# Documentation Review - Updated Findings
 
 This document lists discrepancies between the wiki documentation and the actual codebase implementation.
 
-## Critical Inconsistencies
+**Last Updated**: 2024-01-17 (Second Review)
 
-### 1. Database Schema
+## Status Summary
 
-**Documentation claimed**: Separate tables for runner_keys, assignments, transmission_log
+✅ **Fixed in Previous Updates**:
+- Database schema tables (files, system_state, sessions added)
+- API key management (corrected to config file, not database)
+- Stop function behavior (pauses, doesn't shutdown)
+- User management (web-based, manage-users.py references removed)
+- Background task intervals documented
 
-**Actual implementation**:
-- **No separate `runner_keys` table**: API keys are stored in `server-config.yml` under `server.api_keys`, not in the database
-- **No separate `assignments` table**: Challenge assignments are tracked via columns in the `challenges` table (`assigned_to`, `assigned_at`, `assignment_expires`)
-- **Table is named `transmissions`, not `transmission_log`**
-- **Additional tables not documented**: `files`, `system_state`, `sessions`
+❌ **New Issues Found in Second Review**:
+1. Challenge state flow documentation incorrect
+2. Challenge ID type mismatch (INTEGER vs TEXT)
+3. Cleanup behavior documentation incomplete
 
-**Actual schema**:
-```sql
-runners:
-  - runner_id (PK)
-  - hostname
-  - ip_address
-  - status
-  - enabled
-  - last_heartbeat
-  - devices (JSON)
-  - created_at
-  - updated_at
+## Current Issues
 
-challenges:
-  - challenge_id (PK)
-  - name (UNIQUE)
-  - config (JSON) -- ALL challenge config in one blob
-  - status
-  - priority
-  - last_tx_time
-  - next_tx_time
-  - transmission_count
-  - assigned_to (FK to runners)
-  - assigned_at
-  - assignment_expires
-  - enabled
-  - created_at
+### 1. Challenge State Flow (Architecture.md)
 
-transmissions:
-  - transmission_id (PK)
-  - challenge_id (FK)
-  - runner_id (FK)
-  - device_id
-  - frequency
-  - started_at
-  - completed_at
-  - status
-  - error_message
-
-files:
-  - file_hash (PK)
-  - filename
-  - size
-  - mime_type
-  - file_path
-  - created_at
-
-system_state:
-  - key (PK)
-  - value
-  - updated_at
-
-users:
-  - username (PK, not user_id)
-  - password_hash
-  - totp_secret
-  - enabled
-  - password_change_required
-  - created_at
-  - last_login
-
-sessions:
-  - session_token (PK)
-  - username (FK)
-  - expires
-  - totp_verified
-  - created_at
+**Documentation claims** (lines 185-188):
+```
+1. Background Task Queues Challenge
+   ├─ Checks if min_delay has elapsed since last transmission
+   ├─ Marks challenge as "waiting" in database
+   └─ Updates challenge state
 ```
 
-### 2. API Key Management
-
-**Documentation claimed**:
-- API keys stored in database
-- Commands like `python -m challengectl.server.database add-runner-key`
-- API keys can be managed through the database
-
 **Actual implementation**:
-- API keys stored in `server-config.yml` configuration file
-- Format: `server.api_keys: { runner-1: "key", runner-2: "key" }`
-- Must edit config file and restart server to change API keys
-- `generate-api-key.py` only generates keys, doesn't store them
-- No database commands for API key management
+- There is **NO background task that queues challenges**
+- Challenge state flow is:
+  1. Challenge completes → status = 'waiting' (delay timer starts)
+  2. Runner polls for task → if delay expired, 'waiting' → 'queued' transition happens inline
+  3. Challenge assigned → status = 'assigned'
+  4. Challenge completes → back to 'waiting'
 
-### 3. Challenge Storage
-
-**Documentation claimed**:
-- Individual columns for frequency, modulation, flag_file, flag_hash, min_delay, max_delay, etc.
-
-**Actual implementation**:
-- All challenge configuration stored in a JSON blob in the `config` column
-- Only metadata columns are: status, priority, last_tx_time, next_tx_time, transmission_count, assigned_to, assigned_at, assignment_expires, enabled
-
-### 4. System Control: "Stop" Function
-
-**Documentation claimed** (Web Interface Guide):
-> **Stop System**:
-> - Initiates graceful server shutdown
-> - Completes active transmissions first
-> - Disconnects all runners
-> - Closes database connections
-> - Stops the web server
-> - Web interface becomes inaccessible
-
-**Actual implementation**:
+**Actual code** (database.py:478-488):
 ```python
-@self.app.route('/api/control/stop', methods=['POST'])
+# During get_next_challenge():
+if row['status'] == 'waiting':
+    # Update waiting -> queued if delay has passed
+    cursor.execute('''
+        UPDATE challenges
+        SET status = 'queued'
+        WHERE challenge_id = ?
+    ''', (cid,))
+```
+
+**Actual code** (database.py:552-562, complete_challenge):
+```python
+# Update challenge status to waiting (delay timer active)
+cursor.execute('''
+    UPDATE challenges
+    SET status = 'waiting',
+        assigned_to = NULL,
+        assigned_at = NULL,
+        assignment_expires = NULL,
+        transmission_count = transmission_count + 1,
+        last_tx_time = CURRENT_TIMESTAMP
+    WHERE challenge_id = ?
+''', (challenge_id,))
+```
+
+**Impact**: Architecture.md Challenge Assignment Flow section is misleading.
+
+### 2. Challenge ID Data Type
+
+**Documentation** (Architecture.md line 263):
+```
+| `challenge_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
+```
+
+**Actual implementation** (database.py:75):
+```python
+CREATE TABLE IF NOT EXISTS challenges (
+    challenge_id TEXT PRIMARY KEY,
+    ...
+)
+```
+
+**Reality**: `challenge_id` is TEXT (likely a slug or name-based ID), not an auto-incrementing INTEGER.
+
+**Impact**: Architecture.md database schema table is incorrect.
+
+### 3. Stale Assignment Cleanup Behavior
+
+**Current documentation**: Architecture.md shows cleanup setting status to 'waiting'
+
+**Actual implementation** (database.py:575-596):
+```python
+def cleanup_stale_assignments(self, timeout_minutes: int = 5) -> int:
+    cursor.execute('''
+        UPDATE challenges
+        SET status = 'waiting',  # Not 'queued'
+            assigned_to = NULL,
+            assigned_at = NULL,
+            assignment_expires = NULL
+        WHERE status = 'assigned'
+          AND assignment_expires < CURRENT_TIMESTAMP
+    ''')
+```
+
+**Observation**: When an assignment times out, it goes to 'waiting' (respects delay timer) rather than immediately to 'queued'. This is actually documented correctly but worth noting explicitly.
+
+### 4. Stop System Behavior
+
+**Status**: ✅ FIXED in previous update
+
+The documentation now correctly states that Stop:
+- Pauses the system
+- Requeues all assigned challenges (to 'queued', not 'waiting')
+- Does NOT shut down the server
+
+**Actual code** (api.py:1597-1621):
+```python
 def stop_system():
-    """Stop all operations."""
     self.db.set_system_state('paused', 'true')
     # Requeue all assigned challenges
-    # ... requeues challenges ...
-    return jsonify({'status': 'stopped'}), 200
+    conn.execute('''
+        UPDATE challenges
+        SET status = 'queued',  # Goes directly to queued, bypassing delay
+            assigned_to = NULL,
+            assigned_at = NULL,
+            assignment_expires = NULL
+        WHERE status = 'assigned'
+    ''')
 ```
 
-**Reality**: "Stop" just pauses the system and requeues assigned challenges. It does NOT shut down the server. The server only shuts down via SIGINT/SIGTERM (Ctrl+C or systemctl stop).
+**Note**: Stop button requeues to 'queued' (immediate availability), while timeout cleanup requeues to 'waiting' (respects delay). This distinction could be documented.
 
-### 5. User Management Commands
+## Previously Fixed Issues
 
-**Documentation claimed**:
-- `python -m challengectl.server.database add-user admin`
-- `python -m challengectl.server.database add-runner-key runner1`
-- `python -m challengectl.server.database list-users`
-- `python -m challengectl.server.database remove-user admin`
+### ✅ 1. Database Schema (FIXED)
 
-**Actual implementation**:
-- User management is done via `manage-users.py` script (not database module)
-- Runner API keys are in config file (no database commands exist for them)
-- Correct commands:
-  - `python3 manage-users.py create <username>` (not "add-user")
-  - `python3 manage-users.py list` (not "list-users")
-  - `python3 manage-users.py disable <username>`
-  - `python3 manage-users.py enable <username>`
-  - `python3 manage-users.py change-password <username>`
-  - `python3 manage-users.py reset-totp <username>`
-- **No "remove" or "delete" command exists** - must delete from database manually
+Architecture.md now correctly documents:
+- No separate `runner_keys` table (keys in config file)
+- No separate `assignments` table (tracked in challenges table)
+- Correct table name `transmissions` (not transmission_log)
+- Includes `files`, `system_state`, `sessions` tables
+- Shows `username` as PK in users table (not user_id)
 
-## Minor Inconsistencies
+### ✅ 2. API Key Management (FIXED)
 
-### 6. Challenge State Names
+Documentation now correctly shows:
+- API keys in `server-config.yml` under `server.api_keys`
+- Use `generate-api-key.py` to create keys
+- Edit config file and restart server to add/change keys
+- No database commands for API key management
 
-**Documentation may use**: queued, waiting, assigned, disabled
+### ✅ 3. User Management (FIXED)
 
-**Actual implementation**: Need to verify exact state names match
+Documentation now correctly shows:
+- Server creates default admin account on first run
+- Temp credentials shown in server logs
+- All user management through web interface
+- No `manage-users.py` references
+- Direct database access only for recovery scenarios
 
-### 7. Frequency Limits Storage
+### ✅ 4. Background Task Intervals (FIXED)
 
-**Documentation implied**: Simple array or separate table
+Architecture.md now documents:
+- Cleanup stale runners: every 30 seconds
+- Cleanup stale assignments: every 30 seconds
+- Cleanup expired sessions: every 60 seconds
+- Cleanup expired TOTP codes: every 60 seconds
 
-**Actual implementation**: Stored in JSON blob within `devices` column in runners table
+### ✅ 5. Database Auto-Initialization (FIXED)
 
-### 8. Background Task Intervals
+Server-Setup.md now correctly shows:
+- Database created automatically on first server start
+- No manual `python -m challengectl.server.database init` needed
 
-**Not explicitly documented**: Background cleanup tasks run every 30 seconds
+## Recommended Fixes
 
-**Actual implementation**:
-```python
-scheduler.add_job(cleanup_stale_runners, 'interval', seconds=30)
-scheduler.add_job(cleanup_stale_assignments, 'interval', seconds=30)
-scheduler.add_job(cleanup_expired_sessions, 'interval', seconds=60)
-scheduler.add_job(cleanup_expired_totp_codes, 'interval', seconds=60)
-```
+### High Priority
 
-### 9. Session Management
+1. **Fix Challenge State Flow** (Architecture.md lines 185-188)
+   - Remove "Background Task Queues Challenge" step
+   - Accurately describe the 'waiting' → 'queued' → 'assigned' → 'waiting' cycle
+   - Clarify that state transitions happen during get_next_challenge() polling
 
-**Not documented**: Server uses database-backed sessions with 24-hour expiry
+2. **Fix Challenge ID Type** (Architecture.md line 263)
+   - Change from `INTEGER PRIMARY KEY` to `TEXT PRIMARY KEY`
+   - Remove "Auto-incrementing ID" description
+   - Note that challenge_id is a text identifier (usually the challenge name)
 
-**Actual implementation**: `sessions` table with automatic cleanup
+### Medium Priority
 
-### 10. Module Import Structure
+3. **Document Stop vs Timeout Behavior**
+   - Stop button: assigned → 'queued' (immediate availability)
+   - Timeout cleanup: assigned → 'waiting' (respects delay timer)
+   - Explain why they differ
 
-**Documentation doesn't specify**: How challengectl is structured as a module
+4. **Add Challenge State Diagram**
+   - Visual diagram showing: queued → assigned → waiting → queued
+   - Show when transitions occur (runner poll, completion, timeout)
 
-**Actual implementation**:
-- Not a Python package with `__init__.py`
-- Standalone scripts: `challengectl.py`, `manage-users.py`, `generate-api-key.py`
-- Server directory: `server/server.py`, `server/api.py`, `server/database.py`
-- Runner directory: `runner/runner.py`
-- Cannot import as `python -m challengectl.server.database`
+### Low Priority
 
-## Accuracy Confirmations
+5. **Document Edge Cases**
+   - What happens to 'waiting' challenges when delay expires
+   - How priority affects challenge selection
+   - Challenge timing mechanism (in-memory vs database)
 
-The following were documented correctly:
+## Verified Correct
 
-✅ Heartbeat timeout: 90 seconds
-✅ Assignment timeout: 5 minutes (300 seconds)
-✅ Pause functionality: Stops new task queueing, runners stay connected
-✅ Enable/Disable runner: Affects task assignment, runner stays connected
-✅ Kick runner: Forcibly disconnects runner
-✅ Manual trigger: Immediately queues a challenge
-✅ API endpoint paths and methods
-✅ WebSocket events
-✅ Real-time updates via WebSocket
-✅ TOTP two-factor authentication
+The following are accurately documented:
+
+✅ Runner heartbeat timeout: 90 seconds
+✅ Assignment expiry timeout: 5 minutes
 ✅ Session duration: 24 hours
-✅ Runner polling and heartbeat intervals (configurable)
+✅ Background task intervals: 30s and 60s
+✅ Pause behavior: stops queueing, keeps runners connected
+✅ Stop behavior: pauses + requeues all assigned challenges
+✅ Database schema (tables and most columns)
+✅ API endpoints (paths and methods verified)
+✅ WebSocket event broadcasting
+✅ TOTP two-factor authentication
+✅ API key authentication (X-API-Key header)
+✅ Session-based admin authentication
+✅ File synchronization (SHA-256 content addressing)
+✅ Mutual exclusion via pessimistic locking
+✅ Automatic default admin account creation
+✅ Initial setup wizard flow
 
-## Recommendations
+## Testing Verification
 
-### High Priority Fixes
+Confirmed by code review:
 
-1. **Update Architecture.md**: Correct database schema documentation
-2. **Update API Reference.md**: Fix database-related endpoints (remove non-existent ones)
-3. **Update Server Setup.md**:
-   - Remove database commands for API keys
-   - Explain API keys are in config file
-   - Show how to use `manage-users.py` instead of database commands
-4. **Update Web Interface Guide**: Correct the "Stop" function description
-
-### Medium Priority Fixes
-
-5. **Update Quick Start.md**: Fix command examples for user management
-6. **Add to Configuration Reference.md**: Document that challenge config is JSON blob
-7. **Add to Architecture.md**: Document background task intervals
-
-### Low Priority Additions
-
-8. **Document `manage-users.py`** script properly
-9. **Document `files` and `system_state` tables** in Architecture
-10. **Document session management** system
-
-## Testing Needed
-
-The following should be tested to verify behavior:
-
-- [ ] Verify exact challenge state names (queued/waiting/assigned/disabled)
-- [ ] Confirm challenge workflow matches documentation
-- [ ] Test pause vs stop behavior in web UI
-- [ ] Verify runner kick vs disable behavior
-- [ ] Check if `manage-users.py` has all the functions documented
-- [ ] Verify which database commands actually exist
+- ✅ Challenge states: 'queued', 'waiting', 'assigned', 'disabled' (enabled=0)
+- ✅ Runner statuses: 'online', 'offline', 'busy'
+- ✅ Transmission statuses: 'success', 'failed'
+- ✅ System state keys: 'paused', 'initial_setup_required'
+- ✅ Cleanup intervals match documentation
+- ✅ Database schema matches code
+- ✅ API endpoints match route definitions
