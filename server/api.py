@@ -1814,6 +1814,7 @@ class ChallengeCtlAPI:
                 expires_hours: Hours until enrollment token expires (default: 24)
                 server_url: Server URL for the config (optional, uses request origin)
                 verify_ssl: SSL verification setting (default: true)
+                devices: List of device configurations (optional)
 
             Returns:
                 enrollment_token: Token for enrollment
@@ -1830,6 +1831,7 @@ class ChallengeCtlAPI:
             expires_hours = data.get('expires_hours', 24)
             server_url = data.get('server_url', request.host_url.rstrip('/'))
             verify_ssl = data.get('verify_ssl', True)
+            devices = data.get('devices', [])
 
             # Get the provisioning key ID from request context
             created_by = f"provisioning:{request.provisioning_key_id}"
@@ -1907,9 +1909,27 @@ radios:
     ppm: 0
 
   # Individual devices
-  # Customize this section for your SDR hardware
   devices:
-  - name: 0
+"""
+
+            # Add device configurations
+            if devices:
+                for device in devices:
+                    config_yaml += f"  - name: {device.get('name', '0')}\n"
+                    config_yaml += f"    model: {device.get('model', 'hackrf')}\n"
+                    config_yaml += f"    rf_gain: {device.get('rf_gain', 14)}\n"
+
+                    if device.get('model') == 'hackrf' and 'if_gain' in device:
+                        config_yaml += f"    if_gain: {device.get('if_gain')}\n"
+
+                    freq_limits = device.get('frequency_limits', [])
+                    if freq_limits:
+                        config_yaml += "    frequency_limits:\n"
+                        for limit in freq_limits:
+                            config_yaml += f"      - \"{limit}\"\n"
+            else:
+                # Default device if none specified
+                config_yaml += """  - name: 0
     model: hackrf
     rf_gain: 14
     if_gain: 32

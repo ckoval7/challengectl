@@ -177,6 +177,80 @@
               Disable only for development with self-signed certificates
             </div>
           </el-form-item>
+
+          <el-divider content-position="left">SDR Device Configuration (Optional)</el-divider>
+
+          <div v-for="(device, index) in addRunnerForm.devices" :key="index" class="device-config-item">
+            <div class="device-header">
+              <h4>Device {{ index + 1 }}</h4>
+              <el-button
+                v-if="addRunnerForm.devices.length > 1"
+                size="small"
+                type="danger"
+                @click="removeDevice(index)"
+              >
+                Remove
+              </el-button>
+            </div>
+
+            <el-form-item label="Device Name">
+              <el-input
+                v-model="device.name"
+                placeholder="e.g., 0, 1, or serial number"
+              />
+              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                Device index (0, 1, 2) or serial number
+              </div>
+            </el-form-item>
+
+            <el-form-item label="Model">
+              <el-select v-model="device.model" placeholder="Select SDR model">
+                <el-option label="HackRF" value="hackrf" />
+                <el-option label="BladeRF" value="bladerf" />
+                <el-option label="USRP" value="usrp" />
+                <el-option label="LimeSDR" value="limesdr" />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item label="RF Gain">
+              <el-input-number
+                v-model="device.rf_gain"
+                :min="0"
+                :max="100"
+              />
+            </el-form-item>
+
+            <el-form-item v-if="device.model === 'hackrf'" label="IF Gain">
+              <el-input-number
+                v-model="device.if_gain"
+                :min="0"
+                :max="47"
+              />
+            </el-form-item>
+
+            <el-form-item label="Frequency Limits">
+              <el-input
+                v-model="device.frequency_limits"
+                type="textarea"
+                :rows="2"
+                placeholder="e.g., 144000000-148000000, 420000000-450000000"
+              />
+              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                Comma-separated ranges (optional). Leave blank for full range.
+              </div>
+            </el-form-item>
+
+            <el-divider v-if="index < addRunnerForm.devices.length - 1" />
+          </div>
+
+          <el-button
+            type="primary"
+            plain
+            @click="addDevice"
+            style="margin-top: 10px; width: 100%;"
+          >
+            Add Another Device
+          </el-button>
         </el-form>
       </div>
 
@@ -555,7 +629,16 @@ export default {
     const addRunnerForm = ref({
       runnerName: '',
       expiresHours: 24,
-      verifySsl: true
+      verifySsl: true,
+      devices: [
+        {
+          name: '0',
+          model: 'hackrf',
+          rf_gain: 14,
+          if_gain: 32,
+          frequency_limits: '144000000-148000000, 420000000-450000000'
+        }
+      ]
     })
     const enrollmentData = ref(null)
     const serverUrl = ref(window.location.origin)
@@ -581,8 +664,31 @@ export default {
       addRunnerForm.value = {
         runnerName: '',
         expiresHours: 24,
-        verifySsl: true
+        verifySsl: true,
+        devices: [
+          {
+            name: '0',
+            model: 'hackrf',
+            rf_gain: 14,
+            if_gain: 32,
+            frequency_limits: '144000000-148000000, 420000000-450000000'
+          }
+        ]
       }
+    }
+
+    const addDevice = () => {
+      addRunnerForm.value.devices.push({
+        name: String(addRunnerForm.value.devices.length),
+        model: 'hackrf',
+        rf_gain: 14,
+        if_gain: 32,
+        frequency_limits: '144000000-148000000, 420000000-450000000'
+      })
+    }
+
+    const removeDevice = (index) => {
+      addRunnerForm.value.devices.splice(index, 1)
     }
 
     const generateEnrollmentToken = async () => {
@@ -611,7 +717,16 @@ export default {
       addRunnerForm.value = {
         runnerName: '',
         expiresHours: 24,
-        verifySsl: true
+        verifySsl: true,
+        devices: [
+          {
+            name: '0',
+            model: 'hackrf',
+            rf_gain: 14,
+            if_gain: 32,
+            frequency_limits: '144000000-148000000, 420000000-450000000'
+          }
+        ]
       }
     }
 
@@ -680,40 +795,29 @@ radios:
     ppm: 0
 
   # Individual device configuration
-  # Customize this section for your specific SDR devices
   devices:
-  # HackRF Example (by index)
-  - name: 0
-    model: hackrf
-    rf_gain: 14
-    if_gain: 32
-    frequency_limits:
-      - "144000000-148000000"  # 2m ham band
-      - "420000000-450000000"  # 70cm ham band
+${addRunnerForm.value.devices.map(device => {
+  const freqLimits = device.frequency_limits
+    ? device.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
+    : []
 
-  # Uncomment and configure for additional devices:
-  # BladeRF Example (by serial number)
-  # - name: "1234567890abcdef"
-  #   model: bladerf
-  #   rf_gain: 43
-  #   bias_t: true
-  #   antenna: TX1
-  #   frequency_limits:
-  #     - "144000000-148000000"
-  #     - "420000000-450000000"
+  let deviceYaml = `  - name: ${device.name}\n`
+  deviceYaml += `    model: ${device.model}\n`
+  deviceYaml += `    rf_gain: ${device.rf_gain}\n`
 
-  # USRP Example
-  # - name: "type=b200"
-  #   model: usrp
-  #   rf_gain: 20
-  #   frequency_limits:
-  #     - "70000000-6000000000"  # Full range
+  if (device.model === 'hackrf' && device.if_gain !== undefined) {
+    deviceYaml += `    if_gain: ${device.if_gain}\n`
+  }
 
-# Notes:
-# - Device names can be index numbers (0, 1, 2) or serial numbers/identifiers
-# - frequency_limits are optional - if not set, device can use any frequency
-# - bias_t and antenna settings are device-specific
-# - rf_gain and if_gain values depend on device type and setup
+  if (freqLimits.length > 0) {
+    deviceYaml += `    frequency_limits:\n`
+    freqLimits.forEach(limit => {
+      deviceYaml += `      - "${limit}"\n`
+    })
+  }
+
+  return deviceYaml
+}).join('\n')}
 `
       return config
     })
@@ -1113,6 +1217,8 @@ curl -k \\
       reEnrollData,
       reEnrollGeneratedConfig,
       showAddRunnerDialog,
+      addDevice,
+      removeDevice,
       generateEnrollmentToken,
       closeAddRunnerDialog,
       copyToClipboard,
@@ -1271,5 +1377,20 @@ curl -k \\
 
 .key-row code.api-key {
   font-weight: 600;
+}
+
+.device-config-item {
+  margin-bottom: 20px;
+}
+
+.device-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.device-header h4 {
+  margin: 0;
 }
 </style>

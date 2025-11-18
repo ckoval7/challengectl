@@ -208,7 +208,16 @@ Authorization: Bearer ck_prov_...
   "runner_id": "sdr-station-1",          // Optional, defaults to runner_name
   "expires_hours": 24,                    // Optional, default 24
   "server_url": "https://myserver:8443", // Optional, uses request origin
-  "verify_ssl": true                      // Optional, default true
+  "verify_ssl": true,                     // Optional, default true
+  "devices": [                            // Optional, device configurations
+    {
+      "name": "0",
+      "model": "hackrf",
+      "rf_gain": 14,
+      "if_gain": 32,
+      "frequency_limits": ["144000000-148000000", "420000000-450000000"]
+    }
+  ]
 }
 ```
 
@@ -252,6 +261,7 @@ echo "Config saved to runner-config.yml"
 
 ### Python
 
+**Basic example:**
 ```python
 import requests
 
@@ -272,6 +282,49 @@ with open('runner-config.yml', 'w') as f:
     f.write(data['config_yaml'])
 
 print(f"Runner '{data['runner_id']}' provisioned!")
+print(f"Config saved to runner-config.yml")
+```
+
+**With device configuration:**
+```python
+import requests
+
+PROV_KEY = "ck_prov_abc123..."
+SERVER = "https://localhost:8443"
+
+# Define your SDR devices
+devices = [
+    {
+        "name": "0",
+        "model": "hackrf",
+        "rf_gain": 14,
+        "if_gain": 32,
+        "frequency_limits": ["144000000-148000000", "420000000-450000000"]
+    },
+    {
+        "name": "1",
+        "model": "bladerf",
+        "rf_gain": 43,
+        "frequency_limits": ["144000000-148000000", "420000000-450000000"]
+    }
+]
+
+response = requests.post(
+    f"{SERVER}/api/provisioning/provision",
+    headers={"Authorization": f"Bearer {PROV_KEY}"},
+    json={
+        "runner_name": "my-runner",
+        "devices": devices
+    },
+    verify=False
+)
+
+data = response.json()
+
+with open('runner-config.yml', 'w') as f:
+    f.write(data['config_yaml'])
+
+print(f"Runner '{data['runner_id']}' provisioned with {len(devices)} devices!")
 print(f"Config saved to runner-config.yml")
 ```
 
