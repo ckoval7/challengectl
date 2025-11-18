@@ -68,21 +68,12 @@ cd server
 cp ../server-config.example.yml server-config.yml
 ```
 
-Generate API keys for runners and admin access:
+Edit `server-config.yml` to configure:
+- Server bind address and port
+- Conference details (name, start/stop times)
+- Challenge definitions
 
-```bash
-# Generate API keys (run from challengectl root directory)
-python3 generate-api-key.py --count 4
-
-# This generates 4 keys:
-# - One for admin (WebUI access)
-# - Three for runners (or however many you need)
-```
-
-Edit server-config.yml:
-- Replace all API keys with newly generated keys
-- Configure challenges
-- Set conference details
+**Note**: You no longer need to pre-configure API keys in the server config. Runners are enrolled through the Web UI or provisioning API after the server starts, and their API keys are stored securely in the database with bcrypt hashing.
 
 ### Install Dependencies
 
@@ -133,17 +124,79 @@ sudo journalctl -u challengectl-server -f
 
 ## Runner Deployment
 
+### Enrolling Runners
+
+Before configuring a runner, you need enrollment credentials. There are two recommended methods:
+
+**Method 1: Web UI (Interactive Setup)**
+
+1. Log in to the ChallengeCtl Web UI as an administrator
+2. Navigate to the **Runners** page
+3. Click **"Add Runner"**
+4. Enter runner details and configure devices (optional)
+5. Click **"Generate Token"** to create enrollment credentials
+6. Copy the generated YAML configuration or note the enrollment token and API key
+
+**Method 2: Provisioning API Key (Automated Deployment)**
+
+For automated deployments (CI/CD, infrastructure-as-code):
+
+1. Create a provisioning API key in the Web UI (**Runners** → **Provisioning Keys** tab)
+2. Use the provisioning API to generate runner configurations:
+
+```bash
+curl -X POST https://challengectl.example.com/api/provisioning/provision \
+  -H "Authorization: Bearer YOUR_PROVISIONING_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "runner_name": "runner-1",
+    "devices": [
+      {
+        "name": "0",
+        "model": "hackrf",
+        "rf_gain": 14,
+        "if_gain": 32,
+        "frequency_limits": ["144000000-148000000", "420000000-450000000"]
+      }
+    ]
+  }' | jq -r '.config_yaml' > runner-config.yml
+```
+
+See the [Provisioning API Key Guide](examples/provisioning-api-key-guide.md) for detailed automation examples.
+
 ### Basic Setup
 
 ```bash
 cd runner
 
-# Copy example config
-cp ../runner-config.example.yml runner-config.yml
+# Option 1: Use config from Web UI or provisioning API
+# Save the generated YAML to runner-config.yml
 
-# Edit configuration (set runner_id, server_url, api_key, configure SDR devices)
-# Use your preferred text editor
+# Option 2: Create config manually with enrollment credentials
+cat > runner-config.yml <<EOF
+runner:
+  runner_id: "runner-1"
+  server_url: "https://challengectl.example.com"
+  enrollment_token: "PASTE-TOKEN-FROM-WEB-UI"
+  api_key: "PASTE-API-KEY-FROM-WEB-UI"
+  poll_interval: 10
+  heartbeat_interval: 30
+  cache_dir: "cache"
+
+radios:
+  devices:
+    - name: 0
+      model: hackrf
+      frequency_limits:
+        - "144000000-148000000"
+        - "420000000-450000000"
+EOF
 ```
+
+**Important Notes:**
+- The `enrollment_token` can be left in the config file after first enrollment - it will be ignored on subsequent runs
+- API keys are authenticated with multi-factor host validation requiring at least 2 matching factors (MAC address, machine ID, or IP+hostname)
+- Device configuration can be done through the Web UI when creating the enrollment token
 
 The runner creates local directories for cache and temporary files:
 - `cache/` - Downloaded challenge files
@@ -353,12 +406,7 @@ Key settings in `server-config.yml`:
 server:
   bind: "0.0.0.0"
   port: 8443
-
-  # API keys for authentication
-  api_keys:
-    runner-1: "unique-key-for-runner-1"
-    runner-2: "unique-key-for-runner-2"
-    admin: "unique-admin-key"
+  database: "challengectl.db"
 
 conference:
   name: "Your CTF Name"
@@ -374,7 +422,16 @@ challenges:
     modulation: nbfm
     flag: challenges/example.wav
     enabled: true
+    public_view:
+      show_frequency: true
+      show_last_tx_time: false
 ```
+
+**Note on Authentication:**
+- Runner API keys are no longer configured in `server-config.yml`
+- Runners are enrolled through the Web UI or provisioning API
+- API keys are stored in the SQLite database with bcrypt hashing
+- Admin users are created through the Web UI initial setup wizard
 
 ### Runner Configuration
 
@@ -384,7 +441,10 @@ Key settings in `runner-config.yml`:
 runner:
   runner_id: "runner-1"
   server_url: "https://challengectl.example.com:8443"
-  api_key: "unique-key-for-runner-1"
+
+  # Enrollment credentials (from Web UI or provisioning API)
+  enrollment_token: "token-from-web-ui"
+  api_key: "api-key-from-web-ui"
 
   # TLS verification
   verify_ssl: true
@@ -397,21 +457,35 @@ runner:
   # client_cert: "/path/to/runner-1.crt"
   # client_key: "/path/to/runner-1.key"
 
+  # Intervals
+  poll_interval: 10
+  heartbeat_interval: 30
+
   cache_dir: "cache"
 
 radios:
+  # Model defaults (optional)
   models:
     - model: hackrf
       rf_gain: 14
       if_gain: 32
 
+  # Individual devices
   devices:
     - name: 0
       model: hackrf
+      rf_gain: 14
+      if_gain: 32
       frequency_limits:
         - "144000000-148000000"
         - "420000000-450000000"
 ```
+
+**Notes on Runner Authentication:**
+- `enrollment_token` can be left in the config file - it's ignored after first successful enrollment
+- API keys are authenticated with multi-factor host validation requiring at least 2 matching factors (MAC address, machine ID, or IP+hostname)
+- When a runner is actively online (heartbeat within 90 seconds), authentication must match at least two host identifiers to prevent credential reuse attacks
+- Legacy runners with missing host identifiers are automatically upgraded when they provide the information
 
 **Note on mTLS:** When using mutual TLS with client certificates, runners authenticate with both their API key (in headers) and their client certificate. The nginx server verifies the client certificate against the CA, and the backend server verifies the API key.
 
@@ -567,12 +641,16 @@ client_max_body_size 100M;
 
 ## Security Checklist
 
-- [ ] All API keys changed from defaults
+- [ ] Default admin password changed on first login
+- [ ] TOTP two-factor authentication enabled for all admin users
+- [ ] Enrollment tokens regenerated (do not use example tokens)
+- [ ] Provisioning API keys created with descriptive names and rotated regularly
 - [ ] TLS enabled with valid certificate
-- [ ] Firewall configured
-- [ ] Regular backups configured
+- [ ] Firewall configured (ports 80/443 only if using nginx)
+- [ ] Regular database backups configured
 - [ ] System updates applied
 - [ ] Unused ports closed
+- [ ] Runner host validation enabled (automatic with new enrollments)
 
 ## Support
 

@@ -36,6 +36,55 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_mac_address() -> Optional[str]:
+    """Get the MAC address of the primary network interface.
+
+    Returns:
+        MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
+    """
+    try:
+        import uuid
+        mac = uuid.getnode()
+        # Format as colon-separated hex
+        mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
+        return mac_str
+    except Exception as e:
+        logger.warning(f"Could not retrieve MAC address: {e}")
+        return None
+
+
+def get_machine_id() -> Optional[str]:
+    """Get the machine ID from the system.
+
+    Tries to read from:
+    - Linux: /etc/machine-id or /var/lib/dbus/machine-id
+    - Other platforms: Use a UUID based on hardware characteristics
+
+    Returns:
+        Machine ID as a string, or None if unavailable
+    """
+    # Try Linux machine-id files
+    for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+        try:
+            with open(path, 'r') as f:
+                machine_id = f.read().strip()
+                if machine_id:
+                    return machine_id
+        except (FileNotFoundError, PermissionError):
+            continue
+
+    # Fallback: use platform-specific identifier
+    try:
+        import platform
+        # Create a consistent ID from system information
+        system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
+        # Hash it to create a consistent ID
+        return hashlib.sha256(system_info.encode()).hexdigest()[:32]
+    except Exception as e:
+        logger.warning(f"Could not retrieve machine ID: {e}")
+        return None
+
+
 class ServerLogHandler(logging.Handler):
     """Custom logging handler that forwards logs to the server."""
 
@@ -100,7 +149,20 @@ class ChallengeCtlRunner:
 
         # HTTP session for connection pooling
         self.session = requests.Session()
-        self.session.headers.update({'Authorization': f'Bearer {self.api_key}'})
+
+        # Get host identifiers for authentication
+        mac_address = get_mac_address()
+        machine_id = get_machine_id()
+
+        # Set authentication headers including host identifiers
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        if mac_address:
+            headers['X-Runner-MAC'] = mac_address
+        if machine_id:
+            headers['X-Runner-Machine-ID'] = machine_id
+
+        self.session.headers.update(headers)
+        logger.debug(f"Session configured with host identifiers: MAC={mac_address}, Machine ID={machine_id}")
 
         # Configure TLS verification
         if self.ca_cert and os.path.exists(self.ca_cert):
@@ -171,8 +233,88 @@ class ChallengeCtlRunner:
 
         return devices
 
+    def enroll(self) -> bool:
+        """Enroll this runner with the server using an enrollment token.
+
+        This is used for initial enrollment with database-stored API keys.
+        After enrollment, the runner should be restarted without the enrollment_token in config.
+        """
+        enrollment_token = self.config['runner'].get('enrollment_token')
+
+        if not enrollment_token:
+            logger.debug("No enrollment token found, skipping enrollment")
+            return False
+
+        try:
+            hostname = socket.gethostname()
+            mac_address = get_mac_address()
+            machine_id = get_machine_id()
+
+            logger.info(f"Enrolling with host identifiers: hostname={hostname}, MAC={mac_address}, machine_id={machine_id}")
+
+            # Prepare device info for server
+            devices_info = []
+            for dev in self.devices:
+                devices_info.append({
+                    'device_id': dev['device_id'],
+                    'model': dev['model'],
+                    'name': dev['name'],
+                    'frequency_limits': dev['frequency_limits']
+                })
+
+            # Create a session without authentication for enrollment
+            enrollment_session = requests.Session()
+
+            # Configure TLS verification same as main session
+            if self.ca_cert and os.path.exists(self.ca_cert):
+                enrollment_session.verify = self.ca_cert
+            elif not self.verify_ssl:
+                enrollment_session.verify = False
+            else:
+                enrollment_session.verify = True
+
+            response = enrollment_session.post(
+                f"{self.server_url}/api/enrollment/enroll",
+                json={
+                    'enrollment_token': enrollment_token,
+                    'api_key': self.api_key,
+                    'runner_id': self.runner_id,
+                    'hostname': hostname,
+                    'mac_address': mac_address,
+                    'machine_id': machine_id,
+                    'devices': devices_info
+                },
+                timeout=10
+            )
+
+            if response.status_code == 201:
+                logger.info(f"Successfully enrolled as {self.runner_id}")
+                return True
+            elif response.status_code == 401:
+                logger.error("Enrollment failed: Invalid or expired enrollment token")
+                return False
+            elif response.status_code == 409:
+                logger.info("Runner already enrolled with this token")
+                return True  # Return true to continue with normal operation
+            else:
+                logger.error(f"Enrollment failed: HTTP {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.error(f"Error: {error_data.get('error', 'Unknown error')}")
+                except Exception:
+                    pass
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during enrollment: {e}")
+            return False
+
     def register(self) -> bool:
-        """Register this runner with the server."""
+        """Register this runner with the server.
+
+        Note: This is now primarily for backwards compatibility.
+        New runners should use the enrollment process instead.
+        """
         try:
             hostname = socket.gethostname()
 
@@ -652,13 +794,30 @@ class ChallengeCtlRunner:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Register with server
+        # Try to register first (works if already enrolled with valid API key)
         print("Registering with server...")
-        if not self.register():
-            print("Failed to register with server. Exiting.")
-            logger.error("Failed to register with server. Exiting.")
-            sys.exit(1)
-        print("Registration successful")
+        registered = self.register()
+
+        if not registered:
+            # Registration failed - check if we have an enrollment token to try
+            enrollment_token = self.config['runner'].get('enrollment_token')
+            if enrollment_token:
+                print("Registration failed. Attempting enrollment with token...")
+                if not self.enroll():
+                    print("Failed to enroll with server. Exiting.")
+                    logger.error("Failed to enroll with server. Exiting.")
+                    sys.exit(1)
+                print("Enrollment successful!")
+                print("")
+                print("NOTE: You can leave 'enrollment_token' in your runner-config.yml.")
+                print("It will be ignored on subsequent runs once enrolled.")
+                print("")
+            else:
+                print("Failed to register with server and no enrollment token found. Exiting.")
+                logger.error("Failed to register with server and no enrollment token found. Exiting.")
+                sys.exit(1)
+        else:
+            print("Registration successful")
 
         # Add server log handler to forward logs
         server_handler = ServerLogHandler(self)

@@ -78,7 +78,6 @@ class ChallengeCtlAPI:
         # Configuration
         self.config_path = config_path
         self.config = self.load_config(config_path)
-        self.api_keys = self.config.get('server', {}).get('api_keys', {})
         self.files_dir = files_dir
 
         self.app = Flask(__name__)
@@ -255,7 +254,11 @@ class ChallengeCtlAPI:
         return runner
 
     def require_api_key(self, f):
-        """Decorator to require API key authentication (for runners only)."""
+        """Decorator to require API key authentication (for runners only).
+
+        Checks database for runner API key with enhanced multi-factor host validation.
+        All runners must be enrolled via the secure enrollment process.
+        """
         @wraps(f)
         def decorated_function(*args, **kwargs):
             auth_header = request.headers.get('Authorization')
@@ -264,13 +267,29 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing or invalid authorization header'}), 401
 
             api_key = auth_header[7:]  # Remove 'Bearer ' prefix
+            current_ip = request.remote_addr
 
-            # Find runner_id for this API key
+            # Get hostname from request body if available (registration/heartbeat includes it)
+            # Otherwise use empty string (will only validate IP)
+            current_hostname = ''
+            if request.is_json and request.json:
+                current_hostname = request.json.get('hostname', '')
+
+            # Get host identifiers from custom headers (sent by runner)
+            current_mac = request.headers.get('X-Runner-MAC')
+            current_machine_id = request.headers.get('X-Runner-Machine-ID')
+
+            # Find runner_id in database with enhanced host validation
             runner_id = None
-            for rid, key in self.api_keys.items():
-                if key == api_key:
-                    runner_id = rid
-                    break
+            all_runners = self.db.get_all_runners()
+
+            for runner in all_runners:
+                if runner.get('api_key_hash'):
+                    # Check if this runner's API key matches (includes multi-factor host validation)
+                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname,
+                                                     current_mac, current_machine_id):
+                        runner_id = runner['runner_id']
+                        break
 
             if not runner_id:
                 return jsonify({'error': 'Invalid API key'}), 401
@@ -285,6 +304,10 @@ class ChallengeCtlAPI:
     def generate_csrf_token(self) -> str:
         """Generate a random CSRF token."""
         return secrets.token_urlsafe(32)
+
+    def generate_api_key(self) -> str:
+        """Generate a secure random API key for runners or provisioning."""
+        return secrets.token_urlsafe(48)
 
     def get_cookie_security_settings(self) -> dict:
         """
@@ -327,6 +350,36 @@ class ChallengeCtlAPI:
             if csrf_header != csrf_cookie:
                 logger.warning(f"CSRF token mismatch from {request.remote_addr} for {request.path}")
                 return jsonify({'error': 'CSRF token invalid'}), 403
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    def require_provisioning_key(self, f):
+        """Decorator to require provisioning API key authentication.
+
+        Provisioning keys have limited permissions - only runner enrollment.
+        Uses Bearer token authentication without CSRF (stateless).
+        """
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            auth_header = request.headers.get('Authorization')
+
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'Missing or invalid authorization header'}), 401
+
+            api_key = auth_header[7:]  # Remove 'Bearer ' prefix
+
+            # Verify provisioning API key
+            key_id = self.db.verify_provisioning_api_key(api_key)
+
+            if not key_id:
+                logger.warning(f"Invalid provisioning API key attempt from {request.remote_addr}")
+                return jsonify({'error': 'Invalid provisioning API key'}), 401
+
+            # Add key_id to request context for logging
+            request.provisioning_key_id = key_id
+            logger.info(f"Provisioning API request from key '{key_id}' at {request.remote_addr}")
 
             return f(*args, **kwargs)
 
@@ -484,7 +537,7 @@ class ChallengeCtlAPI:
         def health_check():
             return jsonify({
                 'status': 'ok',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
         # Authentication endpoints
@@ -1075,7 +1128,7 @@ class ChallengeCtlAPI:
                 return jsonify({
                     'challenges': public_challenges,
                     'count': len(public_challenges),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }), 200
 
             except Exception as e:
@@ -1196,7 +1249,7 @@ class ChallengeCtlAPI:
                     'runner_id': runner_id,
                     'challenge_id': challenge['challenge_id'],
                     'challenge_name': challenge['name'],
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
                 return jsonify({
@@ -1246,7 +1299,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
             # Add to in-memory transmission buffer
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now(timezone.utc).isoformat()
             transmission = {
                 'started_at': timestamp,
                 'runner_id': runner_id,
@@ -1429,6 +1482,473 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Runner not found'}), 404
 
+        # Enrollment token endpoints
+        @self.app.route('/api/enrollment/token', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def create_enrollment_token():
+            """Generate a new enrollment token for runner registration.
+
+            Request body:
+                runner_name: Descriptive name for the runner
+                expires_hours: Hours until token expires (default 24)
+
+            Returns:
+                token: The one-time enrollment token
+                api_key: The API key to be used by the runner
+                expires_at: When the token expires
+            """
+            data = request.json
+
+            if not data or 'runner_name' not in data:
+                return jsonify({'error': 'Missing runner_name'}), 400
+
+            runner_name = data['runner_name']
+            expires_hours = data.get('expires_hours', 24)
+
+            # Generate a secure enrollment token
+            enrollment_token = secrets.token_urlsafe(32)
+
+            # Generate a secure API key for the runner
+            api_key = secrets.token_urlsafe(48)
+
+            # Calculate expiration time
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Get current user from session
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            created_by = session['username'] if session else 'unknown'
+
+            # Store the token in database
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_name,
+                created_by=created_by,
+                expires_at=expires_at
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            logger.info(f"Created enrollment token for runner: {runner_name} by {created_by}")
+
+            return jsonify({
+                'token': enrollment_token,
+                'api_key': api_key,
+                'runner_name': runner_name,
+                'expires_at': expires_at.isoformat(),
+                'expires_hours': expires_hours
+            }), 201
+
+        @self.app.route('/api/enrollment/enroll', methods=['POST'])
+        @self.limiter.limit("10 per hour")  # Limit enrollment attempts
+        def enroll_runner():
+            """Enroll a new runner using an enrollment token.
+
+            Request body:
+                enrollment_token: The enrollment token
+                api_key: The API key provided with the token
+                runner_id: Unique identifier for this runner
+                hostname: Hostname of the runner
+                mac_address: Optional MAC address of the runner
+                machine_id: Optional machine ID of the runner
+                devices: List of SDR devices
+
+            Returns:
+                success: Boolean indicating enrollment success
+                runner_id: The enrolled runner ID
+            """
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            required_fields = ['enrollment_token', 'api_key', 'runner_id', 'hostname', 'devices']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({'error': f'Missing required field: {field}'}), 400
+
+            enrollment_token = data['enrollment_token']
+            api_key = data['api_key']
+            runner_id = data['runner_id']
+            hostname = data['hostname']
+            mac_address = data.get('mac_address')
+            machine_id = data.get('machine_id')
+            devices = data['devices']
+
+            # Verify the enrollment token
+            is_valid, runner_name = self.db.verify_enrollment_token(enrollment_token)
+
+            if not is_valid:
+                logger.warning(f"Invalid or expired enrollment token used from {request.remote_addr}")
+                return jsonify({'error': 'Invalid or expired enrollment token'}), 401
+
+            # Get token details to check if this is a re-enrollment
+            token_details = self.db.get_enrollment_token(enrollment_token)
+            is_re_enrollment = token_details and token_details.get('re_enrollment_for')
+
+            # Check if runner_id already exists
+            existing_runner = self.db.get_runner(runner_id)
+            if existing_runner and existing_runner.get('api_key_hash') and not is_re_enrollment:
+                return jsonify({'error': 'Runner ID already enrolled'}), 409
+
+            # For re-enrollment, verify the runner_id matches
+            if is_re_enrollment and is_re_enrollment != runner_id:
+                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong runner_id {runner_id}")
+                return jsonify({'error': 'Re-enrollment token does not match runner ID'}), 400
+
+            # Register or update the runner with the API key and host identifiers
+            success = self.db.register_runner(
+                runner_id=runner_id,
+                hostname=hostname,
+                ip_address=request.remote_addr,
+                mac_address=mac_address,
+                machine_id=machine_id,
+                devices=devices,
+                api_key=api_key
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to register runner'}), 500
+
+            # Mark the token as used
+            self.db.mark_token_used(enrollment_token, runner_id)
+
+            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr} "
+                       f"(MAC: {mac_address}, Machine ID: {machine_id})")
+
+            # Broadcast event to WebUI
+            self.broadcast_event('runner_enrolled', {
+                'runner_id': runner_id,
+                'runner_name': runner_name,
+                'hostname': hostname,
+                'mac_address': mac_address,
+                'machine_id': machine_id,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+            return jsonify({
+                'success': True,
+                'runner_id': runner_id,
+                'message': f'Runner {runner_name} enrolled successfully'
+            }), 201
+
+        @self.app.route('/api/enrollment/tokens', methods=['GET'])
+        @self.require_admin_auth
+        def get_enrollment_tokens():
+            """Get all enrollment tokens (for admin view)."""
+            tokens = self.db.get_all_enrollment_tokens()
+            return jsonify({'tokens': tokens}), 200
+
+        @self.app.route('/api/enrollment/token/<token>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_enrollment_token(token):
+            """Delete an enrollment token."""
+            success = self.db.delete_enrollment_token(token)
+
+            if success:
+                return jsonify({'status': 'deleted'}), 200
+            else:
+                return jsonify({'error': 'Token not found'}), 404
+
+        @self.app.route('/api/enrollment/re-enroll/<runner_id>', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def re_enroll_runner(runner_id):
+            """Generate a fresh enrollment token for an existing runner.
+
+            This allows re-enrollment of a runner on a different host or after
+            the original credentials are compromised. Generates new enrollment
+            token and API key.
+
+            Args:
+                runner_id: The runner ID to re-enroll
+            Request body:
+                expires_hours: Optional hours until token expires (default: 24)
+
+            Returns:
+                token: New enrollment token
+                api_key: New API key
+                expires_at: Token expiration timestamp
+            """
+            # Check if runner exists
+            existing_runner = self.db.get_runner(runner_id)
+            if not existing_runner:
+                return jsonify({'error': 'Runner not found'}), 404
+
+            data = request.json or {}
+            expires_hours = data.get('expires_hours', 24)
+
+            # Get current user from session
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            username = session['username'] if session else 'unknown'
+
+            # Generate new credentials
+            new_api_key = self.generate_api_key()
+            enrollment_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Create enrollment token marked for re-enrollment
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_id,  # Use runner_id as name for re-enrollment
+                created_by=username,
+                expires_at=expires_at,
+                re_enrollment_for=runner_id  # Mark this as a re-enrollment token
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            logger.info(f"Re-enrollment token generated for runner {runner_id} by {username}")
+
+            return jsonify({
+                'token': enrollment_token,
+                'api_key': new_api_key,
+                'runner_id': runner_id,
+                'expires_at': expires_at.isoformat(),
+                'expires_hours': expires_hours
+            }), 201
+
+        # Provisioning API key management endpoints (admin only)
+        @self.app.route('/api/provisioning/keys', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def create_provisioning_key():
+            """Create a new provisioning API key.
+
+            Request body:
+                key_id: Unique identifier for this key
+                description: Human-readable description
+
+            Returns:
+                key_id: The key identifier
+                api_key: The generated API key (only shown once!)
+            """
+            data = request.json or {}
+
+            key_id = data.get('key_id')
+            description = data.get('description', '')
+
+            if not key_id:
+                return jsonify({'error': 'Missing required field: key_id'}), 400
+
+            # Validate key_id format (alphanumeric, hyphens, underscores)
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', key_id):
+                return jsonify({'error': 'key_id must contain only alphanumeric characters, hyphens, and underscores'}), 400
+
+            # Get current user
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            username = session['username'] if session else 'unknown'
+
+            # Generate API key
+            api_key = self.generate_api_key()
+
+            # Create in database
+            success = self.db.create_provisioning_api_key(key_id, api_key, description, username)
+
+            if not success:
+                return jsonify({'error': 'Failed to create provisioning key (key_id may already exist)'}), 409
+
+            logger.info(f"Provisioning API key created: {key_id} by {username}")
+
+            return jsonify({
+                'key_id': key_id,
+                'api_key': api_key,
+                'description': description
+            }), 201
+
+        @self.app.route('/api/provisioning/keys', methods=['GET'])
+        @self.require_admin_auth
+        def list_provisioning_keys():
+            """List all provisioning API keys (without the actual keys)."""
+            keys = self.db.get_all_provisioning_api_keys()
+            return jsonify({'keys': keys}), 200
+
+        @self.app.route('/api/provisioning/keys/<key_id>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_provisioning_key(key_id):
+            """Delete a provisioning API key."""
+            success = self.db.delete_provisioning_api_key(key_id)
+
+            if success:
+                return jsonify({'status': 'deleted'}), 200
+            else:
+                return jsonify({'error': 'Key not found'}), 404
+
+        @self.app.route('/api/provisioning/keys/<key_id>/toggle', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def toggle_provisioning_key(key_id):
+            """Enable or disable a provisioning API key."""
+            data = request.json or {}
+            enabled = data.get('enabled', True)
+
+            success = self.db.toggle_provisioning_api_key(key_id, enabled)
+
+            if success:
+                status = 'enabled' if enabled else 'disabled'
+                return jsonify({'status': status}), 200
+            else:
+                return jsonify({'error': 'Key not found'}), 404
+
+        # Provisioning endpoint (uses provisioning API key, no CSRF)
+        @self.app.route('/api/provisioning/provision', methods=['POST'])
+        @self.require_provisioning_key
+        @self.limiter.limit("100 per hour")
+        def provision_runner():
+            """Provision a new runner - generates credentials and returns YAML config.
+
+            This endpoint uses provisioning API key authentication (Bearer token).
+            It generates enrollment credentials and returns a complete runner config.
+
+            Request body:
+                runner_name: Name for the runner
+                runner_id: Unique ID for the runner (optional, defaults to runner_name)
+                expires_hours: Hours until enrollment token expires (default: 24)
+                server_url: Server URL for the config (optional, uses request origin)
+                verify_ssl: SSL verification setting (default: true)
+                devices: List of device configurations (optional)
+
+            Returns:
+                enrollment_token: Token for enrollment
+                api_key: API key for authentication
+                config_yaml: Complete runner configuration as YAML string
+            """
+            data = request.json or {}
+
+            runner_name = data.get('runner_name')
+            if not runner_name:
+                return jsonify({'error': 'Missing required field: runner_name'}), 400
+
+            runner_id = data.get('runner_id', runner_name)
+            expires_hours = data.get('expires_hours', 24)
+            server_url = data.get('server_url', request.host_url.rstrip('/'))
+            verify_ssl = data.get('verify_ssl', True)
+            devices = data.get('devices', [])
+
+            # Get the provisioning key ID from request context
+            created_by = f"provisioning:{request.provisioning_key_id}"
+
+            # Generate credentials
+            api_key = self.generate_api_key()
+            enrollment_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Create enrollment token
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_name,
+                created_by=created_by,
+                expires_at=expires_at
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            # Generate complete YAML config
+            config_yaml = f"""---
+# ChallengeCtl Runner Configuration
+# Provisioned for: {runner_name}
+# Provisioned by: {request.provisioning_key_id}
+# Generated: {datetime.now(timezone.utc).isoformat()}
+
+runner:
+  # Runner identification
+  runner_id: "{runner_id}"
+
+  # Server connection
+  server_url: "{server_url}"
+
+  # Enrollment credentials
+  # Note: enrollment_token can be left in config, it will be ignored once enrolled
+  enrollment_token: "{enrollment_token}"
+  api_key: "{api_key}"
+
+  # TLS/SSL Configuration
+  ca_cert: ""
+  verify_ssl: {str(verify_ssl).lower()}
+
+  # Intervals
+  heartbeat_interval: 30
+  poll_interval: 10
+
+  # Cache
+  cache_dir: "cache"
+
+  # Spectrum paint before challenges
+  spectrum_paint_before_challenge: true
+
+# Radio/SDR Device Configuration
+radios:
+  # Model defaults
+  models:
+  - model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: bladerf
+    rf_gain: 43
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: usrp
+    rf_gain: 20
+    bias_t: false
+    rf_samplerate: 2000000
+    ppm: 0
+
+  # Individual devices
+  devices:
+"""
+
+            # Add device configurations
+            if devices:
+                for device in devices:
+                    config_yaml += f"  - name: {device.get('name', '0')}\n"
+                    config_yaml += f"    model: {device.get('model', 'hackrf')}\n"
+                    config_yaml += f"    rf_gain: {device.get('rf_gain', 14)}\n"
+
+                    if device.get('model') == 'hackrf' and 'if_gain' in device:
+                        config_yaml += f"    if_gain: {device.get('if_gain')}\n"
+
+                    freq_limits = device.get('frequency_limits', [])
+                    if freq_limits:
+                        config_yaml += "    frequency_limits:\n"
+                        for limit in freq_limits:
+                            config_yaml += f"      - \"{limit}\"\n"
+            else:
+                # Default device if none specified
+                config_yaml += """  - name: 0
+    model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    frequency_limits:
+      - "144000000-148000000"  # 2m ham band
+      - "420000000-450000000"  # 70cm ham band
+"""
+
+            logger.info(f"Provisioned runner '{runner_name}' via key '{request.provisioning_key_id}'")
+
+            return jsonify({
+                'runner_name': runner_name,
+                'runner_id': runner_id,
+                'enrollment_token': enrollment_token,
+                'api_key': api_key,
+                'expires_at': expires_at.isoformat(),
+                'config_yaml': config_yaml
+            }), 201
+
         @self.app.route('/api/challenges', methods=['GET'])
         @self.require_admin_auth
         def get_challenges():
@@ -1575,7 +2095,7 @@ class ChallengeCtlAPI:
 
             self.broadcast_event('system_control', {
                 'action': 'pause',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
             return jsonify({'status': 'paused'}), 200
@@ -1589,7 +2109,7 @@ class ChallengeCtlAPI:
 
             self.broadcast_event('system_control', {
                 'action': 'resume',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
             return jsonify({'status': 'resumed'}), 200
@@ -1785,7 +2305,7 @@ class ChallengeCtlAPI:
                 challenges = self.get_public_challenges_data()
                 emit('challenges_update', {
                     'challenges': challenges,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }, namespace='/public')
             except Exception as e:
                 logger.error(f"Error sending initial public challenges: {e}")
@@ -1863,7 +2383,7 @@ class ChallengeCtlAPI:
             challenges = self.get_public_challenges_data()
             self.socketio.emit('challenges_update', {
                 'challenges': challenges,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }, namespace='/public')
         except Exception as e:
             logger.error(f"Error broadcasting public challenges: {e}")

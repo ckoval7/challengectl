@@ -59,12 +59,65 @@ class Database:
                     runner_id TEXT PRIMARY KEY,
                     hostname TEXT,
                     ip_address TEXT,
+                    mac_address TEXT,
+                    machine_id TEXT,
                     status TEXT DEFAULT 'offline',
                     enabled BOOLEAN DEFAULT 1,
                     last_heartbeat TIMESTAMP,
                     devices JSON,
+                    api_key_hash TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Migration: Add host identifier columns if they don't exist
+            cursor.execute("PRAGMA table_info(runners)")
+            columns = [col[1] for col in cursor.fetchall()]
+
+            if 'mac_address' not in columns:
+                logger.info("Adding mac_address column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN mac_address TEXT')
+
+            if 'machine_id' not in columns:
+                logger.info("Adding machine_id column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN machine_id TEXT')
+
+            # Enrollment tokens table (for one-time runner registration)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS enrollment_tokens (
+                    token TEXT PRIMARY KEY,
+                    runner_name TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL,
+                    used BOOLEAN DEFAULT 0,
+                    used_at TIMESTAMP,
+                    used_by_runner_id TEXT,
+                    re_enrollment_for TEXT,
+                    FOREIGN KEY (created_by) REFERENCES users(username)
+                )
+            ''')
+
+            # Migration: Add re_enrollment_for column if it doesn't exist
+            cursor.execute("PRAGMA table_info(enrollment_tokens)")
+            token_columns = [col[1] for col in cursor.fetchall()]
+
+            if 're_enrollment_for' not in token_columns:
+                logger.info("Adding re_enrollment_for column to enrollment_tokens table")
+                cursor.execute('ALTER TABLE enrollment_tokens ADD COLUMN re_enrollment_for TEXT')
+
+            # Provisioning API keys table (for automated runner provisioning)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS provisioning_api_keys (
+                    key_id TEXT PRIMARY KEY,
+                    key_hash TEXT NOT NULL,
+                    description TEXT,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP,
+                    enabled BOOLEAN DEFAULT 1,
+                    FOREIGN KEY (created_by) REFERENCES users(username)
                 )
             ''')
 
@@ -219,6 +272,9 @@ class Database:
             if 'enabled' not in columns:
                 logger.info("Adding 'enabled' column to runners table")
                 cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
+            if 'api_key_hash' not in columns:
+                logger.info("Adding 'api_key_hash' column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN api_key_hash TEXT')
 
             # Create indexes
             cursor.execute('''
@@ -240,24 +296,50 @@ class Database:
             logger.info(f"Database initialized at {self.db_path}")
 
     # Runner management
-    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict]) -> bool:
-        """Register a new runner or update existing one."""
+    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict],
+                       api_key: Optional[str] = None, mac_address: Optional[str] = None,
+                       machine_id: Optional[str] = None) -> bool:
+        """Register a new runner or update existing one.
+
+        Args:
+            runner_id: Unique identifier for the runner
+            hostname: Hostname of the runner
+            ip_address: IP address of the runner
+            devices: List of SDR devices available on this runner
+            api_key: Optional API key to set for this runner (will be bcrypt hashed)
+            mac_address: Optional MAC address of the runner's primary network interface
+            machine_id: Optional machine ID (e.g., from /etc/machine-id)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import bcrypt
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
+                # Hash API key if provided
+                api_key_hash = None
+                if api_key:
+                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
                 cursor.execute('''
-                    INSERT INTO runners (runner_id, hostname, ip_address, status, last_heartbeat, devices)
-                    VALUES (?, ?, ?, 'online', ?, ?)
+                    INSERT INTO runners (runner_id, hostname, ip_address, mac_address, machine_id,
+                                       status, last_heartbeat, devices, api_key_hash)
+                    VALUES (?, ?, ?, ?, ?, 'online', ?, ?, ?)
                     ON CONFLICT(runner_id) DO UPDATE SET
                         hostname = excluded.hostname,
                         ip_address = excluded.ip_address,
+                        mac_address = excluded.mac_address,
+                        machine_id = excluded.machine_id,
                         status = 'online',
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices)))
+                ''', (runner_id, hostname, ip_address, mac_address, machine_id,
+                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
                 conn.commit()
-                logger.info(f"Registered runner: {runner_id} from {ip_address}")
+                logger.info(f"Registered runner: {runner_id} from {ip_address} (MAC: {mac_address}, Machine ID: {machine_id})")
                 return True
             except Exception as e:
                 logger.error(f"Error registering runner {runner_id}: {e}")
@@ -344,6 +426,137 @@ class Database:
             conn.commit()
             if cursor.rowcount > 0:
                 logger.info(f"Disabled runner: {runner_id}")
+            return cursor.rowcount > 0
+
+    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str,
+                             current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
+        """Verify a runner's API key against the stored bcrypt hash.
+
+        Also validates that the runner is not already active from a different host
+        to prevent credential reuse attacks. Uses multiple host identifiers for
+        robust validation.
+
+        Args:
+            runner_id: The runner ID to verify
+            api_key: The plaintext API key to check
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
+
+        Returns:
+            True if the API key is valid and host check passes, False otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT api_key_hash, status, ip_address, hostname, mac_address, machine_id, last_heartbeat
+                FROM runners WHERE runner_id = ?
+            ''', (runner_id,))
+            row = cursor.fetchone()
+
+            if not row or not row['api_key_hash']:
+                return False
+
+            # Verify the API key using bcrypt
+            try:
+                api_key_valid = bcrypt.checkpw(api_key.encode('utf-8'), row['api_key_hash'].encode('utf-8'))
+            except Exception as e:
+                logger.error(f"API key verification error for runner {runner_id}: {e}")
+                return False
+
+            if not api_key_valid:
+                return False
+
+            # Enhanced host validation: check multiple identifiers
+            # Prevent credential reuse on different machines
+            if row['status'] == 'online' and row['last_heartbeat']:
+                stored_ip = row['ip_address']
+                stored_hostname = row['hostname']
+                stored_mac = row['mac_address']
+                stored_machine_id = row['machine_id']
+
+                # Check if runner is actively online (heartbeat within 90 seconds)
+                last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
+                time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
+
+                if time_since_heartbeat < 90:
+                    # Runner is actively online - perform multi-factor host validation
+                    # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
+                    matches = []
+
+                    # Check IP and hostname together
+                    if stored_ip == current_ip and stored_hostname == current_hostname:
+                        matches.append("IP+hostname")
+
+                    # Check MAC address (strong identifier)
+                    # If stored_mac is None, accept any current_mac (backwards compatibility)
+                    if stored_mac is None and current_mac:
+                        matches.append("MAC-upgrade")
+                        # Update the database with the new MAC address
+                        cursor.execute('''
+                            UPDATE runners
+                            SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE runner_id = ?
+                        ''', (current_mac, runner_id))
+                        conn.commit()
+                        logger.info(f"Updated runner {runner_id} with MAC address: {current_mac}")
+                    elif stored_mac and current_mac and stored_mac == current_mac:
+                        matches.append("MAC")
+
+                    # Check machine ID (strongest identifier)
+                    # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
+                    if stored_machine_id is None and current_machine_id:
+                        matches.append("machine-ID-upgrade")
+                        # Update the database with the new machine ID
+                        cursor.execute('''
+                            UPDATE runners
+                            SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE runner_id = ?
+                        ''', (current_machine_id, runner_id))
+                        conn.commit()
+                        logger.info(f"Updated runner {runner_id} with machine ID: {current_machine_id}")
+                    elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
+                        matches.append("machine-ID")
+
+                    # Require at least 2 matching factors for security
+                    if len(matches) < 2:
+                        logger.warning(
+                            f"SECURITY: Runner {runner_id} credential reuse attempt! "
+                            f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
+                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
+                            f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
+                        )
+                        return False
+                    else:
+                        logger.debug(f"Runner {runner_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
+
+            return True
+
+    def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
+        """Update a runner's bcrypt-hashed API key.
+
+        Args:
+            runner_id: The runner ID to update
+            api_key: The plaintext API key to hash and store
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            cursor.execute('''
+                UPDATE runners
+                SET api_key_hash = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (api_key_hash, runner_id))
+            conn.commit()
             return cursor.rowcount > 0
 
     def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
@@ -924,6 +1137,263 @@ class Database:
             ''', (now,))
             conn.commit()
             return cursor.rowcount
+
+    # Enrollment token management
+    def create_enrollment_token(self, token: str, runner_name: str, created_by: str, expires_at: datetime,
+                               re_enrollment_for: Optional[str] = None) -> bool:
+        """Create a new enrollment token for runner registration or re-enrollment.
+
+        Args:
+            token: The unique enrollment token
+            runner_name: Descriptive name for the runner
+            created_by: Username of the admin who created the token
+            expires_at: When the token expires
+            re_enrollment_for: Optional runner_id if this is a re-enrollment token
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO enrollment_tokens (token, runner_name, created_by, expires_at, re_enrollment_for)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (token, runner_name, created_by, expires_at, re_enrollment_for))
+                conn.commit()
+                if re_enrollment_for:
+                    logger.info(f"Created re-enrollment token for runner: {re_enrollment_for}")
+                else:
+                    logger.info(f"Created enrollment token for runner: {runner_name}")
+                return True
+            except Exception as e:
+                logger.error(f"Error creating enrollment token: {e}")
+                return False
+
+    def get_enrollment_token(self, token: str) -> Optional[Dict]:
+        """Get enrollment token details.
+
+        Args:
+            token: The enrollment token to look up
+
+        Returns:
+            Token details dict or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM enrollment_tokens WHERE token = ?', (token,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def verify_enrollment_token(self, token: str) -> tuple[bool, Optional[str]]:
+        """Verify an enrollment token is valid and unused.
+
+        Args:
+            token: The enrollment token to verify
+
+        Returns:
+            Tuple of (is_valid, runner_name)
+        """
+        token_data = self.get_enrollment_token(token)
+
+        if not token_data:
+            return (False, None)
+
+        # Check if already used
+        if token_data['used']:
+            logger.warning(f"Enrollment token already used")
+            return (False, None)
+
+        # Check if expired
+        expires_at = datetime.fromisoformat(token_data['expires_at'])
+        if datetime.now(timezone.utc) > expires_at:
+            logger.warning(f"Enrollment token expired")
+            return (False, None)
+
+        return (True, token_data['runner_name'])
+
+    def mark_token_used(self, token: str, runner_id: str) -> bool:
+        """Mark an enrollment token as used.
+
+        Args:
+            token: The enrollment token
+            runner_id: The runner ID that used this token
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE enrollment_tokens
+                SET used = 1, used_at = CURRENT_TIMESTAMP, used_by_runner_id = ?
+                WHERE token = ?
+            ''', (runner_id, token))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_all_enrollment_tokens(self) -> List[Dict]:
+        """Get all enrollment tokens (for admin view).
+
+        Returns:
+            List of all enrollment tokens
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM enrollment_tokens
+                ORDER BY created_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_enrollment_token(self, token: str) -> bool:
+        """Delete an enrollment token.
+
+        Args:
+            token: The enrollment token to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM enrollment_tokens WHERE token = ?', (token,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def cleanup_expired_tokens(self) -> int:
+        """Delete expired enrollment tokens.
+
+        Returns:
+            Number of tokens deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM enrollment_tokens
+                WHERE expires_at < ? AND used = 0
+            ''', (datetime.now(timezone.utc),))
+            conn.commit()
+            return cursor.rowcount
+
+    # Provisioning API key management
+    def create_provisioning_api_key(self, key_id: str, api_key: str, description: str, created_by: str) -> bool:
+        """Create a new provisioning API key for automated runner enrollment.
+
+        Args:
+            key_id: Unique identifier for this key (e.g., "ci-cd-pipeline")
+            api_key: The plaintext API key to hash and store
+            description: Human-readable description of key purpose
+            created_by: Username of the admin who created this key
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                cursor.execute('''
+                    INSERT INTO provisioning_api_keys (key_id, key_hash, description, created_by)
+                    VALUES (?, ?, ?, ?)
+                ''', (key_id, key_hash, description, created_by))
+                conn.commit()
+                logger.info(f"Created provisioning API key: {key_id}")
+                return True
+            except Exception as e:
+                logger.error(f"Error creating provisioning API key: {e}")
+                return False
+
+    def verify_provisioning_api_key(self, api_key: str) -> Optional[str]:
+        """Verify a provisioning API key and return the key_id if valid.
+
+        Args:
+            api_key: The plaintext API key to verify
+
+        Returns:
+            key_id if valid and enabled, None otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT key_id, key_hash, enabled FROM provisioning_api_keys')
+
+            for row in cursor.fetchall():
+                if not row['enabled']:
+                    continue
+
+                try:
+                    if bcrypt.checkpw(api_key.encode('utf-8'), row['key_hash'].encode('utf-8')):
+                        # Update last_used_at
+                        cursor.execute('''
+                            UPDATE provisioning_api_keys
+                            SET last_used_at = CURRENT_TIMESTAMP
+                            WHERE key_id = ?
+                        ''', (row['key_id'],))
+                        conn.commit()
+                        return row['key_id']
+                except Exception as e:
+                    logger.error(f"Error verifying provisioning API key: {e}")
+                    continue
+
+            return None
+
+    def get_all_provisioning_api_keys(self) -> List[Dict]:
+        """Get all provisioning API keys (without the actual keys).
+
+        Returns:
+            List of provisioning API key records
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT key_id, description, created_by, created_at, last_used_at, enabled
+                FROM provisioning_api_keys
+                ORDER BY created_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_provisioning_api_key(self, key_id: str) -> bool:
+        """Delete a provisioning API key.
+
+        Args:
+            key_id: The key ID to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM provisioning_api_keys WHERE key_id = ?', (key_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Deleted provisioning API key: {key_id}")
+            return cursor.rowcount > 0
+
+    def toggle_provisioning_api_key(self, key_id: str, enabled: bool) -> bool:
+        """Enable or disable a provisioning API key.
+
+        Args:
+            key_id: The key ID to toggle
+            enabled: True to enable, False to disable
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE provisioning_api_keys
+                SET enabled = ?
+                WHERE key_id = ?
+            ''', (enabled, key_id))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get statistics for the dashboard."""

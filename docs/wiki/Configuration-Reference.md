@@ -38,7 +38,6 @@ server:
 | `bind` | string | `"0.0.0.0"` | IP address to bind the server to. Use `"0.0.0.0"` for all interfaces or `"127.0.0.1"` for localhost only. |
 | `port` | integer | `8443` | TCP port for the HTTP server. |
 | `cors_origins` | array | `[]` | List of allowed CORS origins for web UI access. Never use wildcards with credentials. |
-| `api_keys` | object | required | Mapping of runner IDs to their API keys. Each runner must have a unique key. |
 | `files_dir` | string | `"files"` | Directory where challenge files are stored. Relative to server working directory. |
 | `heartbeat_timeout` | integer | `90` | Seconds before marking a runner offline due to missed heartbeats. Should be 3x heartbeat interval. |
 | `assignment_timeout` | integer | `300` | Seconds before requeuing a challenge that remains assigned. Prevents stuck assignments. |
@@ -65,25 +64,18 @@ cors_origins:
 
 #### API Keys
 
-Each runner requires a unique API key for authentication.
+API keys are **not** stored in this configuration file. Use the secure enrollment process via the Web UI instead. See [Runner Setup Guide](Runner-Setup#enroll-your-runner) for instructions.
 
-```yaml
-api_keys:
-  runner-1: "ck_abc123def456ghi789"
-  runner-2: "ck_jkl012mno345pqr678"
-  runner-3: "ck_stu901vwx234yz567"
-```
-
-Generate keys using:
-```bash
-python3 generate-api-key.py --count 3
-```
-
-Keys should be:
-- At least 32 characters long
-- Cryptographically random
-- Unique per runner
-- Kept confidential
+The enrollment process provides:
+- API keys stored bcrypt-hashed in the database (one-way hashing like passwords)
+- One-time credential display during generation
+- Multi-factor host validation to prevent credential reuse on multiple machines
+  - Captures MAC address, machine ID, IP address, and hostname
+  - Enforces validation immediately (no grace period)
+  - Requires at least ONE identifier to match for authentication
+- Enrollment token expiration for time-limited registration
+- Each runner has a unique, cryptographically random 32-character key
+- Re-enrollment process for legitimate host migration
 
 ### Conference Section
 
@@ -135,9 +127,10 @@ runner:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `runner_id` | string | required | Unique identifier for this runner. Must match a key in server's `api_keys`. |
+| `runner_id` | string | required | Unique identifier for this runner. |
 | `server_url` | string | required | Full URL to the ChallengeCtl server, including protocol and port. |
-| `api_key` | string | required | API key for authentication. Must match server configuration. |
+| `enrollment_token` | string | optional | One-time enrollment token from Web UI (first-time setup only). Can be left in config after enrollment. |
+| `api_key` | string | required | API key for authentication. Obtained from Web UI during enrollment or legacy config. |
 | `ca_cert` | string | `""` | Path to CA certificate file for SSL verification. Empty uses system certificates. |
 | `verify_ssl` | boolean | `true` | Whether to verify SSL certificates. Set to `false` only for development with self-signed certs. |
 | `cache_dir` | string | `"cache"` | Directory for caching downloaded challenge files. Relative to runner working directory. |

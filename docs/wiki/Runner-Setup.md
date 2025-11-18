@@ -250,55 +250,101 @@ LimeUtil --make=test --args="freq=146000000"
 
 ## Configuration
 
-### Obtain an API Key
+### Enroll Your Runner
 
-Before configuring the runner, you need an API key from the server administrator. The server administrator generates keys using:
+Runners use a secure enrollment process that stores API keys bcrypt-hashed in the database (one-way hashing like passwords) instead of in configuration files.
 
-```bash
-python3 generate-api-key.py
-```
+#### Step 1: Generate Enrollment Credentials
 
-The administrator then adds the key to `server-config.yml`:
+There are two ways to obtain enrollment credentials:
 
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_abc123def456..."  # Your generated key
-```
+**Option A: Manual Enrollment (via Web UI)**
 
-And restarts the server. The administrator will provide you with the API key (format: `ck_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`).
+Have your server administrator:
+
+1. Log in to the ChallengeCtl Web UI
+2. Navigate to the **Runners** page
+3. Click the **Add Runner** button
+4. Enter a descriptive name for your runner (e.g., "sdr-station-1", "runner-west")
+5. Select an expiration time (default: 24 hours)
+6. Click **Generate Credentials**
+7. Download or copy the complete configuration file
+
+**Option B: Provisioning API Key (for automation)**
+
+For automated deployments or CI/CD environments:
+
+1. Administrator creates a provisioning API key in **Runners** → **Provisioning Keys** tab
+2. Use the provisioning API to generate runner credentials programmatically
+3. See the [Provisioning API Key Guide](../examples/provisioning-api-key-guide.md) for details
+
+**What you receive:**
+- **Enrollment Token**: A one-time use token (valid for the specified time period)
+- **API Key**: A secure random key that will be bcrypt-hashed and stored in the database
+- **Complete Configuration**: A ready-to-use YAML configuration file
+
+**Security Note**: These credentials are only displayed once. Copy them immediately!
+
+**Important Security Feature - Multi-Factor Host Validation**: The API key is tied to a specific runner_id and host machine. During enrollment, the server captures multiple host identifiers:
+- IP address and hostname
+- MAC address (primary network interface)
+- Machine ID (from `/etc/machine-id` or system-specific identifier)
+
+If the runner is actively online (heartbeat within last 90 seconds), authentication attempts from a different machine will be rejected unless at least ONE of these identifiers matches:
+- IP address + hostname (together)
+- MAC address
+- Machine ID
+
+This prevents credential reuse attacks if your config file is copied to another machine. To move a runner to a different host, use the **Re-enrollment** feature in the Web UI.
+
+#### Step 2: Configure Your Runner
+
+The administrator will give you both the enrollment token and API key. You'll use these in your configuration file for the initial enrollment.
 
 ### Create Configuration File
 
 Create a `runner-config.yml` file in the runner's working directory:
 
+
 ```yaml
 runner:
-  runner_id: "runner-1"
-  server_url: "http://192.168.1.100:8443"
-  api_key: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"
-  poll_interval: 5
-  heartbeat_interval: 30
-  log_level: "INFO"
+  runner_id: "sdr-station-1"  # Choose a unique ID for your runner
+  server_url: "https://192.168.1.100:8443"
 
-devices:
-  - name: 0
-    model: hackrf
-    frequency_limits:
-      - "144000000-148000000"
-      - "420000000-450000000"
+  # Enrollment credentials (provided by administrator)
+  enrollment_token: "PASTE-ENROLLMENT-TOKEN-HERE"
+  api_key: "PASTE-API-KEY-HERE"
+
+  # Optional settings
+  poll_interval: 10
+  heartbeat_interval: 30
+  cache_dir: "cache"
+  verify_ssl: true
+
+radios:
+  devices:
+    - name: 0
+      model: hackrf
+      frequency_limits:
+        - "144000000-148000000"  # 2m band
+        - "420000000-450000000"  # 70cm band
 ```
 
-### Configuration Parameters
+**Note**: The `enrollment_token` can be left in the configuration file. After the first successful enrollment, it will be ignored on subsequent runs. Only the API key is used for authentication once enrolled.
+
+## Configuration Parameters
 
 #### Runner Section
 
-- **runner_id**: Unique identifier for this runner (alphanumeric, hyphens allowed)
+- **runner_id**: Unique identifier for this runner (alphanumeric, hyphens, underscores allowed)
 - **server_url**: Full URL to the ChallengeCtl server (including port)
-- **api_key**: API key obtained from the server administrator
-- **poll_interval**: Seconds between polling for new tasks (default: 5)
+- **enrollment_token**: One-time enrollment token (can be left in config, will be ignored once enrolled)
+- **api_key**: API key for authentication
+- **poll_interval**: Seconds between polling for new tasks (default: 10)
 - **heartbeat_interval**: Seconds between heartbeat messages (default: 30)
-- **log_level**: Logging verbosity (DEBUG, INFO, WARNING, ERROR)
+- **cache_dir**: Directory for caching challenge files (default: "cache")
+- **verify_ssl**: Enable SSL certificate verification (default: true)
+- **ca_cert**: Path to custom CA certificate file (optional)
 
 #### Devices Section
 
@@ -334,11 +380,25 @@ python -m challengectl.runner.runner
 
 The runner will:
 1. Load the configuration file
-2. Register with the server
-3. Begin sending heartbeats
-4. Poll for task assignments
-5. Download and cache challenge files
-6. Execute transmissions as assigned
+2. If an enrollment token is present, enroll with the server (first run only)
+3. Register with the server
+4. Begin sending heartbeats
+5. Poll for task assignments
+6. Download and cache challenge files
+7. Execute transmissions as assigned
+
+**First-time enrollment output:**
+```
+Enrollment token detected. Enrolling with server...
+Successfully enrolled as sdr-station-1
+
+IMPORTANT: Remove 'enrollment_token' from your runner-config.yml and restart the runner.
+
+Registering with server...
+Registration successful
+```
+
+After seeing this message, edit `runner-config.yml` and remove the `enrollment_token` line, then restart the runner.
 
 ### Custom Configuration Location
 
@@ -367,6 +427,42 @@ To stop the runner gracefully, press `Ctrl+C`. The runner will:
 1. Send a signout message to the server
 2. Cancel any in-progress transmissions
 3. Exit cleanly
+
+## Re-enrolling a Runner
+
+If you need to move your runner to a different host machine or refresh compromised credentials, use the **Re-enrollment** feature instead of copying your existing configuration.
+
+### Why Re-enroll?
+
+Due to multi-factor host validation, you cannot simply copy your runner configuration to a new machine. The API key is bound to the original host's identifiers (MAC address, machine ID, IP, hostname). Attempting to use the same credentials on a different machine will be rejected by the server.
+
+### Re-enrollment Process
+
+1. **In the Web UI**, navigate to the Runners page
+2. Click the **"Re-enroll"** button next to your runner
+3. Click **"Generate Credentials"** to create fresh enrollment credentials
+4. **Download or copy** the complete configuration file
+5. **On the new host**, save the configuration as `runner-config.yml`
+6. Customize the `radios` section for your SDR devices
+7. Start the runner: `python -m challengectl.runner.runner`
+8. After successful enrollment, remove the `enrollment_token` line from the config
+9. The old runner instance will be automatically disconnected
+
+**Important Notes:**
+- The old API key remains valid until the re-enrollment completes
+- You can run both old and new runners temporarily during migration
+- Once the new runner enrolls, the host identifiers are updated
+- The old runner will be rejected on its next authentication attempt
+- Re-enrollment credentials are only shown once - download immediately!
+
+### Re-enrollment vs New Enrollment
+
+| Feature | New Enrollment | Re-enrollment |
+|---------|---------------|---------------|
+| Runner ID | New ID assigned | Same runner_id maintained |
+| History | No previous history | Preserves runner history |
+| Devices | Must reconfigure | Maintains device configuration |
+| Use Case | Adding new runner | Migrating existing runner |
 
 ## Verification and Testing
 

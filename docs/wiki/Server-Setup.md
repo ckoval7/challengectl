@@ -97,7 +97,7 @@ The database includes the following tables:
 - **users**: Admin user accounts with hashed passwords
 - **sessions**: Web interface session management
 
-**Note**: Runner API keys are stored in `server-config.yml`, not in the database.
+**Note**: Runner API keys are stored bcrypt-hashed in the database using the secure enrollment process, providing one-way hashing similar to password storage.
 
 ## Initial Setup and User Management
 
@@ -156,45 +156,69 @@ After initial setup, all user management is done through the web interface:
 
 See the [Web Interface Guide](Web-Interface-Guide#user-management) for detailed instructions.
 
-### Managing API Keys
+### Managing Runner Enrollment
 
-Runner API keys are configured in the server configuration file, not in the database.
+**Recommended Approach**: Use the secure enrollment process through the Web UI.
 
-**Generate API keys**:
+#### Enrolling Runners via Web UI
 
-```bash
-python3 generate-api-key.py --count 3
-```
+1. **Log in to the Web UI** at your server's URL
 
-This outputs:
+2. **Navigate to the Runners page**
 
-```
-Generated 3 API keys (length: 32):
+3. **Click "Add Runner"**
 
-Key 1: ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4
-Key 2: ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6
-Key 3: ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8
-```
+4. **Enter runner details**:
+   - Runner name (e.g., "sdr-station-1")
+   - Token expiry time (default: 24 hours)
 
-**Add keys to server configuration**:
+5. **Generate credentials**:
+   - Click "Generate Token"
+   - The system creates both an enrollment token and API key
+   - **IMPORTANT**: These are only displayed once - copy them immediately
 
-Edit `server-config.yml`:
+6. **Provide credentials to runner administrator**:
+   - Share the enrollment token and API key securely
+   - They will add these to their `runner-config.yml`
 
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"
-    runner-2: "ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6"
-    runner-3: "ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8"
-```
+7. **Runner enrollment process**:
+   - Runner starts with both `enrollment_token` and `api_key` in config
+   - On first run, runner self-enrolls using the token
+   - After successful enrollment, `enrollment_token` is ignored (can be left in config)
+   - Runner authenticates using only the `api_key`
 
-**Restart the server** to apply changes:
+#### Security Features
 
-```bash
-sudo systemctl restart challengectl
-```
+The enrollment process provides several security benefits:
 
-**Important**: Keep API keys confidential. Each runner should have a unique key.
+- **Bcrypt-Hashed Storage**: API keys are stored using bcrypt one-way hashing in the database (like passwords)
+- **One-Time Display**: Credentials shown only once during generation
+- **Token Expiration**: Enrollment tokens expire after configured time
+- **Multi-Factor Host Validation**: Prevents API key reuse on multiple machines
+  - Captures MAC address, machine ID, IP address, and hostname during enrollment
+  - Enforces validation immediately (no grace period)
+  - Requires at least ONE identifier to match for authentication
+  - Detects and blocks credential theft attempts
+- **Audit Trail**: Tracks which admin created each enrollment token
+
+#### Re-enrolling Existing Runners
+
+To move a runner to a different host or refresh compromised credentials:
+
+1. **Navigate to Runners page** in the Web UI
+2. **Click "Re-enroll"** next to the runner you want to migrate
+3. **Click "Generate Credentials"** to create fresh enrollment credentials
+4. **Download or copy** the complete configuration file
+5. **Provide to the runner administrator** for deployment on the new host
+
+The re-enrollment process:
+- Generates a fresh enrollment token and API key
+- Maintains the same runner_id (preserves history and configuration)
+- Allows the old runner to continue operating until re-enrollment completes
+- Automatically updates host identifiers when the new runner enrolls
+- Kicks the old runner instance after successful re-enrollment
+
+See [Runner Setup - Re-enrollment](Runner-Setup#re-enrolling-a-runner) for the runner-side process.
 
 ## Challenge Configuration
 

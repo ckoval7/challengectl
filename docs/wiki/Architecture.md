@@ -363,7 +363,7 @@ Session management for web interface.
 | `totp_verified` | BOOLEAN | Whether TOTP has been verified for this session |
 | `created_at` | TIMESTAMP | Session creation time |
 
-**Note**: Runner API keys are **not** stored in the database. They are configured in `server-config.yml` under `server.api_keys` and loaded into memory when the server starts.
+**Note**: Runner API keys are stored bcrypt-hashed in the database using the secure enrollment process. API keys are associated with `enrollment_tokens` and runner records, providing strong security through one-way hashing and host validation.
 
 ## Mutual Exclusion Mechanism
 
@@ -590,10 +590,14 @@ def prepare_file(file_hash, cache_dir):
 ### Authentication
 
 **Runner authentication**:
-- API keys sent in `X-API-Key` header
-- Keys configured in `server-config.yml` (not stored in database)
+- API keys sent in `Authorization: Bearer <key>` header
+- Keys stored bcrypt-hashed in database via secure enrollment process
 - Each runner has unique key for accountability
-- Keys loaded into server memory at startup
+- Multi-factor host validation prevents credential reuse on multiple machines
+  - Host identifiers collected: MAC address, machine ID, IP address, hostname
+  - Validation enforced immediately (no grace period)
+  - At least ONE identifier must match for authentication
+  - Re-enrollment process for legitimate host migration
 
 **Admin authentication**:
 - Username + password (bcrypt hashed in database)
@@ -621,7 +625,7 @@ def prepare_file(file_hash, cache_dir):
 **Sensitive data**:
 - Passwords: Bcrypt hashed (work factor 12)
 - TOTP secrets: AES-256 encrypted with server master key
-- API keys: Stored in configuration file (should be protected with file permissions)
+- API keys: Bcrypt-hashed in database with multi-factor host binding
 - Session cookies: Signed and HTTPOnly
 
 ## Scalability Considerations

@@ -290,29 +290,19 @@ python3 generate-api-key.py --length 48 --count 3
 - For production use, 32-character keys provide adequate security
 - Longer keys (48 or 64 characters) provide additional security margin
 
-### Adding Keys to Server Configuration
+### Using API Keys with Runner Enrollment
 
-After generating an API key, add it to your server configuration file:
+Use the secure enrollment process through the Web UI:
 
-1. **Generate the key**:
-```bash
-python3 generate-api-key.py
-```
+1. **Log in to the Web UI** at `http://your-server:8443`
 
-2. **Edit `server-config.yml`**:
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_abc123def456..."  # Your generated key
-    runner-2: "ck_def456ghi789..."  # Another generated key
-```
+2. **Go to Runners page** and click "Add Runner"
 
-3. **Restart the server** to apply changes:
-```bash
-sudo systemctl restart challengectl
-# Or if running manually:
-# Press Ctrl+C and restart: python -m challengectl.server.server
-```
+3. **Generate enrollment credentials**: The system will generate both an enrollment token and API key automatically
+
+4. **Copy the credentials** to your runner configuration (they're only shown once)
+
+See the [Runner Setup Guide](Runner-Setup#enroll-your-runner-recommended) for complete enrollment instructions.
 
 ### Key Format
 
