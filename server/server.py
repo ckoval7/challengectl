@@ -434,6 +434,12 @@ server:
   bind: "0.0.0.0"
   port: 8443
 
+  # CORS allowed origins (uncomment and configure for production)
+  # List domains that can access the API from browsers
+  # cors_origins:
+  #   - "https://challengectl.example.com"
+  #   - "https://www.challengectl.example.com"
+
   # File storage settings
   files_dir: "files"
 
