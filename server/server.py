@@ -434,13 +434,11 @@ server:
   bind: "0.0.0.0"
   port: 8443
 
-  # API keys for runner authentication
-  # Format: runner_id: api_key
-  api_keys:
-    runner-1: "change-this-key-abc123"
-    runner-2: "change-this-key-def456"
-    runner-3: "change-this-key-ghi789"
-    admin: "change-this-admin-key-xyz999"
+  # CORS allowed origins (uncomment and configure for production)
+  # List domains that can access the API from browsers
+  # cors_origins:
+  #   - "https://challengectl.example.com"
+  #   - "https://www.challengectl.example.com"
 
   # File storage settings
   files_dir: "files"
@@ -454,44 +452,21 @@ conference:
   start: "2025-04-05 09:00:00"
   stop: "2025-04-07 18:00:00"
 
-# Challenges will be loaded from this configuration
-# Same format as the standalone challengectl config
-challenges:
-  # Default delays that apply to all challenges unless overridden
-  - default_min_delay: 60
-    default_max_delay: 90
-
-  # Example challenges
-  - name: NBFM_FLAG_1
-    frequency: 146550000
-    modulation: nbfm
-    flag: challenges/examples/example_voice.wav
-    wav_samplerate: 48000
-    min_delay: 60
-    max_delay: 90
-    enabled: true
-    # Public dashboard visibility settings (optional)
-    # All default to true if not specified
-    public_view:
-      show_modulation: true       # Show modulation type
-      show_frequency: true        # Show frequency on public dashboard
-      show_last_tx_time: true     # Show last transmission time
-      show_active_status: true    # Show active/idle status
-
-  - name: CW_MORSE_1
-    frequency: 146450000
-    modulation: cw
-    flag: 'CQ CQ CQ DE RFCTF'
-    speed: 35
-    min_delay: 60
-    max_delay: 90
-    enabled: true
-    # Example: Hide frequency and modulation for mystery challenge
-    public_view:
-      show_modulation: false      # Hide modulation type
-      show_frequency: false       # Hide frequency
-      show_last_tx_time: true
-      show_active_status: true
+# Challenges are configured through the Web UI at /challenge-config
+# You can also configure challenges in this file if preferred:
+#
+# challenges:
+#   - name: NBFM_FLAG_1
+#     frequency: 146550000
+#     modulation: nbfm
+#     flag: challenges/examples/example_voice.wav
+#     wav_samplerate: 48000
+#     min_delay: 60
+#     max_delay: 90
+#     enabled: true
+#
+# See the Challenge Management guide for more information:
+# https://github.com/ckoval7/challengectl/wiki/Challenge-Management
 """
 
     with open(config_path, 'w') as f:

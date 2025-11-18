@@ -64,6 +64,10 @@
               <el-icon><Document /></el-icon>
               <span>Challenges</span>
             </el-menu-item>
+            <el-menu-item index="/challenge-config">
+              <el-icon><Setting /></el-icon>
+              <span>Configure Challenges</span>
+            </el-menu-item>
             <el-menu-item index="/logs">
               <el-icon><Notebook /></el-icon>
               <span>Logs</span>
@@ -89,7 +93,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Monitor, Connection, Document, Notebook, User, Moon, Sunny } from '@element-plus/icons-vue'
+import { Monitor, Connection, Document, Notebook, User, Moon, Sunny, Setting } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth } from './auth'
 import { ElMessage } from 'element-plus'
@@ -101,7 +105,8 @@ export default {
     Connection,
     Document,
     Notebook,
-    User
+    User,
+    Setting
   },
   setup() {
     const route = useRoute()

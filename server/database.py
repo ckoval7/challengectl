@@ -820,6 +820,29 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def delete_challenge(self, challenge_id: str) -> bool:
+        """Delete a challenge."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Delete associated transmissions first
+                cursor.execute('DELETE FROM transmissions WHERE challenge_id = ?', (challenge_id,))
+                # Delete the challenge
+                cursor.execute('DELETE FROM challenges WHERE challenge_id = ?', (challenge_id,))
+                conn.commit()
+
+                # Clear timing information
+                with self.timing_lock:
+                    if challenge_id in self.challenge_timing:
+                        del self.challenge_timing[challenge_id]
+
+                logger.info(f"Deleted challenge: {challenge_id}")
+                return cursor.rowcount > 0
+            except Exception as e:
+                logger.error(f"Error deleting challenge {challenge_id}: {e}")
+                conn.rollback()
+                return False
+
     # Transmission history
     def record_transmission_start(self, challenge_id: str, runner_id: str,
                                   device_id: str, frequency: int) -> int:
