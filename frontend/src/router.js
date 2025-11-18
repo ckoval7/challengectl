@@ -3,6 +3,7 @@ import { checkAuth, validateSession, isSessionChecked } from './auth'
 import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import Challenges from './views/Challenges.vue'
+import ChallengeConfig from './views/ChallengeConfig.vue'
 import Logs from './views/Logs.vue'
 import Users from './views/Users.vue'
 import PublicDashboard from './views/PublicDashboard.vue'
@@ -53,6 +54,12 @@ const routes = [
     path: '/challenges',
     name: 'Challenges',
     component: Challenges,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/challenge-config',
+    name: 'ChallengeConfig',
+    component: ChallengeConfig,
     meta: { requiresAuth: true }
   },
   {

@@ -1686,6 +1686,45 @@ class ChallengeCtlAPI:
             challenges = self.db.get_all_challenges()
             return jsonify({'challenges': challenges}), 200
 
+        @self.app.route('/api/challenges', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def create_challenge():
+            """Create a new challenge."""
+            data = request.json
+
+            # Validate request body
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            # Validate required fields
+            name = data.get('name')
+            if not name:
+                return jsonify({'error': 'Missing required field: name'}), 400
+
+            config = data.get('config', {})
+            if not isinstance(config, dict):
+                return jsonify({'error': 'Field "config" must be a dictionary'}), 400
+
+            # Ensure name is in config
+            config['name'] = name
+
+            # Generate challenge ID
+            challenge_id = str(uuid.uuid4())
+
+            # Add challenge to database
+            success = self.db.add_challenge(challenge_id, name, config)
+
+            if success:
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+                return jsonify({
+                    'status': 'created',
+                    'challenge_id': challenge_id
+                }), 201
+            else:
+                return jsonify({'error': 'Challenge name already exists'}), 409
+
         @self.app.route('/api/challenges/<challenge_id>', methods=['GET'])
         @self.require_admin_auth
         def get_challenge_details(challenge_id):
@@ -1719,7 +1758,23 @@ class ChallengeCtlAPI:
             success = self.db.update_challenge(challenge_id, config)
 
             if success:
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
                 return jsonify({'status': 'updated'}), 200
+            else:
+                return jsonify({'error': 'Challenge not found'}), 404
+
+        @self.app.route('/api/challenges/<challenge_id>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_challenge(challenge_id):
+            """Delete a challenge."""
+            success = self.db.delete_challenge(challenge_id)
+
+            if success:
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+                return jsonify({'status': 'deleted'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
 
@@ -1765,6 +1820,127 @@ class ChallengeCtlAPI:
                 return jsonify({'status': 'triggered'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
+
+        @self.app.route('/api/challenges/import', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def import_challenges():
+            """Import challenges from uploaded YAML file with optional challenge files."""
+            try:
+                # Get YAML file from request
+                if 'yaml_file' not in request.files:
+                    return jsonify({'error': 'Missing yaml_file in request'}), 400
+
+                yaml_file = request.files['yaml_file']
+                if yaml_file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+
+                # Validate YAML file extension
+                if not yaml_file.filename.lower().endswith(('.yml', '.yaml')):
+                    return jsonify({'error': 'File must be a YAML file (.yml or .yaml)'}), 400
+
+                # Parse YAML content
+                yaml_content = yaml_file.read().decode('utf-8')
+                try:
+                    import yaml as yaml_lib
+                    challenges_data = yaml_lib.safe_load(yaml_content)
+                except Exception as e:
+                    logger.error(f"Error parsing YAML: {e}")
+                    return jsonify({'error': f'Invalid YAML format: {str(e)}'}), 400
+
+                # Handle both list format and dict with 'challenges' key
+                if isinstance(challenges_data, dict) and 'challenges' in challenges_data:
+                    challenges_config = challenges_data['challenges']
+                elif isinstance(challenges_data, list):
+                    challenges_config = challenges_data
+                else:
+                    return jsonify({'error': 'YAML must contain a list of challenges or a dict with "challenges" key'}), 400
+
+                # Process uploaded challenge files
+                uploaded_files = {}
+                for key in request.files:
+                    if key != 'yaml_file':
+                        file = request.files[key]
+                        if file.filename:
+                            # Save file using existing file upload mechanism
+                            file_data = file.read()
+                            file_hash = hashlib.sha256(file_data).hexdigest()
+
+                            # Check file extension
+                            allowed_extensions = {'.wav', '.bin', '.txt', '.yml', '.yaml', '.py', '.grc'}
+                            file_ext = os.path.splitext(file.filename)[1].lower()
+                            if file_ext not in allowed_extensions:
+                                logger.warning(f"Skipping file with disallowed extension: {file.filename}")
+                                continue
+
+                            # Save file
+                            file_path = os.path.join(self.files_dir, file_hash)
+                            with open(file_path, 'wb') as f:
+                                f.write(file_data)
+
+                            # Register in database
+                            self.db.add_file(file_hash, file.filename, len(file_data),
+                                           file.content_type or 'application/octet-stream', file_path)
+
+                            # Map original filename to hash for path substitution
+                            uploaded_files[file.filename] = file_hash
+                            logger.info(f"Uploaded file: {file.filename} -> {file_hash}")
+
+                # Get existing challenges by name
+                existing_challenges = {c['name']: c for c in self.db.get_all_challenges()}
+
+                added = 0
+                updated = 0
+                errors = []
+
+                for challenge in challenges_config:
+                    if isinstance(challenge, dict) and 'name' in challenge:
+                        name = challenge['name']
+
+                        # Update file paths in challenge config if files were uploaded
+                        if 'flag' in challenge and challenge['flag'] in uploaded_files:
+                            # Store as file hash reference
+                            challenge['flag_file_hash'] = uploaded_files[challenge['flag']]
+
+                        try:
+                            if name in existing_challenges:
+                                # Update existing challenge
+                                challenge_id = existing_challenges[name]['challenge_id']
+                                if self.db.update_challenge(challenge_id, challenge):
+                                    updated += 1
+                                    logger.info(f"Updated challenge: {name}")
+                                else:
+                                    errors.append(f"Failed to update challenge: {name}")
+                            else:
+                                # Add new challenge
+                                challenge_id = str(uuid.uuid4())
+                                if self.db.add_challenge(challenge_id, name, challenge):
+                                    added += 1
+                                    logger.info(f"Added challenge: {name}")
+                                else:
+                                    errors.append(f"Failed to add challenge: {name}")
+                        except Exception as e:
+                            logger.error(f"Error processing challenge {name}: {e}")
+                            errors.append(f"Error processing {name}: {str(e)}")
+
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+
+                response = {
+                    'status': 'imported',
+                    'added': added,
+                    'updated': updated,
+                    'files_uploaded': len(uploaded_files)
+                }
+
+                if errors:
+                    response['errors'] = errors
+
+                return jsonify(response), 200
+
+            except Exception as e:
+                logger.error(f"Error importing challenges: {e}", exc_info=True)
+                return jsonify({'error': f'Failed to import challenges: {str(e)}'}), 500
 
         @self.app.route('/api/challenges/reload', methods=['POST'])
         @self.require_admin_auth
