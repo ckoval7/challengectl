@@ -1,28 +1,22 @@
 # Provisioning API Keys - Complete Guide
 
-Provisioning API keys provide secure, automated runner deployment without requiring admin credentials or CSRF tokens. Perfect for CI/CD pipelines and infrastructure automation.
+Provisioning API keys provide secure, automated runner deployment without requiring admin credentials or CSRF tokens. They are ideal for CI/CD pipelines and infrastructure automation.
 
 ## Overview
 
-**What are Provisioning API Keys?**
-- Limited-permission API keys for runner enrollment only
-- Stateless Bearer token authentication (no sessions)
-- No CSRF tokens required
-- Bcrypt-hashed storage (like passwords)
-- Can be enabled/disabled without deletion
+### What are Provisioning API Keys?
 
-**Why use them instead of admin credentials?**
-- ✅ Least privilege - only runner provisioning, no admin access
-- ✅ Stateless - works in serverless/container environments
-- ✅ Audit trail - track which key provisioned which runner
-- ✅ Revocable - disable keys without affecting admins
-- ✅ Scriptable - perfect for automation
+Provisioning API keys are limited-permission credentials designed specifically for runner enrollment. They use stateless Bearer token authentication without requiring session cookies, CSRF tokens, or admin privileges. These keys are stored using bcrypt hashing (similar to password storage) and can be enabled or disabled without deletion, providing flexible access control.
+
+### Why use them instead of admin credentials?
+
+Provisioning keys follow the principle of least privilege by granting only the permissions needed for runner provisioning, without exposing full administrative access. They are stateless, making them ideal for serverless and containerized environments. Each key maintains an audit trail that tracks which runners were provisioned, and keys can be revoked independently without affecting admin accounts. This makes them perfect for automation scenarios where you need secure, scriptable runner deployment.
 
 ## Quick Start
 
 ### Step 1: Create a Provisioning API Key (Admin)
 
-Using the Web UI or API with admin credentials:
+You can create provisioning keys using either the Web UI or the API with admin credentials:
 
 ```bash
 # Login as admin
@@ -55,11 +49,11 @@ curl -k -b cookies.txt \
 }
 ```
 
-**⚠️ IMPORTANT:** Save the `api_key` - it's only shown once!
+**IMPORTANT:** The API key is only displayed once during creation. Make sure to save it securely before closing the response.
 
-### Step 2: Provision Runners (No Admin Credentials!)
+### Step 2: Provision Runners (No Admin Credentials Required)
 
-Now anyone with the provisioning key can deploy runners:
+Once you have a provisioning key, anyone with access to it can deploy runners without admin credentials:
 
 ```bash
 # Set your provisioning API key
@@ -86,7 +80,7 @@ curl -k \
 }
 ```
 
-The `config_yaml` field contains a complete, ready-to-use configuration file!
+The `config_yaml` field contains a complete, ready-to-use configuration file that can be saved directly to disk.
 
 ## API Endpoints
 
@@ -294,22 +288,24 @@ jobs:
 
 ## Security Best Practices
 
-### 1. Key Management
+### Key Management
 
-**DO:**
-- ✅ Store keys in secret managers (Vault, AWS Secrets Manager, etc.)
-- ✅ Use environment variables for keys in CI/CD
-- ✅ Create separate keys for different environments (dev, staging, prod)
-- ✅ Use descriptive key_id values (e.g., "prod-terraform", "staging-ci")
-- ✅ Rotate keys periodically
+**Recommended practices:**
+- Store keys in secret managers such as HashiCorp Vault, AWS Secrets Manager, or Azure Key Vault.
+- Use environment variables for keys in CI/CD pipelines rather than hardcoding them.
+- Create separate keys for different environments (development, staging, production) to limit blast radius.
+- Use descriptive key_id values that clearly indicate purpose and environment (e.g., "prod-terraform", "staging-ci").
+- Rotate keys periodically according to your organization's security policy.
 
-**DON'T:**
-- ❌ Commit keys to git repositories
-- ❌ Share keys in plain text (email, Slack, etc.)
-- ❌ Use the same key across multiple environments
-- ❌ Give provisioning keys to end users
+**Practices to avoid:**
+- Never commit keys to git repositories or version control systems.
+- Do not share keys in plain text through email, Slack, or other messaging platforms.
+- Avoid using the same key across multiple environments or teams.
+- Do not distribute provisioning keys to end users; they are intended for automated systems only.
 
-### 2. Key Rotation
+### Key Rotation
+
+To rotate a provisioning key, first disable the old key, create a new one, update your automation, and then delete the old key after verification:
 
 ```bash
 # Disable old key
@@ -324,7 +320,7 @@ curl -k -b cookies.txt \
   -d '{"key_id":"new-key","description":"Rotated key"}' \
   https://localhost:8443/api/provisioning/keys
 
-# Update your automation
+# Update your automation with the new key
 # ...
 
 # Delete old key after verification
@@ -333,32 +329,34 @@ curl -k -b cookies.txt -X DELETE \
   https://localhost:8443/api/provisioning/keys/old-key
 ```
 
-### 3. Monitoring
+### Monitoring
 
-Check key usage:
+Regularly check key usage to identify potential security issues:
 
 ```bash
 curl -k -b cookies.txt \
   https://localhost:8443/api/provisioning/keys
 ```
 
-Look for:
-- Unexpected `last_used_at` times
-- Keys that haven't been used (inactive)
-- Multiple keys with similar descriptions (duplicates)
+Review the response for:
+- Unexpected `last_used_at` times that might indicate unauthorized access.
+- Keys that have not been used recently, which may be candidates for deletion.
+- Multiple keys with similar descriptions that could indicate duplication.
 
-### 4. Principle of Least Privilege
+### Principle of Least Privilege
 
-Provisioning keys can **ONLY**:
-- Generate enrollment credentials
-- Return runner configuration YAML
+Provisioning keys have strictly limited permissions to reduce security risk.
 
-Provisioning keys **CANNOT**:
-- Access existing runners
-- Modify challenges
-- Access admin functions
-- Read sensitive data
-- Delete or modify anything
+**Provisioning keys can:**
+- Generate enrollment credentials for new runners.
+- Return runner configuration YAML files.
+
+**Provisioning keys cannot:**
+- Access or modify existing runners.
+- Create, modify, or delete challenges.
+- Access administrative functions.
+- Read sensitive system data.
+- Delete or modify system configuration.
 
 ## Comparison: Admin Auth vs Provisioning Keys
 
@@ -370,17 +368,17 @@ Provisioning keys **CANNOT**:
 | Expiry | 24 hours | No expiry (until disabled) |
 | Revocation | Logout only | Enable/disable |
 | Audit Trail | Username | Key ID |
-| CI/CD Friendly | ❌ No (requires TOTP) | ✅ Yes |
+| CI/CD Friendly | No (requires TOTP) | Yes |
 | Rotation | Change password | Create new key |
 
 ## Troubleshooting
 
 ### Error: "Invalid provisioning API key"
 
-**Causes:**
-- Wrong API key
-- Key has been disabled
-- Key has been deleted
+**Possible causes:**
+- The API key is incorrect or has been modified.
+- The key has been disabled by an administrator.
+- The key has been deleted from the system.
 
 **Solution:**
 ```bash
@@ -388,17 +386,17 @@ Provisioning keys **CANNOT**:
 curl -k -b cookies.txt \
   https://localhost:8443/api/provisioning/keys
 
-# Check if key is enabled
-# Create new key if needed
+# Check if your key is enabled
+# Create a new key if needed
 ```
 
 ### Error: "Missing required field: runner_name"
 
-**Cause:** Request body missing `runner_name`
+**Cause:** The request body is missing the required `runner_name` field.
 
 **Solution:**
 ```bash
-# Correct request
+# Correct request format
 curl -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"runner_name":"my-runner"}' \
@@ -407,12 +405,12 @@ curl -H "Authorization: Bearer $KEY" \
 
 ### Error: 429 Too Many Requests
 
-**Cause:** Rate limit exceeded (100/hour per key)
+**Cause:** You have exceeded the rate limit of 100 requests per hour per key.
 
 **Solution:**
-- Wait before retrying
-- Create additional provisioning keys if needed
-- Batch your provisioning operations
+- Wait before retrying your request.
+- Create additional provisioning keys if you need higher throughput.
+- Batch your provisioning operations to reduce the total number of API calls.
 
 ## See Also
 
