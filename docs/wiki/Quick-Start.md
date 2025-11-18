@@ -88,8 +88,10 @@ The server will start on port 8443 and automatically create a default admin acco
    - Go to the **Runners** page in the Web UI
    - Click **"Add Runner"**
    - Enter a runner name (e.g., "runner-1")
+   - Optionally configure SDR devices (model, RF gain, IF gain, frequency limits)
    - Click **"Generate Token"**
    - **IMPORTANT**: Copy both the enrollment token and API key - they're only shown once!
+   - You can also copy the complete YAML configuration from the dialog
    - Keep these credentials ready for Step 3
 
 ## Step 3: Set Up a Runner
@@ -172,10 +174,12 @@ For detailed information on each of these topics, refer to the following guides:
 Verify that:
 - The server URL in `runner-config.yml` is correct
 - The enrollment token and API key were copied correctly from the Web UI
-- If already enrolled, the `enrollment_token` line has been removed from config
 - The API key is correct (check the Web UI Runners page)
 - The server is running and accessible from the runner machine
 - No firewall is blocking port 8443
+- Check runner logs for specific error messages
+
+**Note**: The `enrollment_token` can be left in the config file - it's automatically ignored after successful enrollment.
 
 ### No Challenges Are Transmitting
 
