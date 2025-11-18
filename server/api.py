@@ -2039,10 +2039,35 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'File not found'}), 404
 
         @self.app.route('/api/files/upload', methods=['POST'])
-        @self.require_api_key
         @self.limiter.limit("100 per minute")  # Moderate limit for file uploads
         def upload_file():
-            """Upload a new challenge file with security restrictions."""
+            """Upload a new challenge file with security restrictions.
+
+            Supports both admin session authentication and runner API key authentication.
+            """
+            # Check authentication - accept either admin session or API key
+            auth_valid = False
+
+            # Try admin session auth first
+            if 'session' in request.cookies:
+                session_token = request.cookies.get('session')
+                if session_token:
+                    user_data = self.db.get_session(session_token)
+                    if user_data:
+                        auth_valid = True
+
+            # If not authenticated via session, try API key
+            if not auth_valid:
+                auth_header = request.headers.get('Authorization')
+                if auth_header and auth_header.startswith('Bearer '):
+                    api_key = auth_header[7:]
+                    runner = self.db.get_runner_by_api_key(api_key)
+                    if runner:
+                        auth_valid = True
+
+            if not auth_valid:
+                return jsonify({'error': 'Authentication required'}), 401
+
             if 'file' not in request.files:
                 return jsonify({'error': 'No file provided'}), 400
 

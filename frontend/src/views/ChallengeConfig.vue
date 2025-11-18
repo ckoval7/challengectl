@@ -603,8 +603,34 @@ export default {
           priority: challengeForm.value.priority,
         }
 
-        // Add flag
-        if (challengeForm.value.flag) {
+        // Handle file upload if a file was selected
+        if (flagFile.value) {
+          try {
+            // Upload the file first
+            const formData = new FormData()
+            formData.append('file', flagFile.value)
+
+            const uploadResponse = await api.post('/files/upload', formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            })
+
+            // Store the file hash in the config
+            config.flag_file_hash = uploadResponse.data.file_hash
+            // Also store the original filename for reference
+            if (!challengeForm.value.flag) {
+              config.flag = uploadResponse.data.filename
+            }
+          } catch (uploadError) {
+            console.error('Failed to upload file:', uploadError)
+            ElMessage.error(uploadError.response?.data?.error || 'Failed to upload file')
+            return
+          }
+        }
+
+        // Add flag text if provided (and no file was uploaded)
+        if (challengeForm.value.flag && !flagFile.value) {
           config.flag = challengeForm.value.flag
         }
 
