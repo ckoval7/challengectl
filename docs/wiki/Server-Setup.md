@@ -97,7 +97,7 @@ The database includes the following tables:
 - **users**: Admin user accounts with hashed passwords
 - **sessions**: Web interface session management
 
-**Note**: Runner API keys are stored in `server-config.yml`, not in the database.
+**Note**: Runner API keys are stored encrypted in the database when using the recommended enrollment process. Legacy deployments may still have API keys in `server-config.yml` for backwards compatibility.
 
 ## Initial Setup and User Management
 
@@ -156,36 +156,62 @@ After initial setup, all user management is done through the web interface:
 
 See the [Web Interface Guide](Web-Interface-Guide#user-management) for detailed instructions.
 
-### Managing API Keys
+### Managing Runner Enrollment
 
-Runner API keys are configured in the server configuration file, not in the database.
+**Recommended Approach**: Use the secure enrollment process through the Web UI.
 
-**Generate API keys**:
+#### Enrolling Runners via Web UI
+
+1. **Log in to the Web UI** at your server's URL
+
+2. **Navigate to the Runners page**
+
+3. **Click "Add Runner"**
+
+4. **Enter runner details**:
+   - Runner name (e.g., "sdr-station-1")
+   - Token expiry time (default: 24 hours)
+
+5. **Generate credentials**:
+   - Click "Generate Token"
+   - The system creates both an enrollment token and API key
+   - **IMPORTANT**: These are only displayed once - copy them immediately
+
+6. **Provide credentials to runner administrator**:
+   - Share the enrollment token and API key securely
+   - They will add these to their `runner-config.yml`
+
+7. **Runner enrollment process**:
+   - Runner starts with both `enrollment_token` and `api_key` in config
+   - On first run, runner self-enrolls using the token
+   - After successful enrollment, remove `enrollment_token` from config
+   - Runner continues using only the `api_key`
+
+#### Security Features
+
+The enrollment process provides several security benefits:
+
+- **Encrypted Storage**: API keys are encrypted in the database
+- **One-Time Display**: Credentials shown only once during generation
+- **Token Expiration**: Enrollment tokens expire after configured time
+- **Host Validation**: Prevents API key reuse on multiple machines
+- **Audit Trail**: Tracks which admin created each enrollment token
+
+#### Legacy Method (Not Recommended)
+
+For backwards compatibility, you can still add API keys to `server-config.yml`:
 
 ```bash
+# Generate API keys
 python3 generate-api-key.py --count 3
 ```
-
-This outputs:
-
-```
-Generated 3 API keys (length: 32):
-
-Key 1: ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4
-Key 2: ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6
-Key 3: ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8
-```
-
-**Add keys to server configuration**:
 
 Edit `server-config.yml`:
 
 ```yaml
 server:
   api_keys:
-    runner-1: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"
-    runner-2: "ck_b4g9c0d2e5f6a7b8c9d0e1f2a3b4c5d6"
-    runner-3: "ck_c5h0d1e3f7a8b9c0d1e2f3a4b5c6d7e8"
+    runner-1: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"  # Legacy method
 ```
 
 **Restart the server** to apply changes:
@@ -194,7 +220,7 @@ server:
 sudo systemctl restart challengectl
 ```
 
-**Important**: Keep API keys confidential. Each runner should have a unique key.
+**Important**: The legacy YAML method is maintained for backwards compatibility only. New deployments should use the Web UI enrollment process for better security.
 
 ## Challenge Configuration
 

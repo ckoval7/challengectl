@@ -230,14 +230,17 @@ This guide covers common issues you might encounter when running ChallengeCtl an
    ping server-ip
    ```
 
-2. **Invalid API key**
+2. **Invalid API key or enrollment issue**
    ```
    Error: 401 Unauthorized
    ```
-   **Solution**: Verify the API key matches server configuration:
+   **Solution**: Check the enrollment status:
+   - If first-time setup: Ensure both `enrollment_token` and `api_key` are in runner config
+   - If already enrolled: Remove `enrollment_token` from config, keep only `api_key`
+   - Verify the API key in the Web UI Runners page
+   - Check server logs for authentication errors:
    ```bash
-   # On server
-   sqlite3 challengectl.db "SELECT * FROM runner_keys WHERE key_id='runner-1';"
+   journalctl -u challengectl | grep -i "runner-1"
    ```
 
 3. **SSL verification failure**
@@ -509,28 +512,35 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 
 **Possible Causes and Solutions**:
 
-1. **API key mismatch**
-   **Solution**: Verify runner API key:
+1. **Enrollment not completed**
+   **Solution**: Complete the enrollment process:
    ```bash
-   # Generate new key
-   python3 generate-api-key.py
-
-   # Update server config
-   vim server-config.yml  # Add key to api_keys section
-
-   # Update runner config
-   vim runner-config.yml  # Update api_key field
+   # 1. In Web UI: Runners page → Add Runner → Generate credentials
+   # 2. Add both enrollment_token and api_key to runner-config.yml
+   # 3. Start runner (it will auto-enroll)
+   # 4. Remove enrollment_token from config
+   # 5. Restart runner
    ```
 
-2. **Case sensitivity**
+2. **API key mismatch**
+   **Solution**: Regenerate enrollment credentials via Web UI:
+   - Go to Runners page
+   - Click "Add Runner"
+   - Generate new enrollment token and API key
+   - Update runner config with new credentials
+
+3. **Host validation failure**
+   **Solution**: If you moved the runner to a different machine:
+   - The API key is tied to the original host
+   - Wait 2 minutes for the old runner to go offline
+   - Then start on new host, or
+   - Generate new enrollment credentials for the new host
+
+4. **Case sensitivity**
    **Solution**: Ensure runner_id matches exactly (case-sensitive):
    ```yaml
-   # Server
-   api_keys:
-     runner-1: "key123"  # Note: lowercase
-
-   # Runner
-   runner_id: "runner-1"  # Must match exactly
+   runner:
+     runner_id: "runner-1"  # Must match the name used during enrollment
    ```
 
 ## Network and Connectivity Issues

@@ -33,16 +33,6 @@ pip install -r requirements-runner.txt
 
 ## Step 2: Set Up the Server
 
-### Generate Runner API Keys
-
-First, generate API keys for your runners:
-
-```bash
-python3 generate-api-key.py --count 1
-```
-
-Save the generated key - you'll need it for runner configuration.
-
 ### Configure the Server
 
 Create a `server-config.yml` file:
@@ -51,8 +41,6 @@ Create a `server-config.yml` file:
 server:
   bind: "0.0.0.0"
   port: 8443
-  api_keys:
-    runner-1: "your-generated-api-key-here"
 
 challenges:
   - name: NBFM_Example
@@ -64,9 +52,9 @@ challenges:
     enabled: true
 ```
 
-Replace `your-generated-api-key-here` with the API key you generated earlier.
-
 Place your challenge files (like `example.wav`) in the `challenges/` directory.
+
+**Note**: You no longer need to pre-configure API keys in the server config file. Runners will be enrolled through the Web UI after the server starts.
 
 ### Start the Server
 
@@ -96,6 +84,14 @@ The server will start on port 8443 and automatically create a default admin acco
    - Set up TOTP two-factor authentication by scanning the QR code
    - Log out and log back in with your new account
 
+5. **Enroll your first runner**:
+   - Go to the **Runners** page in the Web UI
+   - Click **"Add Runner"**
+   - Enter a runner name (e.g., "runner-1")
+   - Click **"Generate Token"**
+   - **IMPORTANT**: Copy both the enrollment token and API key - they're only shown once!
+   - Keep these credentials ready for Step 3
+
 ## Step 3: Set Up a Runner
 
 **Prerequisites**: Before configuring a runner, ensure you have installed GNU Radio, gr-osmosdr, gr-paint, and gr-mixalot. See the [Runner Setup Guide](Runner-Setup#install-system-dependencies) for instructions.
@@ -114,24 +110,26 @@ pip install -r requirements-runner.txt
 
 ### Configure the Runner
 
-Create a `runner-config.yml` file:
+Create a `runner-config.yml` file using the credentials from Step 2:
 
 ```yaml
 runner:
   runner_id: "runner-1"
   server_url: "http://localhost:8443"
-  api_key: "your-api-key-from-step-2"
+  enrollment_token: "PASTE-ENROLLMENT-TOKEN-HERE"  # From Step 2
+  api_key: "PASTE-API-KEY-HERE"                     # From Step 2
   poll_interval: 5
   heartbeat_interval: 30
 
-devices:
-  - name: 0
-    model: hackrf
-    frequency_limits:
-      - "144000000-148000000"
+radios:
+  devices:
+    - name: 0
+      model: hackrf
+      frequency_limits:
+        - "144000000-148000000"
 ```
 
-Replace `your-api-key-from-step-2` with the API key you generated earlier.
+**Important**: After the runner successfully enrolls on first run, **remove the `enrollment_token` line** from the config file and restart the runner. Keep the `api_key` line.
 
 ### Start the Runner
 
@@ -173,7 +171,9 @@ For detailed information on each of these topics, refer to the following guides:
 
 Verify that:
 - The server URL in `runner-config.yml` is correct
-- The API key matches one in the database
+- The enrollment token and API key were copied correctly from the Web UI
+- If already enrolled, the `enrollment_token` line has been removed from config
+- The API key is correct (check the Web UI Runners page)
 - The server is running and accessible from the runner machine
 - No firewall is blocking port 8443
 
