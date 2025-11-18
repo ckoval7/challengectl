@@ -59,6 +59,8 @@ class Database:
                     runner_id TEXT PRIMARY KEY,
                     hostname TEXT,
                     ip_address TEXT,
+                    mac_address TEXT,
+                    machine_id TEXT,
                     status TEXT DEFAULT 'offline',
                     enabled BOOLEAN DEFAULT 1,
                     last_heartbeat TIMESTAMP,
@@ -68,6 +70,18 @@ class Database:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Migration: Add host identifier columns if they don't exist
+            cursor.execute("PRAGMA table_info(runners)")
+            columns = [col[1] for col in cursor.fetchall()]
+
+            if 'mac_address' not in columns:
+                logger.info("Adding mac_address column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN mac_address TEXT')
+
+            if 'machine_id' not in columns:
+                logger.info("Adding machine_id column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN machine_id TEXT')
 
             # Enrollment tokens table (for one-time runner registration)
             cursor.execute('''
@@ -80,9 +94,18 @@ class Database:
                     used BOOLEAN DEFAULT 0,
                     used_at TIMESTAMP,
                     used_by_runner_id TEXT,
+                    re_enrollment_for TEXT,
                     FOREIGN KEY (created_by) REFERENCES users(username)
                 )
             ''')
+
+            # Migration: Add re_enrollment_for column if it doesn't exist
+            cursor.execute("PRAGMA table_info(enrollment_tokens)")
+            token_columns = [col[1] for col in cursor.fetchall()]
+
+            if 're_enrollment_for' not in token_columns:
+                logger.info("Adding re_enrollment_for column to enrollment_tokens table")
+                cursor.execute('ALTER TABLE enrollment_tokens ADD COLUMN re_enrollment_for TEXT')
 
             # Challenges table
             # status: 'queued' (ready), 'waiting' (delay timer), 'assigned' (transmitting)
@@ -259,7 +282,9 @@ class Database:
             logger.info(f"Database initialized at {self.db_path}")
 
     # Runner management
-    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict], api_key: Optional[str] = None) -> bool:
+    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict],
+                       api_key: Optional[str] = None, mac_address: Optional[str] = None,
+                       machine_id: Optional[str] = None) -> bool:
         """Register a new runner or update existing one.
 
         Args:
@@ -268,6 +293,8 @@ class Database:
             ip_address: IP address of the runner
             devices: List of SDR devices available on this runner
             api_key: Optional API key to set for this runner (will be bcrypt hashed)
+            mac_address: Optional MAC address of the runner's primary network interface
+            machine_id: Optional machine ID (e.g., from /etc/machine-id)
 
         Returns:
             True if successful, False otherwise
@@ -283,18 +310,22 @@ class Database:
                     api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
                 cursor.execute('''
-                    INSERT INTO runners (runner_id, hostname, ip_address, status, last_heartbeat, devices, api_key_hash)
-                    VALUES (?, ?, ?, 'online', ?, ?, ?)
+                    INSERT INTO runners (runner_id, hostname, ip_address, mac_address, machine_id,
+                                       status, last_heartbeat, devices, api_key_hash)
+                    VALUES (?, ?, ?, ?, ?, 'online', ?, ?, ?)
                     ON CONFLICT(runner_id) DO UPDATE SET
                         hostname = excluded.hostname,
                         ip_address = excluded.ip_address,
+                        mac_address = excluded.mac_address,
+                        machine_id = excluded.machine_id,
                         status = 'online',
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
+                ''', (runner_id, hostname, ip_address, mac_address, machine_id,
+                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
                 conn.commit()
-                logger.info(f"Registered runner: {runner_id} from {ip_address}")
+                logger.info(f"Registered runner: {runner_id} from {ip_address} (MAC: {mac_address}, Machine ID: {machine_id})")
                 return True
             except Exception as e:
                 logger.error(f"Error registering runner {runner_id}: {e}")
@@ -383,17 +414,21 @@ class Database:
                 logger.info(f"Disabled runner: {runner_id}")
             return cursor.rowcount > 0
 
-    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str) -> bool:
+    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str,
+                             current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
         """Verify a runner's API key against the stored bcrypt hash.
 
         Also validates that the runner is not already active from a different host
-        to prevent credential reuse attacks.
+        to prevent credential reuse attacks. Uses multiple host identifiers for
+        robust validation.
 
         Args:
             runner_id: The runner ID to verify
             api_key: The plaintext API key to check
             current_ip: IP address of the current authentication attempt
             current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
 
         Returns:
             True if the API key is valid and host check passes, False otherwise
@@ -402,7 +437,10 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT api_key_hash, status, ip_address, hostname, last_heartbeat FROM runners WHERE runner_id = ?', (runner_id,))
+            cursor.execute('''
+                SELECT api_key_hash, status, ip_address, hostname, mac_address, machine_id, last_heartbeat
+                FROM runners WHERE runner_id = ?
+            ''', (runner_id,))
             row = cursor.fetchone()
 
             if not row or not row['api_key_hash']:
@@ -418,27 +456,44 @@ class Database:
             if not api_key_valid:
                 return False
 
-            # Host validation: prevent credential reuse on different machines
-            # Allow if runner is offline, or if from same IP/hostname
-            if row['status'] == 'online':
+            # Enhanced host validation: check multiple identifiers
+            # Prevent credential reuse on different machines
+            if row['status'] == 'online' and row['last_heartbeat']:
                 stored_ip = row['ip_address']
                 stored_hostname = row['hostname']
+                stored_mac = row['mac_address']
+                stored_machine_id = row['machine_id']
 
-                # Check if last heartbeat is recent (within 2 minutes)
-                if row['last_heartbeat']:
-                    last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
-                    time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
+                # Check if runner is actively online (heartbeat within 90 seconds)
+                last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
+                time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
 
-                    # Only enforce host check if runner is actively online (heartbeat within 2 minutes)
-                    if time_since_heartbeat < 120:
-                        # Runner is actively online - verify it's the same host
-                        if stored_ip != current_ip and stored_hostname != current_hostname:
-                            logger.warning(
-                                f"SECURITY: Runner {runner_id} credential reuse attempt! "
-                                f"Active on {stored_hostname} ({stored_ip}), "
-                                f"rejected attempt from {current_hostname} ({current_ip})"
-                            )
-                            return False
+                if time_since_heartbeat < 90:
+                    # Runner is actively online - perform multi-factor host validation
+                    # Must match at least ONE of: (IP + hostname) OR MAC address OR machine ID
+                    matches = []
+
+                    # Check IP and hostname together
+                    if stored_ip == current_ip and stored_hostname == current_hostname:
+                        matches.append("IP+hostname")
+
+                    # Check MAC address (strong identifier)
+                    if stored_mac and current_mac and stored_mac == current_mac:
+                        matches.append("MAC")
+
+                    # Check machine ID (strongest identifier)
+                    if stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
+                        matches.append("machine-ID")
+
+                    if not matches:
+                        logger.warning(
+                            f"SECURITY: Runner {runner_id} credential reuse attempt! "
+                            f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
+                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id})"
+                        )
+                        return False
+                    else:
+                        logger.debug(f"Runner {runner_id} host validation passed: {', '.join(matches)}")
 
             return True
 
@@ -1046,14 +1101,16 @@ class Database:
             return cursor.rowcount
 
     # Enrollment token management
-    def create_enrollment_token(self, token: str, runner_name: str, created_by: str, expires_at: datetime) -> bool:
-        """Create a new enrollment token for runner registration.
+    def create_enrollment_token(self, token: str, runner_name: str, created_by: str, expires_at: datetime,
+                               re_enrollment_for: Optional[str] = None) -> bool:
+        """Create a new enrollment token for runner registration or re-enrollment.
 
         Args:
             token: The unique enrollment token
             runner_name: Descriptive name for the runner
             created_by: Username of the admin who created the token
             expires_at: When the token expires
+            re_enrollment_for: Optional runner_id if this is a re-enrollment token
 
         Returns:
             True if successful, False otherwise
@@ -1062,11 +1119,14 @@ class Database:
             cursor = conn.cursor()
             try:
                 cursor.execute('''
-                    INSERT INTO enrollment_tokens (token, runner_name, created_by, expires_at)
-                    VALUES (?, ?, ?, ?)
-                ''', (token, runner_name, created_by, expires_at))
+                    INSERT INTO enrollment_tokens (token, runner_name, created_by, expires_at, re_enrollment_for)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (token, runner_name, created_by, expires_at, re_enrollment_for))
                 conn.commit()
-                logger.info(f"Created enrollment token for runner: {runner_name}")
+                if re_enrollment_for:
+                    logger.info(f"Created re-enrollment token for runner: {re_enrollment_for}")
+                else:
+                    logger.info(f"Created enrollment token for runner: {runner_name}")
                 return True
             except Exception as e:
                 logger.error(f"Error creating enrollment token: {e}")

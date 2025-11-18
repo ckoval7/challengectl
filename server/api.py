@@ -256,7 +256,7 @@ class ChallengeCtlAPI:
     def require_api_key(self, f):
         """Decorator to require API key authentication (for runners only).
 
-        Checks database for runner API key with host validation.
+        Checks database for runner API key with enhanced multi-factor host validation.
         All runners must be enrolled via the secure enrollment process.
         """
         @wraps(f)
@@ -275,14 +275,19 @@ class ChallengeCtlAPI:
             if request.is_json and request.json:
                 current_hostname = request.json.get('hostname', '')
 
-            # Find runner_id in database with host validation
+            # Get host identifiers from custom headers (sent by runner)
+            current_mac = request.headers.get('X-Runner-MAC')
+            current_machine_id = request.headers.get('X-Runner-Machine-ID')
+
+            # Find runner_id in database with enhanced host validation
             runner_id = None
             all_runners = self.db.get_all_runners()
 
             for runner in all_runners:
                 if runner.get('api_key_hash'):
-                    # Check if this runner's API key matches (includes host validation)
-                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname):
+                    # Check if this runner's API key matches (includes multi-factor host validation)
+                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname,
+                                                     current_mac, current_machine_id):
                         runner_id = runner['runner_id']
                         break
 
@@ -1512,6 +1517,8 @@ class ChallengeCtlAPI:
                 api_key: The API key provided with the token
                 runner_id: Unique identifier for this runner
                 hostname: Hostname of the runner
+                mac_address: Optional MAC address of the runner
+                machine_id: Optional machine ID of the runner
                 devices: List of SDR devices
 
             Returns:
@@ -1532,6 +1539,8 @@ class ChallengeCtlAPI:
             api_key = data['api_key']
             runner_id = data['runner_id']
             hostname = data['hostname']
+            mac_address = data.get('mac_address')
+            machine_id = data.get('machine_id')
             devices = data['devices']
 
             # Verify the enrollment token
@@ -1541,16 +1550,27 @@ class ChallengeCtlAPI:
                 logger.warning(f"Invalid or expired enrollment token used from {request.remote_addr}")
                 return jsonify({'error': 'Invalid or expired enrollment token'}), 401
 
+            # Get token details to check if this is a re-enrollment
+            token_details = self.db.get_enrollment_token(enrollment_token)
+            is_re_enrollment = token_details and token_details.get('re_enrollment_for')
+
             # Check if runner_id already exists
             existing_runner = self.db.get_runner(runner_id)
-            if existing_runner and existing_runner.get('api_key_hash'):
+            if existing_runner and existing_runner.get('api_key_hash') and not is_re_enrollment:
                 return jsonify({'error': 'Runner ID already enrolled'}), 409
 
-            # Register the runner with the API key
+            # For re-enrollment, verify the runner_id matches
+            if is_re_enrollment and is_re_enrollment != runner_id:
+                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong runner_id {runner_id}")
+                return jsonify({'error': 'Re-enrollment token does not match runner ID'}), 400
+
+            # Register or update the runner with the API key and host identifiers
             success = self.db.register_runner(
                 runner_id=runner_id,
                 hostname=hostname,
                 ip_address=request.remote_addr,
+                mac_address=mac_address,
+                machine_id=machine_id,
                 devices=devices,
                 api_key=api_key
             )
@@ -1561,13 +1581,16 @@ class ChallengeCtlAPI:
             # Mark the token as used
             self.db.mark_token_used(enrollment_token, runner_id)
 
-            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr}")
+            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr} "
+                       f"(MAC: {mac_address}, Machine ID: {machine_id})")
 
             # Broadcast event to WebUI
             self.broadcast_event('runner_enrolled', {
                 'runner_id': runner_id,
                 'runner_name': runner_name,
                 'hostname': hostname,
+                'mac_address': mac_address,
+                'machine_id': machine_id,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
@@ -1595,6 +1618,66 @@ class ChallengeCtlAPI:
                 return jsonify({'status': 'deleted'}), 200
             else:
                 return jsonify({'error': 'Token not found'}), 404
+
+        @self.app.route('/api/enrollment/re-enroll/<runner_id>', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def re_enroll_runner(runner_id):
+            """Generate a fresh enrollment token for an existing runner.
+
+            This allows re-enrollment of a runner on a different host or after
+            the original credentials are compromised. Generates new enrollment
+            token and API key.
+
+            Args:
+                runner_id: The runner ID to re-enroll
+            Request body:
+                expires_hours: Optional hours until token expires (default: 24)
+
+            Returns:
+                token: New enrollment token
+                api_key: New API key
+                expires_at: Token expiration timestamp
+            """
+            # Check if runner exists
+            existing_runner = self.db.get_runner(runner_id)
+            if not existing_runner:
+                return jsonify({'error': 'Runner not found'}), 404
+
+            data = request.json or {}
+            expires_hours = data.get('expires_hours', 24)
+
+            # Get current user from session
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            username = session['username'] if session else 'unknown'
+
+            # Generate new credentials
+            new_api_key = self.generate_api_key()
+            enrollment_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Create enrollment token marked for re-enrollment
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_id,  # Use runner_id as name for re-enrollment
+                created_by=username,
+                expires_at=expires_at,
+                re_enrollment_for=runner_id  # Mark this as a re-enrollment token
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            logger.info(f"Re-enrollment token generated for runner {runner_id} by {username}")
+
+            return jsonify({
+                'token': enrollment_token,
+                'api_key': new_api_key,
+                'runner_id': runner_id,
+                'expires_at': expires_at.isoformat(),
+                'expires_hours': expires_hours
+            }), 201
 
         @self.app.route('/api/challenges', methods=['GET'])
         @self.require_admin_auth
