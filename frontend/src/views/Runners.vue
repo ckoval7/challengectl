@@ -851,7 +851,6 @@ radios:
 
 .credential-block h4 {
   margin: 0 0 8px 0;
-  color: #333;
   font-size: 14px;
 }
 
@@ -859,10 +858,10 @@ radios:
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #f5f5f5;
+  background-color: var(--el-fill-color-light);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--el-border-color);
 }
 
 .credential-value code {
@@ -870,7 +869,6 @@ radios:
   font-family: 'Courier New', monospace;
   font-size: 13px;
   word-break: break-all;
-  color: #2c3e50;
 }
 
 .setup-instructions {
@@ -879,7 +877,6 @@ radios:
 
 .setup-instructions h4 {
   margin: 0 0 10px 0;
-  color: #333;
 }
 
 .setup-instructions ol {
@@ -892,7 +889,7 @@ radios:
 }
 
 .setup-instructions code {
-  background: #e7f3ff;
+  background-color: var(--el-fill-color);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
@@ -909,15 +906,14 @@ radios:
 
 .config-display h4 {
   margin: 0 0 10px 0;
-  color: #333;
   font-size: 14px;
 }
 
 .config-content {
-  background: #f5f5f5;
+  background-color: var(--el-fill-color-light);
   padding: 15px;
   border-radius: 4px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--el-border-color);
   font-family: 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -925,7 +921,6 @@ radios:
   max-height: 400px;
   overflow-y: auto;
   margin: 0;
-  color: #2c3e50;
   white-space: pre;
 }
 </style>
