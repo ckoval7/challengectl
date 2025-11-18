@@ -15,6 +15,8 @@ This document provides a comprehensive reference for the ChallengeCtl REST API. 
   - [Runner Operations](#runner-operations)
   - [Dashboard and Monitoring](#dashboard-and-monitoring)
   - [Runner Management](#runner-management)
+  - [Runner Enrollment](#runner-enrollment)
+  - [Provisioning API Keys](#provisioning-api-keys)
   - [Challenge Management](#challenge-management)
   - [Transmissions](#transmissions)
   - [System Control](#system-control)
@@ -32,7 +34,7 @@ The ChallengeCtl API is a RESTful API served over HTTP/HTTPS. All endpoints retu
 
 ## Authentication
 
-The API uses two authentication methods depending on the endpoint:
+The API uses three authentication methods depending on the endpoint:
 
 ### Runner Authentication
 
@@ -42,6 +44,21 @@ Runner endpoints require an API key passed in the `X-API-Key` header:
 GET /api/runners/runner-1/task HTTP/1.1
 Host: challengectl.example.com
 X-API-Key: ck_abc123def456ghi789
+```
+
+**Security Features:**
+- API keys are stored as bcrypt hashes (never plaintext)
+- Multi-factor host validation using MAC address, machine ID, IP, and hostname
+- Automatic credential reuse detection for active runners
+
+### Provisioning Key Authentication
+
+Provisioning endpoints use Bearer token authentication with provisioning API keys. These keys have limited permissions (can only provision runners) and are ideal for automated deployments:
+
+```http
+POST /api/provisioning/provision HTTP/1.1
+Host: challengectl.example.com
+Authorization: Bearer ck_provisioning_abc123def456...
 ```
 
 ### Admin Authentication
@@ -742,7 +759,7 @@ Cookie: session=...
 
 ### Runner Enrollment
 
-Endpoints for secure runner enrollment with database-stored, encrypted API keys.
+Endpoints for secure runner enrollment with bcrypt-hashed API keys and multi-factor host validation.
 
 #### POST /api/enrollment/token
 
@@ -771,7 +788,10 @@ Content-Type: application/json
 }
 ```
 
-**Note**: The token and API key are only displayed once. Copy them immediately!
+**Important Notes:**
+- The token and API key are only displayed once. Copy them immediately!
+- Enrollment tokens can be left in runner config files after enrollment - they will be ignored on subsequent runs
+- API keys are stored as bcrypt hashes in the database (never in plaintext)
 
 #### POST /api/enrollment/enroll
 
@@ -789,14 +809,21 @@ Content-Type: application/json
   "hostname": "sdr-host-01",
   "devices": [
     {
-      "device_id": 0,
-      "model": "hackrf",
       "name": "0",
-      "frequency_limits": ["144000000-148000000"]
+      "model": "hackrf",
+      "rf_gain": 14,
+      "if_gain": 32,
+      "frequency_limits": ["144000000-148000000", "420000000-450000000"]
     }
   ]
 }
 ```
+
+**Device Models:** `hackrf`, `bladerf`, `usrp`, `limesdr`
+
+**Model-Specific Parameters:**
+- **HackRF**: Supports `if_gain` parameter (0-47, default: 32)
+- **All models**: Support `rf_gain` and optional `frequency_limits` array
 
 **Response:**
 ```json
@@ -810,6 +837,43 @@ Content-Type: application/json
 **Error Responses:**
 - `401 Unauthorized`: Invalid or expired enrollment token
 - `409 Conflict`: Runner ID already enrolled
+
+**Host Validation:**
+
+After enrollment, the runner is authenticated using multi-factor host validation:
+- MAC address
+- Machine ID
+- IP address + hostname
+
+When a runner is actively online (heartbeat within 90 seconds), authentication must match at least one of these factors to prevent credential reuse attacks. Legacy runners with `None` values are automatically upgraded when they provide host identifiers.
+
+#### POST /api/enrollment/re-enroll/\<runner_id\>
+
+Generate new credentials for an existing runner (admin only). Used when re-deploying a runner to a different host or after credentials are compromised.
+
+**Request:**
+```http
+POST /api/enrollment/re-enroll/sdr-station-1 HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "expires_hours": 24
+}
+```
+
+**Response:**
+```json
+{
+  "token": "newTokenXYZ...",
+  "api_key": "newKeyABC...",
+  "runner_id": "sdr-station-1",
+  "expires_at": "2024-01-16T10:00:00Z",
+  "expires_hours": 24
+}
+```
+
+**Note:** This invalidates the previous API key and generates fresh credentials. The runner must re-enroll using the new token and API key.
 
 #### GET /api/enrollment/tokens
 
@@ -854,6 +918,192 @@ Cookie: session=...
 {
   "status": "deleted"
 }
+```
+
+---
+
+### Provisioning API Keys
+
+**Recommended Method for Automated Deployments**
+
+Provisioning API keys provide a secure, stateless method for automated runner deployment without requiring admin session authentication. These keys have limited permissions (can only provision runners) and are ideal for CI/CD pipelines, infrastructure-as-code, and automated deployments.
+
+#### POST /api/provisioning/keys
+
+Create a new provisioning API key (admin only).
+
+**Request:**
+```http
+POST /api/provisioning/keys HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "key_id": "ci-cd-pipeline",
+  "description": "Jenkins CI/CD pipeline for automated runner provisioning"
+}
+```
+
+**Key ID Format:** Alphanumeric characters, hyphens, and underscores only (`^[a-zA-Z0-9_-]+$`)
+
+**Response:**
+```json
+{
+  "key_id": "ci-cd-pipeline",
+  "api_key": "ck_provisioning_abc123def456...",
+  "description": "Jenkins CI/CD pipeline for automated runner provisioning"
+}
+```
+
+**Important:** The API key is only shown once! Store it securely.
+
+#### GET /api/provisioning/keys
+
+List all provisioning API keys (admin only). Does not return the actual keys.
+
+**Request:**
+```http
+GET /api/provisioning/keys HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "keys": [
+    {
+      "key_id": "ci-cd-pipeline",
+      "description": "Jenkins CI/CD pipeline",
+      "created_by": "admin",
+      "created_at": "2024-01-15T10:00:00Z",
+      "last_used_at": "2024-01-15T12:30:00Z",
+      "enabled": true
+    }
+  ]
+}
+```
+
+#### POST /api/provisioning/keys/\<key_id\>/toggle
+
+Enable or disable a provisioning API key (admin only).
+
+**Request:**
+```http
+POST /api/provisioning/keys/ci-cd-pipeline/toggle HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "enabled": false
+}
+```
+
+**Response:**
+```json
+{
+  "status": "disabled"
+}
+```
+
+#### DELETE /api/provisioning/keys/\<key_id\>
+
+Delete a provisioning API key (admin only).
+
+**Request:**
+```http
+DELETE /api/provisioning/keys/ci-cd-pipeline HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "status": "deleted"
+}
+```
+
+#### POST /api/provisioning/provision
+
+Provision a new runner - generates credentials and returns complete YAML configuration. Uses provisioning API key authentication (Bearer token).
+
+**Rate limit:** 100 requests per hour
+
+**Authentication:** Bearer token with provisioning API key
+
+**Request:**
+```http
+POST /api/provisioning/provision HTTP/1.1
+Authorization: Bearer ck_provisioning_abc123def456...
+Content-Type: application/json
+
+{
+  "runner_name": "sdr-station-1",
+  "runner_id": "sdr-station-1",
+  "expires_hours": 24,
+  "server_url": "https://challengectl.example.com",
+  "verify_ssl": true,
+  "devices": [
+    {
+      "name": "0",
+      "model": "hackrf",
+      "rf_gain": 14,
+      "if_gain": 32,
+      "frequency_limits": ["144000000-148000000", "420000000-450000000"]
+    },
+    {
+      "name": "1",
+      "model": "bladerf",
+      "rf_gain": 43,
+      "frequency_limits": ["144000000-148000000"]
+    }
+  ]
+}
+```
+
+**Parameters:**
+- `runner_name` (required): Name for the runner
+- `runner_id` (optional): Unique ID, defaults to `runner_name`
+- `expires_hours` (optional): Token expiration in hours, default: 24
+- `server_url` (optional): Server URL, defaults to request origin
+- `verify_ssl` (optional): SSL verification setting, default: true
+- `devices` (optional): Array of device configurations
+
+**Device Configuration:**
+- `name`: Device identifier (e.g., "0", "1", or serial number)
+- `model`: Device model - `hackrf`, `bladerf`, `usrp`, `limesdr`
+- `rf_gain`: RF gain value (model-specific ranges)
+- `if_gain`: IF gain (HackRF only, 0-47)
+- `frequency_limits`: Array of frequency ranges (e.g., `["144000000-148000000"]`)
+
+**Response:**
+```json
+{
+  "enrollment_token": "tokenXYZ...",
+  "api_key": "apiKeyABC...",
+  "config_yaml": "---\n# ChallengeCtl Runner Configuration\n...",
+  "runner_name": "sdr-station-1",
+  "runner_id": "sdr-station-1",
+  "expires_at": "2024-01-16T10:00:00Z"
+}
+```
+
+The `config_yaml` field contains a complete, ready-to-use runner configuration file with:
+- Enrollment credentials (token and API key)
+- Server connection settings
+- Device configurations
+- Default radio parameters
+
+**Usage Example:**
+```bash
+# Save config to file
+curl -X POST https://challengectl.example.com/api/provisioning/provision \
+  -H "Authorization: Bearer ck_provisioning_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"runner_name":"my-runner"}' \
+  | jq -r '.config_yaml' > runner-config.yml
+
+# Deploy and start runner
+./runner.py --config runner-config.yml
 ```
 
 ---
