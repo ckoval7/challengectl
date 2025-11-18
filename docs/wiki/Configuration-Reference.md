@@ -64,14 +64,18 @@ cors_origins:
 
 #### API Keys
 
-API keys are **not** stored in this configuration file. Use the secure enrollment process via the Web UI instead. See [Runner Setup Guide](Runner-Setup#enroll-your-runner-recommended) for instructions.
+API keys are **not** stored in this configuration file. Use the secure enrollment process via the Web UI instead. See [Runner Setup Guide](Runner-Setup#enroll-your-runner) for instructions.
 
 The enrollment process provides:
 - API keys stored bcrypt-hashed in the database (one-way hashing like passwords)
 - One-time credential display during generation
-- Host validation to prevent credential reuse on multiple machines
+- Multi-factor host validation to prevent credential reuse on multiple machines
+  - Captures MAC address, machine ID, IP address, and hostname
+  - Enforces validation immediately (no grace period)
+  - Requires at least ONE identifier to match for authentication
 - Enrollment token expiration for time-limited registration
 - Each runner has a unique, cryptographically random 32-character key
+- Re-enrollment process for legitimate host migration
 
 ### Conference Section
 

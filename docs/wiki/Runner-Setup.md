@@ -271,7 +271,17 @@ The administrator will then provide you with:
 
 **Security Note**: These credentials are only displayed once. Copy them immediately!
 
-**Important Security Feature**: The API key is tied to a specific runner_id and will only work from one host at a time. If the runner is actively online (heartbeat within last 2 minutes) from one IP address, authentication attempts from a different IP address will be rejected. This prevents credential reuse attacks if your config file is copied to multiple machines.
+**Important Security Feature - Multi-Factor Host Validation**: The API key is tied to a specific runner_id and host machine. During enrollment, the server captures multiple host identifiers:
+- IP address and hostname
+- MAC address (primary network interface)
+- Machine ID (from `/etc/machine-id` or system-specific identifier)
+
+If the runner is actively online (heartbeat within last 90 seconds), authentication attempts from a different machine will be rejected unless at least ONE of these identifiers matches:
+- IP address + hostname (together)
+- MAC address
+- Machine ID
+
+This prevents credential reuse attacks if your config file is copied to another machine. To move a runner to a different host, use the **Re-enrollment** feature in the Web UI.
 
 #### Step 2: Configure Your Runner
 
@@ -403,6 +413,42 @@ To stop the runner gracefully, press `Ctrl+C`. The runner will:
 1. Send a signout message to the server
 2. Cancel any in-progress transmissions
 3. Exit cleanly
+
+## Re-enrolling a Runner
+
+If you need to move your runner to a different host machine or refresh compromised credentials, use the **Re-enrollment** feature instead of copying your existing configuration.
+
+### Why Re-enroll?
+
+Due to multi-factor host validation, you cannot simply copy your runner configuration to a new machine. The API key is bound to the original host's identifiers (MAC address, machine ID, IP, hostname). Attempting to use the same credentials on a different machine will be rejected by the server.
+
+### Re-enrollment Process
+
+1. **In the Web UI**, navigate to the Runners page
+2. Click the **"Re-enroll"** button next to your runner
+3. Click **"Generate Credentials"** to create fresh enrollment credentials
+4. **Download or copy** the complete configuration file
+5. **On the new host**, save the configuration as `runner-config.yml`
+6. Customize the `radios` section for your SDR devices
+7. Start the runner: `python -m challengectl.runner.runner`
+8. After successful enrollment, remove the `enrollment_token` line from the config
+9. The old runner instance will be automatically disconnected
+
+**Important Notes:**
+- The old API key remains valid until the re-enrollment completes
+- You can run both old and new runners temporarily during migration
+- Once the new runner enrolls, the host identifiers are updated
+- The old runner will be rejected on its next authentication attempt
+- Re-enrollment credentials are only shown once - download immediately!
+
+### Re-enrollment vs New Enrollment
+
+| Feature | New Enrollment | Re-enrollment |
+|---------|---------------|---------------|
+| Runner ID | New ID assigned | Same runner_id maintained |
+| History | No previous history | Preserves runner history |
+| Devices | Must reconfigure | Maintains device configuration |
+| Use Case | Adding new runner | Migrating existing runner |
 
 ## Verification and Testing
 

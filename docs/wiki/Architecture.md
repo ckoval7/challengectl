@@ -593,7 +593,11 @@ def prepare_file(file_hash, cache_dir):
 - API keys sent in `Authorization: Bearer <key>` header
 - Keys stored bcrypt-hashed in database via secure enrollment process
 - Each runner has unique key for accountability
-- Host validation prevents credential reuse on multiple machines
+- Multi-factor host validation prevents credential reuse on multiple machines
+  - Host identifiers collected: MAC address, machine ID, IP address, hostname
+  - Validation enforced immediately (no grace period)
+  - At least ONE identifier must match for authentication
+  - Re-enrollment process for legitimate host migration
 
 **Admin authentication**:
 - Username + password (bcrypt hashed in database)
@@ -621,7 +625,7 @@ def prepare_file(file_hash, cache_dir):
 **Sensitive data**:
 - Passwords: Bcrypt hashed (work factor 12)
 - TOTP secrets: AES-256 encrypted with server master key
-- API keys: Stored in configuration file (should be protected with file permissions)
+- API keys: Bcrypt-hashed in database with multi-factor host binding
 - Session cookies: Signed and HTTPOnly
 
 ## Scalability Considerations

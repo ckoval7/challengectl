@@ -194,8 +194,31 @@ The enrollment process provides several security benefits:
 - **Bcrypt-Hashed Storage**: API keys are stored using bcrypt one-way hashing in the database (like passwords)
 - **One-Time Display**: Credentials shown only once during generation
 - **Token Expiration**: Enrollment tokens expire after configured time
-- **Host Validation**: Prevents API key reuse on multiple machines
+- **Multi-Factor Host Validation**: Prevents API key reuse on multiple machines
+  - Captures MAC address, machine ID, IP address, and hostname during enrollment
+  - Enforces validation immediately (no grace period)
+  - Requires at least ONE identifier to match for authentication
+  - Detects and blocks credential theft attempts
 - **Audit Trail**: Tracks which admin created each enrollment token
+
+#### Re-enrolling Existing Runners
+
+To move a runner to a different host or refresh compromised credentials:
+
+1. **Navigate to Runners page** in the Web UI
+2. **Click "Re-enroll"** next to the runner you want to migrate
+3. **Click "Generate Credentials"** to create fresh enrollment credentials
+4. **Download or copy** the complete configuration file
+5. **Provide to the runner administrator** for deployment on the new host
+
+The re-enrollment process:
+- Generates a fresh enrollment token and API key
+- Maintains the same runner_id (preserves history and configuration)
+- Allows the old runner to continue operating until re-enrollment completes
+- Automatically updates host identifiers when the new runner enrolls
+- Kicks the old runner instance after successful re-enrollment
+
+See [Runner Setup - Re-enrollment](Runner-Setup#re-enrolling-a-runner) for the runner-side process.
 
 ## Challenge Configuration
 
