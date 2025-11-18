@@ -797,6 +797,7 @@ class ChallengeCtlRunner:
 
         # Check if enrollment is needed (new secure enrollment process)
         enrollment_token = self.config['runner'].get('enrollment_token')
+        enrolled_this_session = False
         if enrollment_token:
             print("Enrollment token detected. Enrolling with server...")
             if not self.enroll():
@@ -807,15 +808,17 @@ class ChallengeCtlRunner:
             print("")
             print("IMPORTANT: Remove 'enrollment_token' from your runner-config.yml and restart the runner.")
             print("")
+            enrolled_this_session = True
             # Don't call register() - enrollment already registered the runner
 
-        # Register with server (legacy or update registration)
-        print("Registering with server...")
-        if not self.register():
-            print("Failed to register with server. Exiting.")
-            logger.error("Failed to register with server. Exiting.")
-            sys.exit(1)
-        print("Registration successful")
+        # Register with server (only if not just enrolled)
+        if not enrolled_this_session:
+            print("Registering with server...")
+            if not self.register():
+                print("Failed to register with server. Exiting.")
+                logger.error("Failed to register with server. Exiting.")
+                sys.exit(1)
+            print("Registration successful")
 
         # Add server log handler to forward logs
         server_handler = ServerLogHandler(self)
