@@ -330,8 +330,14 @@ class Database:
                     ON CONFLICT(runner_id) DO UPDATE SET
                         hostname = excluded.hostname,
                         ip_address = excluded.ip_address,
-                        mac_address = excluded.mac_address,
-                        machine_id = excluded.machine_id,
+                        mac_address = CASE
+                            WHEN excluded.mac_address IS NOT NULL THEN excluded.mac_address
+                            ELSE runners.mac_address
+                        END,
+                        machine_id = CASE
+                            WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
+                            ELSE runners.machine_id
+                        END,
                         status = 'online',
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
