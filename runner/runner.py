@@ -289,13 +289,12 @@ class ChallengeCtlRunner:
 
             if response.status_code == 201:
                 logger.info(f"Successfully enrolled as {self.runner_id}")
-                logger.info("IMPORTANT: Remove 'enrollment_token' from your config file and restart the runner")
                 return True
             elif response.status_code == 401:
                 logger.error("Enrollment failed: Invalid or expired enrollment token")
                 return False
             elif response.status_code == 409:
-                logger.warning("Runner already enrolled. Remove 'enrollment_token' from config and restart.")
+                logger.info("Runner already enrolled with this token")
                 return True  # Return true to continue with normal operation
             else:
                 logger.error(f"Enrollment failed: HTTP {response.status_code}")
@@ -795,29 +794,29 @@ class ChallengeCtlRunner:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Check if enrollment is needed (new secure enrollment process)
-        enrollment_token = self.config['runner'].get('enrollment_token')
-        enrolled_this_session = False
-        if enrollment_token:
-            print("Enrollment token detected. Enrolling with server...")
-            if not self.enroll():
-                print("Failed to enroll with server. Exiting.")
-                logger.error("Failed to enroll with server. Exiting.")
-                sys.exit(1)
-            print("Enrollment successful!")
-            print("")
-            print("IMPORTANT: Remove 'enrollment_token' from your runner-config.yml and restart the runner.")
-            print("")
-            enrolled_this_session = True
-            # Don't call register() - enrollment already registered the runner
+        # Try to register first (works if already enrolled with valid API key)
+        print("Registering with server...")
+        registered = self.register()
 
-        # Register with server (only if not just enrolled)
-        if not enrolled_this_session:
-            print("Registering with server...")
-            if not self.register():
-                print("Failed to register with server. Exiting.")
-                logger.error("Failed to register with server. Exiting.")
+        if not registered:
+            # Registration failed - check if we have an enrollment token to try
+            enrollment_token = self.config['runner'].get('enrollment_token')
+            if enrollment_token:
+                print("Registration failed. Attempting enrollment with token...")
+                if not self.enroll():
+                    print("Failed to enroll with server. Exiting.")
+                    logger.error("Failed to enroll with server. Exiting.")
+                    sys.exit(1)
+                print("Enrollment successful!")
+                print("")
+                print("NOTE: You can leave 'enrollment_token' in your runner-config.yml.")
+                print("It will be ignored on subsequent runs once enrolled.")
+                print("")
+            else:
+                print("Failed to register with server and no enrollment token found. Exiting.")
+                logger.error("Failed to register with server and no enrollment token found. Exiting.")
                 sys.exit(1)
+        else:
             print("Registration successful")
 
         # Add server log handler to forward logs

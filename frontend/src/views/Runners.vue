@@ -2,12 +2,18 @@
   <div class="runners">
     <div class="header">
       <h1>Runners</h1>
-      <el-button type="primary" @click="showAddRunnerDialog">
-        Add Runner
-      </el-button>
     </div>
 
-    <el-table
+    <el-tabs v-model="activeTab" type="border-card">
+      <!-- Runners Tab -->
+      <el-tab-pane label="Runners" name="runners">
+        <div class="tab-header">
+          <el-button type="primary" @click="showAddRunnerDialog">
+            Add Runner
+          </el-button>
+        </div>
+
+        <el-table
       :data="runners"
       style="width: 100%"
     >
@@ -344,6 +350,193 @@
         </span>
       </template>
     </el-dialog>
+      </el-tab-pane>
+
+      <!-- Provisioning Keys Tab -->
+      <el-tab-pane label="Provisioning Keys" name="provisioning">
+        <div class="tab-header">
+          <el-button type="primary" @click="showCreateProvKeyDialog">
+            Create Provisioning Key
+          </el-button>
+        </div>
+
+        <el-table
+          :data="provisioningKeys"
+          style="width: 100%"
+        >
+          <el-table-column
+            prop="key_id"
+            label="Key ID"
+            width="200"
+          />
+          <el-table-column
+            prop="description"
+            label="Description"
+            min-width="200"
+          />
+          <el-table-column
+            prop="created_by"
+            label="Created By"
+            width="150"
+          />
+          <el-table-column
+            prop="created_at"
+            label="Created"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.created_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="last_used_at"
+            label="Last Used"
+            width="180"
+          >
+            <template #default="scope">
+              {{ scope.row.last_used_at ? formatTimestamp(scope.row.last_used_at) : 'Never' }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Status"
+            width="120"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="scope.row.enabled ? 'success' : 'info'"
+                size="small"
+              >
+                {{ scope.row.enabled ? 'Enabled' : 'Disabled' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            width="250"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-button
+                  v-if="scope.row.enabled"
+                  size="small"
+                  type="warning"
+                  @click="toggleProvKey(scope.row.key_id, false)"
+                >
+                  Disable
+                </el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  type="success"
+                  @click="toggleProvKey(scope.row.key_id, true)"
+                >
+                  Enable
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  @click="deleteProvKey(scope.row.key_id)"
+                >
+                  Delete
+                </el-button>
+              </el-space>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <!-- Create Provisioning Key Dialog -->
+        <el-dialog
+          v-model="createProvKeyDialogVisible"
+          title="Create Provisioning Key"
+          width="600px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!createdProvKey">
+            <el-form :model="createProvKeyForm" label-width="120px">
+              <el-form-item label="Key ID">
+                <el-input
+                  v-model="createProvKeyForm.keyId"
+                  placeholder="e.g., ci-cd-pipeline"
+                  @keyup.enter="createProvKey"
+                />
+                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                  A unique identifier for this key (e.g., "prod-terraform", "staging-ci")
+                </div>
+              </el-form-item>
+              <el-form-item label="Description">
+                <el-input
+                  v-model="createProvKeyForm.description"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="Optional: Describe the purpose of this key"
+                />
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <div v-else class="created-key-display">
+            <el-alert
+              title="Important: Save this API key now!"
+              type="warning"
+              description="This key will only be shown once. Copy it to a secure location."
+              :closable="false"
+              show-icon
+              style="margin-bottom: 20px"
+            />
+
+            <div class="key-info">
+              <div class="key-row">
+                <strong>Key ID:</strong>
+                <code>{{ createdProvKey.key_id }}</code>
+              </div>
+              <div class="key-row">
+                <strong>API Key:</strong>
+                <code class="api-key">{{ createdProvKey.api_key }}</code>
+                <el-button
+                  size="small"
+                  @click="copyToClipboard(createdProvKey.api_key, 'API key')"
+                >
+                  Copy
+                </el-button>
+              </div>
+              <div v-if="createdProvKey.description" class="key-row">
+                <strong>Description:</strong>
+                <span>{{ createdProvKey.description }}</span>
+              </div>
+            </div>
+
+            <el-divider />
+
+            <h4>Usage Example</h4>
+            <div class="config-content">
+              <pre>{{ provisioningKeyUsageExample }}</pre>
+            </div>
+            <el-button
+              size="small"
+              @click="copyToClipboard(provisioningKeyUsageExample, 'Example')"
+            >
+              Copy Example
+            </el-button>
+          </div>
+
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button v-if="!createdProvKey" @click="closeCreateProvKeyDialog">Cancel</el-button>
+              <el-button
+                v-if="!createdProvKey"
+                type="primary"
+                @click="createProvKey"
+              >
+                Create Key
+              </el-button>
+              <el-button v-else type="primary" @click="closeCreateProvKeyDialog">
+                Done
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -437,7 +630,7 @@ runner:
   # Server URL
   server_url: "${serverUrl.value}"
 
-  # Enrollment credentials (remove enrollment_token after first successful run)
+  # Enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
   enrollment_token: "${enrollmentData.value.token}"
   api_key: "${enrollmentData.value.api_key}"
 
@@ -602,7 +795,7 @@ runner:
   # Server URL
   server_url: "${serverUrl.value}"
 
-  # Re-enrollment credentials (remove enrollment_token after first successful run)
+  # Re-enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
   enrollment_token: "${reEnrollData.value.token}"
   api_key: "${reEnrollData.value.api_key}"
 
@@ -788,11 +981,118 @@ radios:
 
     onMounted(() => {
       loadRunners()
+      loadProvisioningKeys()
 
       // Connect WebSocket for real-time updates
       websocket.connect()
       websocket.on('runner_status', handleRunnerStatusEvent)
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
+    })
+
+    // Provisioning Keys state
+    const activeTab = ref('runners')
+    const provisioningKeys = ref([])
+    const createProvKeyDialogVisible = ref(false)
+    const createProvKeyForm = ref({
+      keyId: '',
+      description: ''
+    })
+    const createdProvKey = ref(null)
+
+    const loadProvisioningKeys = async () => {
+      try {
+        const response = await api.get('/provisioning/keys')
+        provisioningKeys.value = response.data.keys || []
+      } catch (error) {
+        console.error('Error loading provisioning keys:', error)
+        ElMessage.error('Failed to load provisioning keys')
+      }
+    }
+
+    const showCreateProvKeyDialog = () => {
+      createProvKeyDialogVisible.value = true
+      createdProvKey.value = null
+      createProvKeyForm.value = {
+        keyId: '',
+        description: ''
+      }
+    }
+
+    const createProvKey = async () => {
+      if (!createProvKeyForm.value.keyId) {
+        ElMessage.warning('Please enter a key ID')
+        return
+      }
+
+      try {
+        const response = await api.post('/provisioning/keys', {
+          key_id: createProvKeyForm.value.keyId,
+          description: createProvKeyForm.value.description
+        })
+
+        createdProvKey.value = response.data
+        ElMessage.success('Provisioning key created')
+        loadProvisioningKeys()
+      } catch (error) {
+        console.error('Error creating provisioning key:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to create provisioning key')
+      }
+    }
+
+    const closeCreateProvKeyDialog = () => {
+      createProvKeyDialogVisible.value = false
+      createdProvKey.value = null
+      createProvKeyForm.value = {
+        keyId: '',
+        description: ''
+      }
+    }
+
+    const toggleProvKey = async (keyId, enabled) => {
+      try {
+        await api.post(`/provisioning/keys/${keyId}/toggle`, { enabled })
+        ElMessage.success(`Key ${enabled ? 'enabled' : 'disabled'}`)
+        loadProvisioningKeys()
+      } catch (error) {
+        console.error('Error toggling provisioning key:', error)
+        ElMessage.error('Failed to toggle key')
+      }
+    }
+
+    const deleteProvKey = async (keyId) => {
+      try {
+        await ElMessageBox.confirm(
+          `Are you sure you want to delete the provisioning key "${keyId}"? This action cannot be undone.`,
+          'Delete Provisioning Key',
+          {
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            type: 'warning'
+          }
+        )
+
+        await api.delete(`/provisioning/keys/${keyId}`)
+        ElMessage.success('Key deleted')
+        loadProvisioningKeys()
+      } catch (error) {
+        if (error === 'cancel') return
+        console.error('Error deleting provisioning key:', error)
+        ElMessage.error('Failed to delete key')
+      }
+    }
+
+    const provisioningKeyUsageExample = computed(() => {
+      if (!createdProvKey.value) return ''
+
+      return `# Provision a new runner using this key
+curl -k \\
+  -X POST \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${createdProvKey.value.api_key}" \\
+  -d '{"runner_name":"my-runner"}' \\
+  ${serverUrl.value}/api/provisioning/provision
+
+# The response includes a complete runner-config.yml in the 'config_yaml' field`
     })
 
     onUnmounted(() => {
@@ -801,6 +1101,7 @@ radios:
     })
 
     return {
+      activeTab,
       runners,
       addRunnerDialogVisible,
       addRunnerForm,
@@ -823,6 +1124,16 @@ radios:
       enableRunner,
       disableRunner,
       kickRunner,
+      provisioningKeys,
+      createProvKeyDialogVisible,
+      createProvKeyForm,
+      createdProvKey,
+      showCreateProvKeyDialog,
+      createProvKey,
+      closeCreateProvKeyDialog,
+      toggleProvKey,
+      deleteProvKey,
+      provisioningKeyUsageExample,
       formatTimestamp: formatDateTime
     }
   }
@@ -922,5 +1233,43 @@ radios:
   overflow-y: auto;
   margin: 0;
   white-space: pre;
+}
+
+.tab-header {
+  margin-bottom: 20px;
+}
+
+.created-key-display {
+  padding: 10px;
+}
+
+.key-info {
+  margin-bottom: 20px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.key-row strong {
+  min-width: 100px;
+}
+
+.key-row code {
+  flex: 1;
+  background-color: var(--el-fill-color-light);
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--el-border-color);
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.key-row code.api-key {
+  font-weight: 600;
 }
 </style>
