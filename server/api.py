@@ -78,7 +78,6 @@ class ChallengeCtlAPI:
         # Configuration
         self.config_path = config_path
         self.config = self.load_config(config_path)
-        self.api_keys = self.config.get('server', {}).get('api_keys', {})
         self.files_dir = files_dir
 
         self.app = Flask(__name__)
@@ -258,7 +257,7 @@ class ChallengeCtlAPI:
         """Decorator to require API key authentication (for runners only).
 
         Checks database for runner API key with host validation.
-        Falls back to YAML config for backwards compatibility.
+        All runners must be enrolled via the secure enrollment process.
         """
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -276,7 +275,7 @@ class ChallengeCtlAPI:
             if request.is_json and request.json:
                 current_hostname = request.json.get('hostname', '')
 
-            # First, try to find runner_id in database (new method with host validation)
+            # Find runner_id in database with host validation
             runner_id = None
             all_runners = self.db.get_all_runners()
 
@@ -285,14 +284,6 @@ class ChallengeCtlAPI:
                     # Check if this runner's API key matches (includes host validation)
                     if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname):
                         runner_id = runner['runner_id']
-                        break
-
-            # Fall back to YAML config for backwards compatibility (no host validation for legacy)
-            if not runner_id:
-                for rid, key in self.api_keys.items():
-                    if key == api_key:
-                        runner_id = rid
-                        logger.warning(f"Runner {rid} using legacy YAML API key. Please migrate to database-stored keys.")
                         break
 
             if not runner_id:

@@ -10,7 +10,7 @@ runner:
   # Server URL (use HTTPS in production)
   server_url: "https://192.168.1.100:8443"
 
-  # === NEW RUNNER ENROLLMENT (Recommended) ===
+  # === RUNNER ENROLLMENT ===
   # For first-time setup:
   #   1. Go to the Web UI -> Runners page -> Click "Add Runner"
   #   2. Generate an enrollment token and API key
@@ -23,9 +23,8 @@ runner:
   #   4. Remove the enrollment_token line from this file
   #   5. Keep the api_key line and restart the runner
   #
-  # === LEGACY AUTHENTICATION (Not recommended) ===
-  # If you must use the old method (not recommended for security):
-  api_key: "CHANGE-THIS-runner-1-key-abc123"
+  # For already-enrolled runners, only the api_key is needed:
+  api_key: "PASTE-YOUR-API-KEY-HERE"
 
   # TLS/SSL Configuration
   # Path to CA certificate file for server verification

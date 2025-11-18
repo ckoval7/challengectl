@@ -22,16 +22,13 @@ server:
   # Alternative: Set via environment variable
   # CHALLENGECTL_CORS_ORIGINS="https://challengectl.example.com,https://www.challengectl.example.com"
 
-  # Runner API keys are no longer stored in this file!
-  # Runners now use a secure enrollment process:
+  # Runner API keys are NOT stored in this file!
+  # Runners use a secure enrollment process:
   #   1. In the Web UI, go to Runners page and click "Add Runner"
   #   2. Generate an enrollment token and API key
   #   3. Copy the token and API key to your runner configuration
   #   4. Start the runner - it will automatically enroll
-  #
-  # Legacy: For backwards compatibility, you can still use api_keys here, but this is NOT recommended
-  # api_keys:
-  #   runner-1: "legacy-key-for-backwards-compatibility"
+  #   5. API keys are stored bcrypt-hashed in the database with host validation
 
   # File storage settings
   files_dir: "files"

@@ -250,9 +250,9 @@ LimeUtil --make=test --args="freq=146000000"
 
 ## Configuration
 
-### Enroll Your Runner (Recommended)
+### Enroll Your Runner
 
-**New in v3.0**: Runners now use a secure enrollment process that stores API keys encrypted in the database instead of in configuration files.
+Runners use a secure enrollment process that stores API keys bcrypt-hashed in the database (one-way hashing like passwords) instead of in configuration files.
 
 #### Step 1: Generate Enrollment Token
 
@@ -277,17 +277,10 @@ The administrator will then provide you with:
 
 The administrator will give you both the enrollment token and API key. You'll use these in your configuration file for the initial enrollment.
 
-### Legacy Method (Not Recommended)
-
-For backwards compatibility, the server still supports API keys in `server-config.yml`, but this method is **not recommended** for security reasons. New deployments should use the enrollment process above.
-
 ### Create Configuration File
 
-Create a `runner-config.yml` file in the runner's working directory.
+Create a `runner-config.yml` file in the runner's working directory:
 
-#### For New Enrollment (Recommended)
-
-Use this configuration for first-time setup with the enrollment token:
 
 ```yaml
 runner:
@@ -315,26 +308,7 @@ radios:
 
 **Important**: After the first successful run, remove the `enrollment_token` line from your configuration and restart the runner. The API key will remain for authentication.
 
-#### For Legacy Authentication
-
-If you must use the legacy method (not recommended):
-
-```yaml
-runner:
-  runner_id: "runner-1"
-  server_url: "https://192.168.1.100:8443"
-  api_key: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"  # From server-config.yml
-
-radios:
-  devices:
-    - name: 0
-      model: hackrf
-      frequency_limits:
-        - "144000000-148000000"
-        - "420000000-450000000"
-```
-
-### Configuration Parameters
+## Configuration Parameters
 
 #### Runner Section
 

@@ -363,9 +363,7 @@ Session management for web interface.
 | `totp_verified` | BOOLEAN | Whether TOTP has been verified for this session |
 | `created_at` | TIMESTAMP | Session creation time |
 
-**Note**: Runner API keys can be stored in two ways:
-1. **Database (Recommended)**: Using the secure enrollment process, API keys are encrypted and stored in the database with the `enrollment_tokens` and runner records. This is the recommended approach for security.
-2. **Legacy YAML (Not Recommended)**: API keys can still be configured in `server-config.yml` under `server.api_keys` for backwards compatibility, but this is less secure and not recommended for new deployments.
+**Note**: Runner API keys are stored bcrypt-hashed in the database using the secure enrollment process. API keys are associated with `enrollment_tokens` and runner records, providing strong security through one-way hashing and host validation.
 
 ## Mutual Exclusion Mechanism
 
@@ -593,8 +591,7 @@ def prepare_file(file_hash, cache_dir):
 
 **Runner authentication**:
 - API keys sent in `Authorization: Bearer <key>` header
-- **Recommended**: Keys stored encrypted in database via secure enrollment process
-- **Legacy**: Keys can be configured in `server-config.yml` (backwards compatibility only)
+- Keys stored bcrypt-hashed in database via secure enrollment process
 - Each runner has unique key for accountability
 - Host validation prevents credential reuse on multiple machines
 

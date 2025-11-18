@@ -97,7 +97,7 @@ The database includes the following tables:
 - **users**: Admin user accounts with hashed passwords
 - **sessions**: Web interface session management
 
-**Note**: Runner API keys are stored encrypted in the database when using the recommended enrollment process. Legacy deployments may still have API keys in `server-config.yml` for backwards compatibility.
+**Note**: Runner API keys are stored bcrypt-hashed in the database using the secure enrollment process, providing one-way hashing similar to password storage.
 
 ## Initial Setup and User Management
 
@@ -191,36 +191,11 @@ See the [Web Interface Guide](Web-Interface-Guide#user-management) for detailed 
 
 The enrollment process provides several security benefits:
 
-- **Encrypted Storage**: API keys are encrypted in the database
+- **Bcrypt-Hashed Storage**: API keys are stored using bcrypt one-way hashing in the database (like passwords)
 - **One-Time Display**: Credentials shown only once during generation
 - **Token Expiration**: Enrollment tokens expire after configured time
 - **Host Validation**: Prevents API key reuse on multiple machines
 - **Audit Trail**: Tracks which admin created each enrollment token
-
-#### Legacy Method (Not Recommended)
-
-For backwards compatibility, you can still add API keys to `server-config.yml`:
-
-```bash
-# Generate API keys
-python3 generate-api-key.py --count 3
-```
-
-Edit `server-config.yml`:
-
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"  # Legacy method
-```
-
-**Restart the server** to apply changes:
-
-```bash
-sudo systemctl restart challengectl
-```
-
-**Important**: The legacy YAML method is maintained for backwards compatibility only. New deployments should use the Web UI enrollment process for better security.
 
 ## Challenge Configuration
 

@@ -267,21 +267,20 @@ class Database:
             hostname: Hostname of the runner
             ip_address: IP address of the runner
             devices: List of SDR devices available on this runner
-            api_key: Optional API key to set for this runner (will be encrypted)
+            api_key: Optional API key to set for this runner (will be bcrypt hashed)
 
         Returns:
             True if successful, False otherwise
         """
-        from crypto import get_crypto_manager
+        import bcrypt
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
-                # Encrypt API key if provided
+                # Hash API key if provided
                 api_key_hash = None
                 if api_key:
-                    crypto = get_crypto_manager()
-                    api_key_hash = crypto.encrypt(api_key)
+                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
                 cursor.execute('''
                     INSERT INTO runners (runner_id, hostname, ip_address, status, last_heartbeat, devices, api_key_hash)
@@ -385,7 +384,7 @@ class Database:
             return cursor.rowcount > 0
 
     def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str) -> bool:
-        """Verify a runner's API key against the stored encrypted hash.
+        """Verify a runner's API key against the stored bcrypt hash.
 
         Also validates that the runner is not already active from a different host
         to prevent credential reuse attacks.
@@ -399,7 +398,7 @@ class Database:
         Returns:
             True if the API key is valid and host check passes, False otherwise
         """
-        from crypto import get_crypto_manager
+        import bcrypt
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -409,11 +408,14 @@ class Database:
             if not row or not row['api_key_hash']:
                 return False
 
-            # Decrypt the stored API key and compare
-            crypto = get_crypto_manager()
-            stored_key = crypto.decrypt(row['api_key_hash'])
+            # Verify the API key using bcrypt
+            try:
+                api_key_valid = bcrypt.checkpw(api_key.encode('utf-8'), row['api_key_hash'].encode('utf-8'))
+            except Exception as e:
+                logger.error(f"API key verification error for runner {runner_id}: {e}")
+                return False
 
-            if not stored_key or stored_key != api_key:
+            if not api_key_valid:
                 return False
 
             # Host validation: prevent credential reuse on different machines
@@ -441,27 +443,26 @@ class Database:
             return True
 
     def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
-        """Update a runner's encrypted API key.
+        """Update a runner's bcrypt-hashed API key.
 
         Args:
             runner_id: The runner ID to update
-            api_key: The plaintext API key to encrypt and store
+            api_key: The plaintext API key to hash and store
 
         Returns:
             True if successful, False otherwise
         """
-        from crypto import get_crypto_manager
+        import bcrypt
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            crypto = get_crypto_manager()
-            encrypted_key = crypto.encrypt(api_key)
+            api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
             cursor.execute('''
                 UPDATE runners
                 SET api_key_hash = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE runner_id = ?
-            ''', (encrypted_key, runner_id))
+            ''', (api_key_hash, runner_id))
             conn.commit()
             return cursor.rowcount > 0
 

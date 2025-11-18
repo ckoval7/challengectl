@@ -292,7 +292,7 @@ python3 generate-api-key.py --length 48 --count 3
 
 ### Using API Keys with Runner Enrollment
 
-**Recommended Approach**: Use the secure enrollment process through the Web UI:
+Use the secure enrollment process through the Web UI:
 
 1. **Log in to the Web UI** at `http://your-server:8443`
 
@@ -303,24 +303,6 @@ python3 generate-api-key.py --length 48 --count 3
 4. **Copy the credentials** to your runner configuration (they're only shown once)
 
 See the [Runner Setup Guide](Runner-Setup#enroll-your-runner-recommended) for complete enrollment instructions.
-
-**Alternative (Legacy)**: For backwards compatibility, you can still add API keys to `server-config.yml`:
-
-1. **Generate the key**:
-```bash
-python3 generate-api-key.py
-```
-
-2. **Edit `server-config.yml`**:
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_abc123def456..."  # Your generated key (legacy method)
-```
-
-3. **Restart the server** to apply changes
-
-**Note**: The legacy method is not recommended for security reasons. Use the UI-based enrollment process instead.
 
 ### Key Format
 

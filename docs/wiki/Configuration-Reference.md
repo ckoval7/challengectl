@@ -38,7 +38,6 @@ server:
 | `bind` | string | `"0.0.0.0"` | IP address to bind the server to. Use `"0.0.0.0"` for all interfaces or `"127.0.0.1"` for localhost only. |
 | `port` | integer | `8443` | TCP port for the HTTP server. |
 | `cors_origins` | array | `[]` | List of allowed CORS origins for web UI access. Never use wildcards with credentials. |
-| `api_keys` | object | optional | **Legacy only**: Mapping of runner IDs to their API keys. Use the Web UI enrollment process instead for new deployments. |
 | `files_dir` | string | `"files"` | Directory where challenge files are stored. Relative to server working directory. |
 | `heartbeat_timeout` | integer | `90` | Seconds before marking a runner offline due to missed heartbeats. Should be 3x heartbeat interval. |
 | `assignment_timeout` | integer | `300` | Seconds before requeuing a challenge that remains assigned. Prevents stuck assignments. |
@@ -65,31 +64,14 @@ cors_origins:
 
 #### API Keys
 
-**Recommended Approach**: Use the secure enrollment process via the Web UI instead of storing API keys in this file. See [Runner Setup Guide](Runner-Setup#enroll-your-runner-recommended) for instructions.
+API keys are **not** stored in this configuration file. Use the secure enrollment process via the Web UI instead. See [Runner Setup Guide](Runner-Setup#enroll-your-runner-recommended) for instructions.
 
-**Legacy Configuration (Not Recommended)**: For backwards compatibility, you can still configure API keys in YAML:
-
-```yaml
-api_keys:
-  runner-1: "ck_abc123def456ghi789"  # Legacy method only
-```
-
-Generate legacy keys using:
-```bash
-python3 generate-api-key.py --count 3
-```
-
-**Security Note**: The YAML-based API key method is maintained for backwards compatibility only. New deployments should use the UI-based enrollment process, which:
-- Stores API keys encrypted in the database
-- Provides one-time credential display
-- Enables host validation to prevent credential reuse
-- Supports enrollment token expiration
-
-Keys should be:
-- At least 32 characters long
-- Cryptographically random
-- Unique per runner
-- Kept confidential
+The enrollment process provides:
+- API keys stored bcrypt-hashed in the database (one-way hashing like passwords)
+- One-time credential display during generation
+- Host validation to prevent credential reuse on multiple machines
+- Enrollment token expiration for time-limited registration
+- Each runner has a unique, cryptographically random 32-character key
 
 ### Conference Section
 
