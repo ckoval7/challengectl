@@ -484,7 +484,7 @@ class Database:
 
                 if time_since_heartbeat < 90:
                     # Runner is actively online - perform multi-factor host validation
-                    # Must match at least ONE of: (IP + hostname) OR MAC address OR machine ID
+                    # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
                     matches = []
 
                     # Check IP and hostname together
@@ -521,15 +521,17 @@ class Database:
                     elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
                         matches.append("machine-ID")
 
-                    if not matches:
+                    # Require at least 2 matching factors for security
+                    if len(matches) < 2:
                         logger.warning(
                             f"SECURITY: Runner {runner_id} credential reuse attempt! "
                             f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
-                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id})"
+                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
+                            f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
                         )
                         return False
                     else:
-                        logger.debug(f"Runner {runner_id} host validation passed: {', '.join(matches)}")
+                        logger.debug(f"Runner {runner_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
 
             return True
 

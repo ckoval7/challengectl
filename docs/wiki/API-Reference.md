@@ -48,8 +48,8 @@ X-API-Key: ck_abc123def456ghi789
 
 **Security Features:**
 - API keys are stored as bcrypt hashes (never plaintext)
-- Multi-factor host validation using MAC address, machine ID, IP, and hostname
-- Automatic credential reuse detection for active runners
+- Multi-factor host validation requiring at least 2 matching factors: MAC address, machine ID, or IP+hostname
+- Automatic credential reuse detection for active runners (validates within 90 seconds of last heartbeat)
 
 ### Provisioning Key Authentication
 
@@ -845,7 +845,7 @@ After enrollment, the runner is authenticated using multi-factor host validation
 - Machine ID
 - IP address + hostname
 
-When a runner is actively online (heartbeat within 90 seconds), authentication must match at least one of these factors to prevent credential reuse attacks. Legacy runners with `None` values are automatically upgraded when they provide host identifiers.
+When a runner is actively online (heartbeat within 90 seconds), authentication must match **at least two** of these factors to prevent credential reuse attacks. This ensures strong multi-factor authentication. Legacy runners with `None` values are automatically upgraded when they provide host identifiers.
 
 #### POST /api/enrollment/re-enroll/\<runner_id\>
 

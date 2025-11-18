@@ -195,7 +195,7 @@ EOF
 
 **Important Notes:**
 - The `enrollment_token` can be left in the config file after first enrollment - it will be ignored on subsequent runs
-- API keys are authenticated with multi-factor host validation (MAC address, machine ID, IP + hostname)
+- API keys are authenticated with multi-factor host validation requiring at least 2 matching factors (MAC address, machine ID, or IP+hostname)
 - Device configuration can be done through the Web UI when creating the enrollment token
 
 The runner creates local directories for cache and temporary files:
@@ -483,8 +483,8 @@ radios:
 
 **Notes on Runner Authentication:**
 - `enrollment_token` can be left in the config file - it's ignored after first successful enrollment
-- API keys are authenticated with multi-factor host validation (MAC address, machine ID, IP + hostname)
-- When a runner is actively online (heartbeat within 90 seconds), authentication must match at least one host identifier to prevent credential reuse attacks
+- API keys are authenticated with multi-factor host validation requiring at least 2 matching factors (MAC address, machine ID, or IP+hostname)
+- When a runner is actively online (heartbeat within 90 seconds), authentication must match at least two host identifiers to prevent credential reuse attacks
 - Legacy runners with missing host identifiers are automatically upgraded when they provide the information
 
 **Note on mTLS:** When using mutual TLS with client certificates, runners authenticate with both their API key (in headers) and their client certificate. The nginx server verifies the client certificate against the CA, and the backend server verifies the API key.
