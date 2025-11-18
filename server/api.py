@@ -537,7 +537,7 @@ class ChallengeCtlAPI:
         def health_check():
             return jsonify({
                 'status': 'ok',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
         # Authentication endpoints
@@ -1128,7 +1128,7 @@ class ChallengeCtlAPI:
                 return jsonify({
                     'challenges': public_challenges,
                     'count': len(public_challenges),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }), 200
 
             except Exception as e:
@@ -1249,7 +1249,7 @@ class ChallengeCtlAPI:
                     'runner_id': runner_id,
                     'challenge_id': challenge['challenge_id'],
                     'challenge_name': challenge['name'],
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
                 return jsonify({
@@ -1299,7 +1299,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Challenge not found'}), 404
 
             # Add to in-memory transmission buffer
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now(timezone.utc).isoformat()
             transmission = {
                 'started_at': timestamp,
                 'runner_id': runner_id,
@@ -2095,7 +2095,7 @@ radios:
 
             self.broadcast_event('system_control', {
                 'action': 'pause',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
             return jsonify({'status': 'paused'}), 200
@@ -2109,7 +2109,7 @@ radios:
 
             self.broadcast_event('system_control', {
                 'action': 'resume',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
             return jsonify({'status': 'resumed'}), 200
@@ -2305,7 +2305,7 @@ radios:
                 challenges = self.get_public_challenges_data()
                 emit('challenges_update', {
                     'challenges': challenges,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }, namespace='/public')
             except Exception as e:
                 logger.error(f"Error sending initial public challenges: {e}")
@@ -2383,7 +2383,7 @@ radios:
             challenges = self.get_public_challenges_data()
             self.socketio.emit('challenges_update', {
                 'challenges': challenges,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }, namespace='/public')
         except Exception as e:
             logger.error(f"Error broadcasting public challenges: {e}")
