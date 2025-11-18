@@ -35,13 +35,19 @@ pip install -r requirements-runner.txt
 
 ### Configure the Server
 
-Create a `server-config.yml` file:
+Create a `server-config.yml` file with minimal configuration:
 
 ```yaml
 server:
   bind: "0.0.0.0"
   port: 8443
+```
 
+**Note**: Challenges can now be configured through the Web UI instead of in the YAML file. See [Challenge Management](Challenge-Management) for details.
+
+If you prefer to configure challenges in the YAML file (legacy method), you can add them like this:
+
+```yaml
 challenges:
   - name: NBFM_Example
     frequency: 146550000
@@ -53,8 +59,6 @@ challenges:
 ```
 
 Place your challenge files (like `example.wav`) in the `challenges/` directory.
-
-**Note**: You no longer need to pre-configure API keys in the server config file. Runners will be enrolled through the Web UI after the server starts.
 
 ### Start the Server
 
@@ -139,7 +143,33 @@ python -m challengectl.runner.runner
 
 The runner will register with the server and begin polling for tasks.
 
-## Step 4: Verify Operation
+## Step 4: Configure Challenges
+
+Now that the server and runner are connected, you can configure challenges through the Web UI:
+
+1. **Navigate to "Configure Challenges"**: Click the "Configure Challenges" menu item in the left sidebar.
+
+2. **Create your first challenge**:
+   - Select the **"Create Challenge"** tab
+   - Fill in the form:
+     - Name: `NBFM_TEST`
+     - Modulation: `NBFM (Narrowband FM)`
+     - Frequency: `146550000` (146.55 MHz)
+     - Flag: Upload a WAV file or enter a path
+     - Min Delay: `60` seconds
+     - Max Delay: `120` seconds
+     - Enabled: Check the box
+   - Click **"Create Challenge"**
+
+3. **Alternative: Import from YAML**:
+   - Select the **"Import from YAML"** tab
+   - Upload a YAML file with your challenges
+   - Optionally upload associated audio or binary files
+   - Click **"Import Challenges"**
+
+For detailed information on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
+
+## Step 5: Verify Operation
 
 1. **Log in to the Web Interface**: Navigate to `http://localhost:8443` and log in with your admin credentials.
 
@@ -153,15 +183,17 @@ The runner will register with the server and begin polling for tasks.
 
 Now that you have a basic setup running, you can:
 
-- Add more challenges to your server configuration
-- Deploy runners on additional SDR devices
-- Configure frequency limits and device-specific settings
-- Set up a production deployment with nginx as a reverse proxy
+- **Add more challenges** using the Configure Challenges page
+- **Deploy runners** on additional SDR devices
+- **Configure frequency limits** and device-specific settings
+- **Set up a production deployment** with nginx as a reverse proxy
 
 For detailed information on each of these topics, refer to the following guides:
 
+- [Challenge Management](Challenge-Management) - Create and manage challenges via Web UI
 - [Server Setup](Server-Setup) - Complete server configuration and deployment
 - [Runner Setup](Runner-Setup) - Advanced runner configuration and troubleshooting
+- [Web Interface Guide](Web-Interface-Guide) - Using the web dashboard
 - [Configuration Reference](Configuration-Reference) - All available configuration options
 - [Architecture Overview](Architecture) - Understanding how the system works
 
@@ -180,7 +212,7 @@ Verify that:
 ### No Challenges Are Transmitting
 
 Check that:
-- At least one challenge is enabled in `server-config.yml`
+- At least one challenge is enabled (check the Challenges page or Configure Challenges page)
 - The runner's frequency limits include the challenge frequency
 - Challenge files exist in the specified locations
 - The runner device is properly connected

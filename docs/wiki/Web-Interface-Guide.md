@@ -9,6 +9,7 @@ This guide covers the ChallengeCtl web interface, explaining how to monitor syst
 - [Dashboard](#dashboard)
 - [Runners Management](#runners-management)
 - [Challenges Management](#challenges-management)
+- [Challenge Configuration](#challenge-configuration)
 - [Logs Viewer](#logs-viewer)
 - [User Management](#user-management)
 - [System Controls](#system-controls)
@@ -22,6 +23,7 @@ The ChallengeCtl web interface provides a comprehensive view of your RF challeng
 
 - **Real-time monitoring**: Live updates via WebSocket connections
 - **Challenge management**: Enable, disable, and manually trigger challenges
+- **Challenge configuration**: Create, import, edit, and delete challenges via Web UI
 - **Runner control**: Monitor runner status and manage connections
 - **Log streaming**: Real-time logs from server and all runners
 - **User administration**: Manage admin accounts and credentials
@@ -221,6 +223,203 @@ Each challenge displays:
 6. **Completed**: Transmission finished, returns to queued state
 
 **Note**: The cycle repeats continuously for enabled challenges.
+
+## Challenge Configuration
+
+The Challenge Configuration page ("Configure Challenges" in the navigation) provides tools for creating, importing, editing, and deleting challenges. This is the primary interface for managing your challenge inventory.
+
+### Overview
+
+The Challenge Configuration page has three tabs:
+
+1. **Create Challenge**: Form-based interface for creating individual challenges
+2. **Import from YAML**: Batch import challenges from YAML files with file uploads
+3. **Manage Challenges**: View, edit, and delete existing challenges
+
+**When to use each tab**:
+- **Create Challenge**: For adding one challenge at a time with guided validation
+- **Import from YAML**: For batch operations, migration, or automation
+- **Manage Challenges**: For editing existing challenges or removing old ones
+
+For comprehensive documentation on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
+
+### Create Challenge Tab
+
+**Purpose**: Create a single challenge using a guided form interface.
+
+**Key Features**:
+- Dynamic form fields based on modulation type
+- Built-in validation for required fields
+- File upload for audio and binary files
+- Modulation-specific parameter configuration
+
+**Workflow**:
+1. Enter basic information (name, modulation, frequency)
+2. Configure challenge content (flag text or file upload)
+3. Set timing parameters (min/max delay, priority)
+4. Configure modulation-specific settings (if applicable)
+5. Click "Create Challenge"
+
+**Example Use Case**:
+- Creating a new NBFM challenge during a CTF event
+- Testing different CW speeds to find the right difficulty
+- Quickly adding a challenge without editing YAML files
+
+### Import from YAML Tab
+
+**Purpose**: Batch import multiple challenges from a YAML configuration file.
+
+**Key Features**:
+- Upload YAML file with challenge definitions
+- Upload associated media files (WAV, binary, etc.)
+- Automatic file path mapping
+- Import statistics and error reporting
+- API documentation for automation
+
+**Workflow**:
+1. Prepare a YAML file with your challenges
+2. Click "Select YAML File" and choose your file
+3. (Optional) Click "Add Files" to upload media files
+4. Click "Import Challenges"
+5. Review import results (added, updated, errors)
+
+**File Handling**:
+- Files are uploaded and stored by SHA-256 hash
+- System automatically maps uploaded files to challenge configs
+- If YAML references `example.wav` and you upload `example.wav`, it's linked automatically
+
+**Example Use Case**:
+- Migrating challenges from server config to database
+- Sharing challenge sets between ChallengeCtl instances
+- Version-controlling challenges in git and importing
+- Restoring from backup
+
+### Manage Challenges Tab
+
+**Purpose**: View, edit, and delete existing challenges.
+
+**Key Features**:
+- Table view of all configured challenges
+- Filter and search capabilities
+- JSON editor for advanced configuration
+- Delete with confirmation dialog
+
+**Displayed Information**:
+- Challenge name
+- Modulation type
+- Frequency (formatted as MHz/GHz)
+- Status (Enabled/Disabled)
+- Transmission count
+
+**Actions Available**:
+
+**Refresh List**:
+- Reloads challenges from database
+- Use after importing or creating challenges elsewhere
+
+**Edit**:
+- Opens JSON editor dialog
+- Shows complete challenge configuration
+- Make changes directly to JSON
+- Click "Save" to apply changes
+- Validates JSON syntax before saving
+
+**Delete**:
+- Removes challenge permanently
+- Confirmation dialog prevents accidental deletion
+- Deletes challenge config and transmission history
+- Does NOT delete referenced media files (other challenges may use them)
+
+**Example Use Case**:
+- Adjusting min/max delays during an event
+- Changing frequency after testing
+- Removing old or unused challenges
+- Copying configuration to create similar challenges
+
+### API Automation
+
+The Import from YAML tab includes documentation for API-based automation:
+
+**cURL Example**:
+```bash
+curl -X POST http://localhost:8080/api/challenges/import \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
+  -b "session=YOUR_SESSION_COOKIE" \
+  -F "yaml_file=@challenges.yml" \
+  -F "example_voice.wav=@/path/to/example_voice.wav"
+```
+
+**Python Example**:
+```python
+import requests
+
+url = "http://localhost:8080/api/challenges/import"
+files = {
+    'yaml_file': open('challenges.yml', 'rb'),
+    'example_voice.wav': open('example_voice.wav', 'rb'),
+}
+cookies = {'session': 'YOUR_SESSION_COOKIE'}
+headers = {'X-CSRF-Token': 'YOUR_CSRF_TOKEN'}
+
+response = requests.post(url, files=files, cookies=cookies, headers=headers)
+print(response.json())
+```
+
+**Use Cases for API Automation**:
+- CI/CD pipeline integration
+- Automated challenge rotation
+- Dynamic challenge generation from scripts
+- Remote challenge management
+
+### Best Practices
+
+**Creating Challenges**:
+- Use descriptive names (e.g., `NBFM_EASY_1` not `FLAG1`)
+- Start disabled, test with "Trigger Now", then enable
+- Set appropriate delays based on event duration
+- Verify frequency is within runner limits
+
+**Importing Challenges**:
+- Test YAML file syntax before importing
+- Keep YAML files under version control
+- Upload all referenced media files together
+- Review import results for errors
+
+**Managing Challenges**:
+- Disable rather than delete during events
+- Back up configuration before bulk edits
+- Use JSON validation tools when editing directly
+- Test changes with "Trigger Now" before re-enabling
+
+**File Management**:
+- Use meaningful filenames (e.g., `flag_morse_slow.wav`)
+- Keep media files organized in directories
+- Don't delete files that might be used by multiple challenges
+- Track file hashes for deduplication
+
+### Relationship to Challenges Page
+
+**Challenge Configuration** vs **Challenges**:
+
+**Configure Challenges** (Configuration page):
+- Create new challenges
+- Import/export challenges
+- Edit challenge parameters
+- Delete challenges
+- Focus: Managing challenge inventory
+
+**Challenges** (Management page):
+- View challenge status (queued, waiting, assigned)
+- Enable/disable challenges
+- Trigger immediate transmission
+- Monitor last transmission time
+- Focus: Runtime control and monitoring
+
+**Typical Workflow**:
+1. Use **Configure Challenges** to create/import challenges
+2. Use **Challenges** page to enable/disable during events
+3. Use **Challenges** page to trigger test transmissions
+4. Use **Configure Challenges** to edit parameters or remove challenges
 
 ## Logs Viewer
 
@@ -555,6 +754,7 @@ The web interface uses WebSocket connections for real-time updates without page 
 
 Now that you understand the web interface, you can:
 
+- [Read the Challenge Management Guide](Challenge-Management) for detailed challenge configuration
 - [Review the API Reference](API-Reference) for programmatic access
 - [Read the Architecture Overview](Architecture) to understand how the UI interacts with the backend
 - [Check the Troubleshooting Guide](Troubleshooting) for common issues
