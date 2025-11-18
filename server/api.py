@@ -305,6 +305,10 @@ class ChallengeCtlAPI:
         """Generate a random CSRF token."""
         return secrets.token_urlsafe(32)
 
+    def generate_api_key(self) -> str:
+        """Generate a secure random API key for runners or provisioning."""
+        return secrets.token_urlsafe(48)
+
     def get_cookie_security_settings(self) -> dict:
         """
         Determine secure cookie settings based on environment.
@@ -1861,7 +1865,7 @@ runner:
   server_url: "{server_url}"
 
   # Enrollment credentials
-  # IMPORTANT: Remove enrollment_token after first successful run
+  # Note: enrollment_token can be left in config, it will be ignored once enrolled
   enrollment_token: "{enrollment_token}"
   api_key: "{api_key}"
 
