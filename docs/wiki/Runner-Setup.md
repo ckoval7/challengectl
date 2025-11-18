@@ -271,6 +271,8 @@ The administrator will then provide you with:
 
 **Security Note**: These credentials are only displayed once. Copy them immediately!
 
+**Important Security Feature**: The API key is tied to a specific runner_id and will only work from one host at a time. If the runner is actively online (heartbeat within last 2 minutes) from one IP address, authentication attempts from a different IP address will be rejected. This prevents credential reuse attacks if your config file is copied to multiple machines.
+
 #### Step 2: Configure Your Runner
 
 The administrator will give you both the enrollment token and API key. You'll use these in your configuration file for the initial enrollment.

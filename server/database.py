@@ -384,21 +384,26 @@ class Database:
                 logger.info(f"Disabled runner: {runner_id}")
             return cursor.rowcount > 0
 
-    def verify_runner_api_key(self, runner_id: str, api_key: str) -> bool:
+    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str) -> bool:
         """Verify a runner's API key against the stored encrypted hash.
+
+        Also validates that the runner is not already active from a different host
+        to prevent credential reuse attacks.
 
         Args:
             runner_id: The runner ID to verify
             api_key: The plaintext API key to check
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
 
         Returns:
-            True if the API key is valid, False otherwise
+            True if the API key is valid and host check passes, False otherwise
         """
         from crypto import get_crypto_manager
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT api_key_hash FROM runners WHERE runner_id = ?', (runner_id,))
+            cursor.execute('SELECT api_key_hash, status, ip_address, hostname, last_heartbeat FROM runners WHERE runner_id = ?', (runner_id,))
             row = cursor.fetchone()
 
             if not row or not row['api_key_hash']:
@@ -408,7 +413,32 @@ class Database:
             crypto = get_crypto_manager()
             stored_key = crypto.decrypt(row['api_key_hash'])
 
-            return stored_key == api_key if stored_key else False
+            if not stored_key or stored_key != api_key:
+                return False
+
+            # Host validation: prevent credential reuse on different machines
+            # Allow if runner is offline, or if from same IP/hostname
+            if row['status'] == 'online':
+                stored_ip = row['ip_address']
+                stored_hostname = row['hostname']
+
+                # Check if last heartbeat is recent (within 2 minutes)
+                if row['last_heartbeat']:
+                    last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
+                    time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
+
+                    # Only enforce host check if runner is actively online (heartbeat within 2 minutes)
+                    if time_since_heartbeat < 120:
+                        # Runner is actively online - verify it's the same host
+                        if stored_ip != current_ip and stored_hostname != current_hostname:
+                            logger.warning(
+                                f"SECURITY: Runner {runner_id} credential reuse attempt! "
+                                f"Active on {stored_hostname} ({stored_ip}), "
+                                f"rejected attempt from {current_hostname} ({current_ip})"
+                            )
+                            return False
+
+            return True
 
     def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
         """Update a runner's encrypted API key.

@@ -257,7 +257,8 @@ class ChallengeCtlAPI:
     def require_api_key(self, f):
         """Decorator to require API key authentication (for runners only).
 
-        Checks database for runner API key. Falls back to YAML config for backwards compatibility.
+        Checks database for runner API key with host validation.
+        Falls back to YAML config for backwards compatibility.
         """
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -267,19 +268,26 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing or invalid authorization header'}), 401
 
             api_key = auth_header[7:]  # Remove 'Bearer ' prefix
+            current_ip = request.remote_addr
 
-            # First, try to find runner_id in database (new method)
+            # Get hostname from request body if available (registration/heartbeat includes it)
+            # Otherwise use empty string (will only validate IP)
+            current_hostname = ''
+            if request.is_json and request.json:
+                current_hostname = request.json.get('hostname', '')
+
+            # First, try to find runner_id in database (new method with host validation)
             runner_id = None
             all_runners = self.db.get_all_runners()
 
             for runner in all_runners:
                 if runner.get('api_key_hash'):
-                    # Check if this runner's API key matches
-                    if self.db.verify_runner_api_key(runner['runner_id'], api_key):
+                    # Check if this runner's API key matches (includes host validation)
+                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname):
                         runner_id = runner['runner_id']
                         break
 
-            # Fall back to YAML config for backwards compatibility
+            # Fall back to YAML config for backwards compatibility (no host validation for legacy)
             if not runner_id:
                 for rid, key in self.api_keys.items():
                     if key == api_key:
