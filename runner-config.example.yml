@@ -4,14 +4,27 @@
 
 runner:
   # Unique identifier for this runner
-  # Must match an entry in server-config.yml api_keys
+  # Choose a unique ID for this runner (e.g., "sdr-station-1", "runner-west")
   runner_id: "runner-1"
 
   # Server URL (use HTTPS in production)
   server_url: "https://192.168.1.100:8443"
 
-  # API key for authentication (must match server-config.yml)
-  # Generate with: python3 generate-api-key.py
+  # === NEW RUNNER ENROLLMENT (Recommended) ===
+  # For first-time setup:
+  #   1. Go to the Web UI -> Runners page -> Click "Add Runner"
+  #   2. Generate an enrollment token and API key
+  #   3. Copy them here:
+  #
+  # enrollment_token: "PASTE-ENROLLMENT-TOKEN-HERE"
+  # api_key: "PASTE-API-KEY-HERE"
+  #
+  # On first run, the runner will enroll itself and you should then:
+  #   4. Remove the enrollment_token line from this file
+  #   5. Keep the api_key line and restart the runner
+  #
+  # === LEGACY AUTHENTICATION (Not recommended) ===
+  # If you must use the old method (not recommended for security):
   api_key: "CHANGE-THIS-runner-1-key-abc123"
 
   # TLS/SSL Configuration

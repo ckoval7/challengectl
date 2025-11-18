@@ -63,8 +63,24 @@ class Database:
                     enabled BOOLEAN DEFAULT 1,
                     last_heartbeat TIMESTAMP,
                     devices JSON,
+                    api_key_hash TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Enrollment tokens table (for one-time runner registration)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS enrollment_tokens (
+                    token TEXT PRIMARY KEY,
+                    runner_name TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL,
+                    used BOOLEAN DEFAULT 0,
+                    used_at TIMESTAMP,
+                    used_by_runner_id TEXT,
+                    FOREIGN KEY (created_by) REFERENCES users(username)
                 )
             ''')
 
@@ -219,6 +235,9 @@ class Database:
             if 'enabled' not in columns:
                 logger.info("Adding 'enabled' column to runners table")
                 cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
+            if 'api_key_hash' not in columns:
+                logger.info("Adding 'api_key_hash' column to runners table")
+                cursor.execute('ALTER TABLE runners ADD COLUMN api_key_hash TEXT')
 
             # Create indexes
             cursor.execute('''
@@ -240,14 +259,33 @@ class Database:
             logger.info(f"Database initialized at {self.db_path}")
 
     # Runner management
-    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict]) -> bool:
-        """Register a new runner or update existing one."""
+    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict], api_key: Optional[str] = None) -> bool:
+        """Register a new runner or update existing one.
+
+        Args:
+            runner_id: Unique identifier for the runner
+            hostname: Hostname of the runner
+            ip_address: IP address of the runner
+            devices: List of SDR devices available on this runner
+            api_key: Optional API key to set for this runner (will be encrypted)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        from crypto import get_crypto_manager
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
+                # Encrypt API key if provided
+                api_key_hash = None
+                if api_key:
+                    crypto = get_crypto_manager()
+                    api_key_hash = crypto.encrypt(api_key)
+
                 cursor.execute('''
-                    INSERT INTO runners (runner_id, hostname, ip_address, status, last_heartbeat, devices)
-                    VALUES (?, ?, ?, 'online', ?, ?)
+                    INSERT INTO runners (runner_id, hostname, ip_address, status, last_heartbeat, devices, api_key_hash)
+                    VALUES (?, ?, ?, 'online', ?, ?, ?)
                     ON CONFLICT(runner_id) DO UPDATE SET
                         hostname = excluded.hostname,
                         ip_address = excluded.ip_address,
@@ -255,7 +293,7 @@ class Database:
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices)))
+                ''', (runner_id, hostname, ip_address, datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
                 conn.commit()
                 logger.info(f"Registered runner: {runner_id} from {ip_address}")
                 return True
@@ -344,6 +382,57 @@ class Database:
             conn.commit()
             if cursor.rowcount > 0:
                 logger.info(f"Disabled runner: {runner_id}")
+            return cursor.rowcount > 0
+
+    def verify_runner_api_key(self, runner_id: str, api_key: str) -> bool:
+        """Verify a runner's API key against the stored encrypted hash.
+
+        Args:
+            runner_id: The runner ID to verify
+            api_key: The plaintext API key to check
+
+        Returns:
+            True if the API key is valid, False otherwise
+        """
+        from crypto import get_crypto_manager
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT api_key_hash FROM runners WHERE runner_id = ?', (runner_id,))
+            row = cursor.fetchone()
+
+            if not row or not row['api_key_hash']:
+                return False
+
+            # Decrypt the stored API key and compare
+            crypto = get_crypto_manager()
+            stored_key = crypto.decrypt(row['api_key_hash'])
+
+            return stored_key == api_key if stored_key else False
+
+    def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
+        """Update a runner's encrypted API key.
+
+        Args:
+            runner_id: The runner ID to update
+            api_key: The plaintext API key to encrypt and store
+
+        Returns:
+            True if successful, False otherwise
+        """
+        from crypto import get_crypto_manager
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            crypto = get_crypto_manager()
+            encrypted_key = crypto.encrypt(api_key)
+
+            cursor.execute('''
+                UPDATE runners
+                SET api_key_hash = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE runner_id = ?
+            ''', (encrypted_key, runner_id))
+            conn.commit()
             return cursor.rowcount > 0
 
     def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
@@ -922,6 +1011,141 @@ class Database:
                 DELETE FROM sessions
                 WHERE expires < ?
             ''', (now,))
+            conn.commit()
+            return cursor.rowcount
+
+    # Enrollment token management
+    def create_enrollment_token(self, token: str, runner_name: str, created_by: str, expires_at: datetime) -> bool:
+        """Create a new enrollment token for runner registration.
+
+        Args:
+            token: The unique enrollment token
+            runner_name: Descriptive name for the runner
+            created_by: Username of the admin who created the token
+            expires_at: When the token expires
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO enrollment_tokens (token, runner_name, created_by, expires_at)
+                    VALUES (?, ?, ?, ?)
+                ''', (token, runner_name, created_by, expires_at))
+                conn.commit()
+                logger.info(f"Created enrollment token for runner: {runner_name}")
+                return True
+            except Exception as e:
+                logger.error(f"Error creating enrollment token: {e}")
+                return False
+
+    def get_enrollment_token(self, token: str) -> Optional[Dict]:
+        """Get enrollment token details.
+
+        Args:
+            token: The enrollment token to look up
+
+        Returns:
+            Token details dict or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM enrollment_tokens WHERE token = ?', (token,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def verify_enrollment_token(self, token: str) -> tuple[bool, Optional[str]]:
+        """Verify an enrollment token is valid and unused.
+
+        Args:
+            token: The enrollment token to verify
+
+        Returns:
+            Tuple of (is_valid, runner_name)
+        """
+        token_data = self.get_enrollment_token(token)
+
+        if not token_data:
+            return (False, None)
+
+        # Check if already used
+        if token_data['used']:
+            logger.warning(f"Enrollment token already used")
+            return (False, None)
+
+        # Check if expired
+        expires_at = datetime.fromisoformat(token_data['expires_at'])
+        if datetime.now(timezone.utc) > expires_at:
+            logger.warning(f"Enrollment token expired")
+            return (False, None)
+
+        return (True, token_data['runner_name'])
+
+    def mark_token_used(self, token: str, runner_id: str) -> bool:
+        """Mark an enrollment token as used.
+
+        Args:
+            token: The enrollment token
+            runner_id: The runner ID that used this token
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE enrollment_tokens
+                SET used = 1, used_at = CURRENT_TIMESTAMP, used_by_runner_id = ?
+                WHERE token = ?
+            ''', (runner_id, token))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_all_enrollment_tokens(self) -> List[Dict]:
+        """Get all enrollment tokens (for admin view).
+
+        Returns:
+            List of all enrollment tokens
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM enrollment_tokens
+                ORDER BY created_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_enrollment_token(self, token: str) -> bool:
+        """Delete an enrollment token.
+
+        Args:
+            token: The enrollment token to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM enrollment_tokens WHERE token = ?', (token,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def cleanup_expired_tokens(self) -> int:
+        """Delete expired enrollment tokens.
+
+        Returns:
+            Number of tokens deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM enrollment_tokens
+                WHERE expires_at < ? AND used = 0
+            ''', (datetime.now(timezone.utc),))
             conn.commit()
             return cursor.rowcount
 

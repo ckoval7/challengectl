@@ -171,8 +171,83 @@ class ChallengeCtlRunner:
 
         return devices
 
+    def enroll(self) -> bool:
+        """Enroll this runner with the server using an enrollment token.
+
+        This is used for initial enrollment with database-stored API keys.
+        After enrollment, the runner should be restarted without the enrollment_token in config.
+        """
+        enrollment_token = self.config['runner'].get('enrollment_token')
+
+        if not enrollment_token:
+            logger.debug("No enrollment token found, skipping enrollment")
+            return False
+
+        try:
+            hostname = socket.gethostname()
+
+            # Prepare device info for server
+            devices_info = []
+            for dev in self.devices:
+                devices_info.append({
+                    'device_id': dev['device_id'],
+                    'model': dev['model'],
+                    'name': dev['name'],
+                    'frequency_limits': dev['frequency_limits']
+                })
+
+            # Create a session without authentication for enrollment
+            enrollment_session = requests.Session()
+
+            # Configure TLS verification same as main session
+            if self.ca_cert and os.path.exists(self.ca_cert):
+                enrollment_session.verify = self.ca_cert
+            elif not self.verify_ssl:
+                enrollment_session.verify = False
+            else:
+                enrollment_session.verify = True
+
+            response = enrollment_session.post(
+                f"{self.server_url}/api/enrollment/enroll",
+                json={
+                    'enrollment_token': enrollment_token,
+                    'api_key': self.api_key,
+                    'runner_id': self.runner_id,
+                    'hostname': hostname,
+                    'devices': devices_info
+                },
+                timeout=10
+            )
+
+            if response.status_code == 201:
+                logger.info(f"Successfully enrolled as {self.runner_id}")
+                logger.info("IMPORTANT: Remove 'enrollment_token' from your config file and restart the runner")
+                return True
+            elif response.status_code == 401:
+                logger.error("Enrollment failed: Invalid or expired enrollment token")
+                return False
+            elif response.status_code == 409:
+                logger.warning("Runner already enrolled. Remove 'enrollment_token' from config and restart.")
+                return True  # Return true to continue with normal operation
+            else:
+                logger.error(f"Enrollment failed: HTTP {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.error(f"Error: {error_data.get('error', 'Unknown error')}")
+                except Exception:
+                    pass
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during enrollment: {e}")
+            return False
+
     def register(self) -> bool:
-        """Register this runner with the server."""
+        """Register this runner with the server.
+
+        Note: This is now primarily for backwards compatibility.
+        New runners should use the enrollment process instead.
+        """
         try:
             hostname = socket.gethostname()
 
@@ -652,7 +727,21 @@ class ChallengeCtlRunner:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Register with server
+        # Check if enrollment is needed (new secure enrollment process)
+        enrollment_token = self.config['runner'].get('enrollment_token')
+        if enrollment_token:
+            print("Enrollment token detected. Enrolling with server...")
+            if not self.enroll():
+                print("Failed to enroll with server. Exiting.")
+                logger.error("Failed to enroll with server. Exiting.")
+                sys.exit(1)
+            print("Enrollment successful!")
+            print("")
+            print("IMPORTANT: Remove 'enrollment_token' from your runner-config.yml and restart the runner.")
+            print("")
+            # Don't call register() - enrollment already registered the runner
+
+        # Register with server (legacy or update registration)
         print("Registering with server...")
         if not self.register():
             print("Failed to register with server. Exiting.")

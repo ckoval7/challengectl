@@ -740,6 +740,124 @@ Cookie: session=...
 
 ---
 
+### Runner Enrollment
+
+Endpoints for secure runner enrollment with database-stored, encrypted API keys.
+
+#### POST /api/enrollment/token
+
+Generate an enrollment token for a new runner (admin only).
+
+**Request:**
+```http
+POST /api/enrollment/token HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "runner_name": "sdr-station-1",
+  "expires_hours": 24
+}
+```
+
+**Response:**
+```json
+{
+  "token": "bXkLpQr7Ts...",
+  "api_key": "vN3mK9fR2w...",
+  "runner_name": "sdr-station-1",
+  "expires_at": "2024-01-16T10:00:00Z",
+  "expires_hours": 24
+}
+```
+
+**Note**: The token and API key are only displayed once. Copy them immediately!
+
+#### POST /api/enrollment/enroll
+
+Enroll a new runner using an enrollment token (no authentication required).
+
+**Request:**
+```http
+POST /api/enrollment/enroll HTTP/1.1
+Content-Type: application/json
+
+{
+  "enrollment_token": "bXkLpQr7Ts...",
+  "api_key": "vN3mK9fR2w...",
+  "runner_id": "sdr-station-1",
+  "hostname": "sdr-host-01",
+  "devices": [
+    {
+      "device_id": 0,
+      "model": "hackrf",
+      "name": "0",
+      "frequency_limits": ["144000000-148000000"]
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "runner_id": "sdr-station-1",
+  "message": "Runner sdr-station-1 enrolled successfully"
+}
+```
+
+**Error Responses:**
+- `401 Unauthorized`: Invalid or expired enrollment token
+- `409 Conflict`: Runner ID already enrolled
+
+#### GET /api/enrollment/tokens
+
+List all enrollment tokens (admin only).
+
+**Request:**
+```http
+GET /api/enrollment/tokens HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "tokens": [
+    {
+      "token": "bXkLpQr7Ts...",
+      "runner_name": "sdr-station-1",
+      "created_by": "admin",
+      "created_at": "2024-01-15T10:00:00Z",
+      "expires_at": "2024-01-16T10:00:00Z",
+      "used": false,
+      "used_at": null,
+      "used_by_runner_id": null
+    }
+  ]
+}
+```
+
+#### DELETE /api/enrollment/token/\<token\>
+
+Delete an enrollment token (admin only).
+
+**Request:**
+```http
+DELETE /api/enrollment/token/bXkLpQr7Ts... HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "status": "deleted"
+}
+```
+
+---
+
 ### Challenge Management
 
 Requires admin authentication.

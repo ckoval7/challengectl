@@ -22,18 +22,16 @@ server:
   # Alternative: Set via environment variable
   # CHALLENGECTL_CORS_ORIGINS="https://challengectl.example.com,https://www.challengectl.example.com"
 
-  # API keys for runner authentication
-  # Each runner should have a unique API key
-  # Generate secure keys with: python3 generate-api-key.py --count 4
-  # Format: runner_id: api_key
-  api_keys:
-    # Runner API keys
-    runner-1: "CHANGE-THIS-runner-1-key-abc123"
-    runner-2: "CHANGE-THIS-runner-2-key-def456"
-    runner-3: "CHANGE-THIS-runner-3-key-ghi789"
-
-    # Admin API key for WebUI access
-    admin: "CHANGE-THIS-admin-key-xyz999"
+  # Runner API keys are no longer stored in this file!
+  # Runners now use a secure enrollment process:
+  #   1. In the Web UI, go to Runners page and click "Add Runner"
+  #   2. Generate an enrollment token and API key
+  #   3. Copy the token and API key to your runner configuration
+  #   4. Start the runner - it will automatically enroll
+  #
+  # Legacy: For backwards compatibility, you can still use api_keys here, but this is NOT recommended
+  # api_keys:
+  #   runner-1: "legacy-key-for-backwards-compatibility"
 
   # File storage settings
   files_dir: "files"

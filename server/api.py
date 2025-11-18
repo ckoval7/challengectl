@@ -255,7 +255,10 @@ class ChallengeCtlAPI:
         return runner
 
     def require_api_key(self, f):
-        """Decorator to require API key authentication (for runners only)."""
+        """Decorator to require API key authentication (for runners only).
+
+        Checks database for runner API key. Falls back to YAML config for backwards compatibility.
+        """
         @wraps(f)
         def decorated_function(*args, **kwargs):
             auth_header = request.headers.get('Authorization')
@@ -265,12 +268,24 @@ class ChallengeCtlAPI:
 
             api_key = auth_header[7:]  # Remove 'Bearer ' prefix
 
-            # Find runner_id for this API key
+            # First, try to find runner_id in database (new method)
             runner_id = None
-            for rid, key in self.api_keys.items():
-                if key == api_key:
-                    runner_id = rid
-                    break
+            all_runners = self.db.get_all_runners()
+
+            for runner in all_runners:
+                if runner.get('api_key_hash'):
+                    # Check if this runner's API key matches
+                    if self.db.verify_runner_api_key(runner['runner_id'], api_key):
+                        runner_id = runner['runner_id']
+                        break
+
+            # Fall back to YAML config for backwards compatibility
+            if not runner_id:
+                for rid, key in self.api_keys.items():
+                    if key == api_key:
+                        runner_id = rid
+                        logger.warning(f"Runner {rid} using legacy YAML API key. Please migrate to database-stored keys.")
+                        break
 
             if not runner_id:
                 return jsonify({'error': 'Invalid API key'}), 401
@@ -1428,6 +1443,159 @@ class ChallengeCtlAPI:
                 return jsonify({'status': 'disabled'}), 200
             else:
                 return jsonify({'error': 'Runner not found'}), 404
+
+        # Enrollment token endpoints
+        @self.app.route('/api/enrollment/token', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def create_enrollment_token():
+            """Generate a new enrollment token for runner registration.
+
+            Request body:
+                runner_name: Descriptive name for the runner
+                expires_hours: Hours until token expires (default 24)
+
+            Returns:
+                token: The one-time enrollment token
+                api_key: The API key to be used by the runner
+                expires_at: When the token expires
+            """
+            data = request.json
+
+            if not data or 'runner_name' not in data:
+                return jsonify({'error': 'Missing runner_name'}), 400
+
+            runner_name = data['runner_name']
+            expires_hours = data.get('expires_hours', 24)
+
+            # Generate a secure enrollment token
+            enrollment_token = secrets.token_urlsafe(32)
+
+            # Generate a secure API key for the runner
+            api_key = secrets.token_urlsafe(48)
+
+            # Calculate expiration time
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Get current user from session
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            created_by = session['username'] if session else 'unknown'
+
+            # Store the token in database
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_name,
+                created_by=created_by,
+                expires_at=expires_at
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            logger.info(f"Created enrollment token for runner: {runner_name} by {created_by}")
+
+            return jsonify({
+                'token': enrollment_token,
+                'api_key': api_key,
+                'runner_name': runner_name,
+                'expires_at': expires_at.isoformat(),
+                'expires_hours': expires_hours
+            }), 201
+
+        @self.app.route('/api/enrollment/enroll', methods=['POST'])
+        @self.limiter.limit("10 per hour")  # Limit enrollment attempts
+        def enroll_runner():
+            """Enroll a new runner using an enrollment token.
+
+            Request body:
+                enrollment_token: The enrollment token
+                api_key: The API key provided with the token
+                runner_id: Unique identifier for this runner
+                hostname: Hostname of the runner
+                devices: List of SDR devices
+
+            Returns:
+                success: Boolean indicating enrollment success
+                runner_id: The enrolled runner ID
+            """
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            required_fields = ['enrollment_token', 'api_key', 'runner_id', 'hostname', 'devices']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({'error': f'Missing required field: {field}'}), 400
+
+            enrollment_token = data['enrollment_token']
+            api_key = data['api_key']
+            runner_id = data['runner_id']
+            hostname = data['hostname']
+            devices = data['devices']
+
+            # Verify the enrollment token
+            is_valid, runner_name = self.db.verify_enrollment_token(enrollment_token)
+
+            if not is_valid:
+                logger.warning(f"Invalid or expired enrollment token used from {request.remote_addr}")
+                return jsonify({'error': 'Invalid or expired enrollment token'}), 401
+
+            # Check if runner_id already exists
+            existing_runner = self.db.get_runner(runner_id)
+            if existing_runner and existing_runner.get('api_key_hash'):
+                return jsonify({'error': 'Runner ID already enrolled'}), 409
+
+            # Register the runner with the API key
+            success = self.db.register_runner(
+                runner_id=runner_id,
+                hostname=hostname,
+                ip_address=request.remote_addr,
+                devices=devices,
+                api_key=api_key
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to register runner'}), 500
+
+            # Mark the token as used
+            self.db.mark_token_used(enrollment_token, runner_id)
+
+            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr}")
+
+            # Broadcast event to WebUI
+            self.broadcast_event('runner_enrolled', {
+                'runner_id': runner_id,
+                'runner_name': runner_name,
+                'hostname': hostname,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+            return jsonify({
+                'success': True,
+                'runner_id': runner_id,
+                'message': f'Runner {runner_name} enrolled successfully'
+            }), 201
+
+        @self.app.route('/api/enrollment/tokens', methods=['GET'])
+        @self.require_admin_auth
+        def get_enrollment_tokens():
+            """Get all enrollment tokens (for admin view)."""
+            tokens = self.db.get_all_enrollment_tokens()
+            return jsonify({'tokens': tokens}), 200
+
+        @self.app.route('/api/enrollment/token/<token>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_enrollment_token(token):
+            """Delete an enrollment token."""
+            success = self.db.delete_enrollment_token(token)
+
+            if success:
+                return jsonify({'status': 'deleted'}), 200
+            else:
+                return jsonify({'error': 'Token not found'}), 404
 
         @self.app.route('/api/challenges', methods=['GET'])
         @self.require_admin_auth

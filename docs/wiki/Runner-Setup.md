@@ -250,55 +250,101 @@ LimeUtil --make=test --args="freq=146000000"
 
 ## Configuration
 
-### Obtain an API Key
+### Enroll Your Runner (Recommended)
 
-Before configuring the runner, you need an API key from the server administrator. The server administrator generates keys using:
+**New in v3.0**: Runners now use a secure enrollment process that stores API keys encrypted in the database instead of in configuration files.
 
-```bash
-python3 generate-api-key.py
-```
+#### Step 1: Generate Enrollment Token
 
-The administrator then adds the key to `server-config.yml`:
+Have your server administrator:
 
-```yaml
-server:
-  api_keys:
-    runner-1: "ck_abc123def456..."  # Your generated key
-```
+1. Log in to the ChallengeCtl Web UI
+2. Navigate to the **Runners** page
+3. Click the **Add Runner** button
+4. Enter a descriptive name for your runner (e.g., "sdr-station-1", "runner-west")
+5. Select an expiration time (default: 24 hours)
+6. Click **Generate Token**
 
-And restarts the server. The administrator will provide you with the API key (format: `ck_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`).
+The administrator will then provide you with:
+- **Enrollment Token**: A one-time use token (only valid for the specified time period)
+- **API Key**: A secure random key that will be encrypted and stored in the database
+
+**Security Note**: These credentials are only displayed once. Copy them immediately!
+
+#### Step 2: Configure Your Runner
+
+The administrator will give you both the enrollment token and API key. You'll use these in your configuration file for the initial enrollment.
+
+### Legacy Method (Not Recommended)
+
+For backwards compatibility, the server still supports API keys in `server-config.yml`, but this method is **not recommended** for security reasons. New deployments should use the enrollment process above.
 
 ### Create Configuration File
 
-Create a `runner-config.yml` file in the runner's working directory:
+Create a `runner-config.yml` file in the runner's working directory.
+
+#### For New Enrollment (Recommended)
+
+Use this configuration for first-time setup with the enrollment token:
+
+```yaml
+runner:
+  runner_id: "sdr-station-1"  # Choose a unique ID for your runner
+  server_url: "https://192.168.1.100:8443"
+
+  # Enrollment credentials (provided by administrator)
+  enrollment_token: "PASTE-ENROLLMENT-TOKEN-HERE"
+  api_key: "PASTE-API-KEY-HERE"
+
+  # Optional settings
+  poll_interval: 10
+  heartbeat_interval: 30
+  cache_dir: "cache"
+  verify_ssl: true
+
+radios:
+  devices:
+    - name: 0
+      model: hackrf
+      frequency_limits:
+        - "144000000-148000000"  # 2m band
+        - "420000000-450000000"  # 70cm band
+```
+
+**Important**: After the first successful run, remove the `enrollment_token` line from your configuration and restart the runner. The API key will remain for authentication.
+
+#### For Legacy Authentication
+
+If you must use the legacy method (not recommended):
 
 ```yaml
 runner:
   runner_id: "runner-1"
-  server_url: "http://192.168.1.100:8443"
-  api_key: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"
-  poll_interval: 5
-  heartbeat_interval: 30
-  log_level: "INFO"
+  server_url: "https://192.168.1.100:8443"
+  api_key: "ck_a3f8b9c2d1e4f5a6b7c8d9e0f1a2b3c4"  # From server-config.yml
 
-devices:
-  - name: 0
-    model: hackrf
-    frequency_limits:
-      - "144000000-148000000"
-      - "420000000-450000000"
+radios:
+  devices:
+    - name: 0
+      model: hackrf
+      frequency_limits:
+        - "144000000-148000000"
+        - "420000000-450000000"
 ```
 
 ### Configuration Parameters
 
 #### Runner Section
 
-- **runner_id**: Unique identifier for this runner (alphanumeric, hyphens allowed)
+- **runner_id**: Unique identifier for this runner (alphanumeric, hyphens, underscores allowed)
 - **server_url**: Full URL to the ChallengeCtl server (including port)
-- **api_key**: API key obtained from the server administrator
-- **poll_interval**: Seconds between polling for new tasks (default: 5)
+- **enrollment_token**: One-time enrollment token (remove after first successful run)
+- **api_key**: API key for authentication
+- **poll_interval**: Seconds between polling for new tasks (default: 10)
 - **heartbeat_interval**: Seconds between heartbeat messages (default: 30)
-- **log_level**: Logging verbosity (DEBUG, INFO, WARNING, ERROR)
+- **cache_dir**: Directory for caching challenge files (default: "cache")
+- **verify_ssl**: Enable SSL certificate verification (default: true)
+- **ca_cert**: Path to custom CA certificate file (optional)
 
 #### Devices Section
 
@@ -334,11 +380,25 @@ python -m challengectl.runner.runner
 
 The runner will:
 1. Load the configuration file
-2. Register with the server
-3. Begin sending heartbeats
-4. Poll for task assignments
-5. Download and cache challenge files
-6. Execute transmissions as assigned
+2. If an enrollment token is present, enroll with the server (first run only)
+3. Register with the server
+4. Begin sending heartbeats
+5. Poll for task assignments
+6. Download and cache challenge files
+7. Execute transmissions as assigned
+
+**First-time enrollment output:**
+```
+Enrollment token detected. Enrolling with server...
+Successfully enrolled as sdr-station-1
+
+IMPORTANT: Remove 'enrollment_token' from your runner-config.yml and restart the runner.
+
+Registering with server...
+Registration successful
+```
+
+After seeing this message, edit `runner-config.yml` and remove the `enrollment_token` line, then restart the runner.
 
 ### Custom Configuration Location
 
