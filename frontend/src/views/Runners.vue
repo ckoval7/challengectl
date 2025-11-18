@@ -133,12 +133,12 @@
     <el-dialog
       v-model="addRunnerDialogVisible"
       title="Add Runner"
-      width="600px"
+      width="800px"
       :close-on-click-modal="false"
     >
       <div v-if="!enrollmentData">
-        <!-- Step 1: Enter runner name -->
-        <el-form :model="addRunnerForm" label-width="120px">
+        <!-- Step 1: Enter runner name and configuration -->
+        <el-form :model="addRunnerForm" label-width="150px">
           <el-form-item label="Runner Name">
             <el-input
               v-model="addRunnerForm.runnerName"
@@ -154,58 +154,50 @@
               <el-option label="7 days" :value="168" />
             </el-select>
           </el-form-item>
+          <el-form-item label="Verify SSL">
+            <el-switch
+              v-model="addRunnerForm.verifySsl"
+              active-text="Enabled"
+              inactive-text="Disabled"
+            />
+            <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+              Disable only for development with self-signed certificates
+            </div>
+          </el-form-item>
         </el-form>
       </div>
 
       <div v-else class="enrollment-data">
-        <!-- Step 2: Display token and API key -->
+        <!-- Step 2: Display complete configuration -->
         <el-alert
-          title="Important: Save these credentials now!"
+          title="Important: Save this configuration now!"
           type="warning"
-          description="The enrollment token and API key will only be shown once. Copy them to your runner configuration."
+          description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
           :closable="false"
           show-icon
           style="margin-bottom: 20px"
         />
 
-        <div class="credential-block">
-          <h4>Runner Name:</h4>
-          <div class="credential-value">
-            <code>{{ enrollmentData.runner_name }}</code>
-          </div>
-        </div>
-
-        <div class="credential-block">
-          <h4>Enrollment Token:</h4>
-          <div class="credential-value">
-            <code>{{ enrollmentData.token }}</code>
+        <div style="margin-bottom: 15px;">
+          <el-space>
             <el-button
-              size="small"
-              @click="copyToClipboard(enrollmentData.token, 'Enrollment token')"
+              type="primary"
+              @click="copyToClipboard(generatedConfig, 'Configuration')"
             >
-              Copy
+              Copy Full Config
             </el-button>
-          </div>
-        </div>
-
-        <div class="credential-block">
-          <h4>API Key:</h4>
-          <div class="credential-value">
-            <code>{{ enrollmentData.api_key }}</code>
             <el-button
-              size="small"
-              @click="copyToClipboard(enrollmentData.api_key, 'API key')"
+              type="success"
+              @click="downloadConfig"
             >
-              Copy
+              Download runner-config.yml
             </el-button>
-          </div>
+          </el-space>
         </div>
 
-        <div class="credential-block">
-          <h4>Expires:</h4>
-          <div class="credential-value">
-            <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
-          </div>
+        <div class="config-display">
+          <h4>Complete Runner Configuration:</h4>
+          <pre class="config-content">{{ generatedConfig }}</pre>
         </div>
 
         <el-divider />
@@ -213,21 +205,21 @@
         <div class="setup-instructions">
           <h4>Setup Instructions:</h4>
           <ol>
-            <li>Copy the Enrollment Token and API Key above</li>
-            <li>On your runner machine, create/edit <code>runner-config.yml</code></li>
-            <li>Add the following configuration:
-              <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;">
-server:
-  url: {{ serverUrl }}
-  enrollment_token: {{ enrollmentData.token }}
-  api_key: {{ enrollmentData.api_key }}
-runner:
-  id: &lt;unique-runner-id&gt;
-  # ... rest of config
-              </pre>
-            </li>
-            <li>Start the runner with: <code>python runner.py</code></li>
+            <li>Download or copy the complete configuration above</li>
+            <li>On your runner machine, save as <code>runner-config.yml</code></li>
+            <li>Customize the <code>radios</code> section for your SDR devices</li>
+            <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
+            <li>After successful enrollment, remove the <code>enrollment_token</code> line from the config</li>
           </ol>
+        </div>
+
+        <el-divider />
+
+        <div class="credential-block">
+          <h4>Token Expires:</h4>
+          <div class="credential-value">
+            <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
+          </div>
         </div>
       </div>
 
@@ -254,7 +246,7 @@ runner:
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -267,7 +259,8 @@ export default {
     const addRunnerDialogVisible = ref(false)
     const addRunnerForm = ref({
       runnerName: '',
-      expiresHours: 24
+      expiresHours: 24,
+      verifySsl: true
     })
     const enrollmentData = ref(null)
     const serverUrl = ref(window.location.origin)
@@ -287,7 +280,8 @@ export default {
       enrollmentData.value = null
       addRunnerForm.value = {
         runnerName: '',
-        expiresHours: 24
+        expiresHours: 24,
+        verifySsl: true
       }
     }
 
@@ -316,8 +310,127 @@ export default {
       enrollmentData.value = null
       addRunnerForm.value = {
         runnerName: '',
-        expiresHours: 24
+        expiresHours: 24,
+        verifySsl: true
       }
+    }
+
+    // Generate complete runner-config.yml
+    const generatedConfig = computed(() => {
+      if (!enrollmentData.value) return ''
+
+      const config = `---
+# ChallengeCtl Runner Configuration
+# Generated for runner: ${enrollmentData.value.runner_name}
+
+runner:
+  # Unique identifier for this runner
+  runner_id: "${enrollmentData.value.runner_name}"
+
+  # Server URL
+  server_url: "${serverUrl.value}"
+
+  # Enrollment credentials (remove enrollment_token after first successful run)
+  enrollment_token: "${enrollmentData.value.token}"
+  api_key: "${enrollmentData.value.api_key}"
+
+  # TLS/SSL Configuration
+  # Path to CA certificate file for server verification
+  # Leave blank to use system CA certificates
+  ca_cert: ""
+
+  # Set to false to disable SSL verification (DEVELOPMENT ONLY!)
+  # In production, always use verify_ssl: true with proper certificates
+  verify_ssl: ${addRunnerForm.value.verifySsl}
+
+  # Cache directory for downloaded challenge files (relative to runner directory)
+  cache_dir: "cache"
+
+  # Heartbeat interval (seconds) - how often to ping server
+  heartbeat_interval: 30
+
+  # Poll interval (seconds) - how often to request new tasks
+  poll_interval: 10
+
+  # Spectrum Paint Pre-Challenge
+  # Set to true to fire spectrum paint before each challenge
+  spectrum_paint_before_challenge: true
+
+# Radio/SDR Device Configuration
+radios:
+  # Model defaults - configure default settings for each SDR type
+  models:
+  - model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: bladerf
+    rf_gain: 43
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: usrp
+    rf_gain: 20
+    bias_t: false
+    rf_samplerate: 2000000
+    ppm: 0
+
+  # Individual device configuration
+  # Customize this section for your specific SDR devices
+  devices:
+  # HackRF Example (by index)
+  - name: 0
+    model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    frequency_limits:
+      - "144000000-148000000"  # 2m ham band
+      - "420000000-450000000"  # 70cm ham band
+
+  # Uncomment and configure for additional devices:
+  # BladeRF Example (by serial number)
+  # - name: "1234567890abcdef"
+  #   model: bladerf
+  #   rf_gain: 43
+  #   bias_t: true
+  #   antenna: TX1
+  #   frequency_limits:
+  #     - "144000000-148000000"
+  #     - "420000000-450000000"
+
+  # USRP Example
+  # - name: "type=b200"
+  #   model: usrp
+  #   rf_gain: 20
+  #   frequency_limits:
+  #     - "70000000-6000000000"  # Full range
+
+# Notes:
+# - Device names can be index numbers (0, 1, 2) or serial numbers/identifiers
+# - frequency_limits are optional - if not set, device can use any frequency
+# - bias_t and antenna settings are device-specific
+# - rf_gain and if_gain values depend on device type and setup
+`
+      return config
+    })
+
+    const downloadConfig = () => {
+      if (!enrollmentData.value) return
+
+      const blob = new Blob([generatedConfig.value], { type: 'text/yaml' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'runner-config.yml'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      ElMessage.success('Configuration downloaded')
     }
 
     const copyToClipboard = async (text, label) => {
@@ -431,10 +544,12 @@ export default {
       addRunnerForm,
       enrollmentData,
       serverUrl,
+      generatedConfig,
       showAddRunnerDialog,
       generateEnrollmentToken,
       closeAddRunnerDialog,
       copyToClipboard,
+      downloadConfig,
       enableRunner,
       disableRunner,
       kickRunner,
@@ -516,5 +631,31 @@ export default {
 
 .setup-instructions pre {
   overflow-x: auto;
+}
+
+.config-display {
+  margin-bottom: 20px;
+}
+
+.config-display h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 14px;
+}
+
+.config-content {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0;
+  color: #2c3e50;
+  white-space: pre;
 }
 </style>
