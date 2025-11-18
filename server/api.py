@@ -351,6 +351,36 @@ class ChallengeCtlAPI:
 
         return decorated_function
 
+    def require_provisioning_key(self, f):
+        """Decorator to require provisioning API key authentication.
+
+        Provisioning keys have limited permissions - only runner enrollment.
+        Uses Bearer token authentication without CSRF (stateless).
+        """
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            auth_header = request.headers.get('Authorization')
+
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'Missing or invalid authorization header'}), 401
+
+            api_key = auth_header[7:]  # Remove 'Bearer ' prefix
+
+            # Verify provisioning API key
+            key_id = self.db.verify_provisioning_api_key(api_key)
+
+            if not key_id:
+                logger.warning(f"Invalid provisioning API key attempt from {request.remote_addr}")
+                return jsonify({'error': 'Invalid provisioning API key'}), 401
+
+            # Add key_id to request context for logging
+            request.provisioning_key_id = key_id
+            logger.info(f"Provisioning API request from key '{key_id}' at {request.remote_addr}")
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
     def require_admin_auth(self, f):
         """Decorator to require admin session authentication."""
         @wraps(f)
@@ -1677,6 +1707,222 @@ class ChallengeCtlAPI:
                 'runner_id': runner_id,
                 'expires_at': expires_at.isoformat(),
                 'expires_hours': expires_hours
+            }), 201
+
+        # Provisioning API key management endpoints (admin only)
+        @self.app.route('/api/provisioning/keys', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def create_provisioning_key():
+            """Create a new provisioning API key.
+
+            Request body:
+                key_id: Unique identifier for this key
+                description: Human-readable description
+
+            Returns:
+                key_id: The key identifier
+                api_key: The generated API key (only shown once!)
+            """
+            data = request.json or {}
+
+            key_id = data.get('key_id')
+            description = data.get('description', '')
+
+            if not key_id:
+                return jsonify({'error': 'Missing required field: key_id'}), 400
+
+            # Validate key_id format (alphanumeric, hyphens, underscores)
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', key_id):
+                return jsonify({'error': 'key_id must contain only alphanumeric characters, hyphens, and underscores'}), 400
+
+            # Get current user
+            session_token = request.cookies.get('session_token')
+            session = self.db.get_session(session_token)
+            username = session['username'] if session else 'unknown'
+
+            # Generate API key
+            api_key = self.generate_api_key()
+
+            # Create in database
+            success = self.db.create_provisioning_api_key(key_id, api_key, description, username)
+
+            if not success:
+                return jsonify({'error': 'Failed to create provisioning key (key_id may already exist)'}), 409
+
+            logger.info(f"Provisioning API key created: {key_id} by {username}")
+
+            return jsonify({
+                'key_id': key_id,
+                'api_key': api_key,
+                'description': description
+            }), 201
+
+        @self.app.route('/api/provisioning/keys', methods=['GET'])
+        @self.require_admin_auth
+        def list_provisioning_keys():
+            """List all provisioning API keys (without the actual keys)."""
+            keys = self.db.get_all_provisioning_api_keys()
+            return jsonify({'keys': keys}), 200
+
+        @self.app.route('/api/provisioning/keys/<key_id>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_provisioning_key(key_id):
+            """Delete a provisioning API key."""
+            success = self.db.delete_provisioning_api_key(key_id)
+
+            if success:
+                return jsonify({'status': 'deleted'}), 200
+            else:
+                return jsonify({'error': 'Key not found'}), 404
+
+        @self.app.route('/api/provisioning/keys/<key_id>/toggle', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def toggle_provisioning_key(key_id):
+            """Enable or disable a provisioning API key."""
+            data = request.json or {}
+            enabled = data.get('enabled', True)
+
+            success = self.db.toggle_provisioning_api_key(key_id, enabled)
+
+            if success:
+                status = 'enabled' if enabled else 'disabled'
+                return jsonify({'status': status}), 200
+            else:
+                return jsonify({'error': 'Key not found'}), 404
+
+        # Provisioning endpoint (uses provisioning API key, no CSRF)
+        @self.app.route('/api/provisioning/provision', methods=['POST'])
+        @self.require_provisioning_key
+        @self.limiter.limit("100 per hour")
+        def provision_runner():
+            """Provision a new runner - generates credentials and returns YAML config.
+
+            This endpoint uses provisioning API key authentication (Bearer token).
+            It generates enrollment credentials and returns a complete runner config.
+
+            Request body:
+                runner_name: Name for the runner
+                runner_id: Unique ID for the runner (optional, defaults to runner_name)
+                expires_hours: Hours until enrollment token expires (default: 24)
+                server_url: Server URL for the config (optional, uses request origin)
+                verify_ssl: SSL verification setting (default: true)
+
+            Returns:
+                enrollment_token: Token for enrollment
+                api_key: API key for authentication
+                config_yaml: Complete runner configuration as YAML string
+            """
+            data = request.json or {}
+
+            runner_name = data.get('runner_name')
+            if not runner_name:
+                return jsonify({'error': 'Missing required field: runner_name'}), 400
+
+            runner_id = data.get('runner_id', runner_name)
+            expires_hours = data.get('expires_hours', 24)
+            server_url = data.get('server_url', request.host_url.rstrip('/'))
+            verify_ssl = data.get('verify_ssl', True)
+
+            # Get the provisioning key ID from request context
+            created_by = f"provisioning:{request.provisioning_key_id}"
+
+            # Generate credentials
+            api_key = self.generate_api_key()
+            enrollment_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+            # Create enrollment token
+            success = self.db.create_enrollment_token(
+                token=enrollment_token,
+                runner_name=runner_name,
+                created_by=created_by,
+                expires_at=expires_at
+            )
+
+            if not success:
+                return jsonify({'error': 'Failed to create enrollment token'}), 500
+
+            # Generate complete YAML config
+            config_yaml = f"""---
+# ChallengeCtl Runner Configuration
+# Provisioned for: {runner_name}
+# Provisioned by: {request.provisioning_key_id}
+# Generated: {datetime.now(timezone.utc).isoformat()}
+
+runner:
+  # Runner identification
+  runner_id: "{runner_id}"
+
+  # Server connection
+  server_url: "{server_url}"
+
+  # Enrollment credentials
+  # IMPORTANT: Remove enrollment_token after first successful run
+  enrollment_token: "{enrollment_token}"
+  api_key: "{api_key}"
+
+  # TLS/SSL Configuration
+  ca_cert: ""
+  verify_ssl: {str(verify_ssl).lower()}
+
+  # Intervals
+  heartbeat_interval: 30
+  poll_interval: 10
+
+  # Cache
+  cache_dir: "cache"
+
+  # Spectrum paint before challenges
+  spectrum_paint_before_challenge: true
+
+# Radio/SDR Device Configuration
+radios:
+  # Model defaults
+  models:
+  - model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: bladerf
+    rf_gain: 43
+    bias_t: true
+    rf_samplerate: 2000000
+    ppm: 0
+
+  - model: usrp
+    rf_gain: 20
+    bias_t: false
+    rf_samplerate: 2000000
+    ppm: 0
+
+  # Individual devices
+  # Customize this section for your SDR hardware
+  devices:
+  - name: 0
+    model: hackrf
+    rf_gain: 14
+    if_gain: 32
+    frequency_limits:
+      - "144000000-148000000"  # 2m ham band
+      - "420000000-450000000"  # 70cm ham band
+"""
+
+            logger.info(f"Provisioned runner '{runner_name}' via key '{request.provisioning_key_id}'")
+
+            return jsonify({
+                'runner_name': runner_name,
+                'runner_id': runner_id,
+                'enrollment_token': enrollment_token,
+                'api_key': api_key,
+                'expires_at': expires_at.isoformat(),
+                'config_yaml': config_yaml
             }), 201
 
         @self.app.route('/api/challenges', methods=['GET'])

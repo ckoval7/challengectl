@@ -107,6 +107,20 @@ class Database:
                 logger.info("Adding re_enrollment_for column to enrollment_tokens table")
                 cursor.execute('ALTER TABLE enrollment_tokens ADD COLUMN re_enrollment_for TEXT')
 
+            # Provisioning API keys table (for automated runner provisioning)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS provisioning_api_keys (
+                    key_id TEXT PRIMARY KEY,
+                    key_hash TEXT NOT NULL,
+                    description TEXT,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP,
+                    enabled BOOLEAN DEFAULT 1,
+                    FOREIGN KEY (created_by) REFERENCES users(username)
+                )
+            ''')
+
             # Challenges table
             # status: 'queued' (ready), 'waiting' (delay timer), 'assigned' (transmitting)
             cursor.execute('''
@@ -1239,6 +1253,123 @@ class Database:
             ''', (datetime.now(timezone.utc),))
             conn.commit()
             return cursor.rowcount
+
+    # Provisioning API key management
+    def create_provisioning_api_key(self, key_id: str, api_key: str, description: str, created_by: str) -> bool:
+        """Create a new provisioning API key for automated runner enrollment.
+
+        Args:
+            key_id: Unique identifier for this key (e.g., "ci-cd-pipeline")
+            api_key: The plaintext API key to hash and store
+            description: Human-readable description of key purpose
+            created_by: Username of the admin who created this key
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                cursor.execute('''
+                    INSERT INTO provisioning_api_keys (key_id, key_hash, description, created_by)
+                    VALUES (?, ?, ?, ?)
+                ''', (key_id, key_hash, description, created_by))
+                conn.commit()
+                logger.info(f"Created provisioning API key: {key_id}")
+                return True
+            except Exception as e:
+                logger.error(f"Error creating provisioning API key: {e}")
+                return False
+
+    def verify_provisioning_api_key(self, api_key: str) -> Optional[str]:
+        """Verify a provisioning API key and return the key_id if valid.
+
+        Args:
+            api_key: The plaintext API key to verify
+
+        Returns:
+            key_id if valid and enabled, None otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT key_id, key_hash, enabled FROM provisioning_api_keys')
+
+            for row in cursor.fetchall():
+                if not row['enabled']:
+                    continue
+
+                try:
+                    if bcrypt.checkpw(api_key.encode('utf-8'), row['key_hash'].encode('utf-8')):
+                        # Update last_used_at
+                        cursor.execute('''
+                            UPDATE provisioning_api_keys
+                            SET last_used_at = CURRENT_TIMESTAMP
+                            WHERE key_id = ?
+                        ''', (row['key_id'],))
+                        conn.commit()
+                        return row['key_id']
+                except Exception as e:
+                    logger.error(f"Error verifying provisioning API key: {e}")
+                    continue
+
+            return None
+
+    def get_all_provisioning_api_keys(self) -> List[Dict]:
+        """Get all provisioning API keys (without the actual keys).
+
+        Returns:
+            List of provisioning API key records
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT key_id, description, created_by, created_at, last_used_at, enabled
+                FROM provisioning_api_keys
+                ORDER BY created_at DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_provisioning_api_key(self, key_id: str) -> bool:
+        """Delete a provisioning API key.
+
+        Args:
+            key_id: The key ID to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM provisioning_api_keys WHERE key_id = ?', (key_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Deleted provisioning API key: {key_id}")
+            return cursor.rowcount > 0
+
+    def toggle_provisioning_api_key(self, key_id: str, enabled: bool) -> bool:
+        """Enable or disable a provisioning API key.
+
+        Args:
+            key_id: The key ID to toggle
+            enabled: True to enable, False to disable
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE provisioning_api_keys
+                SET enabled = ?
+                WHERE key_id = ?
+            ''', (enabled, key_id))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get statistics for the dashboard."""
