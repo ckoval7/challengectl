@@ -492,11 +492,33 @@ class Database:
                         matches.append("IP+hostname")
 
                     # Check MAC address (strong identifier)
-                    if stored_mac and current_mac and stored_mac == current_mac:
+                    # If stored_mac is None, accept any current_mac (backwards compatibility)
+                    if stored_mac is None and current_mac:
+                        matches.append("MAC-upgrade")
+                        # Update the database with the new MAC address
+                        cursor.execute('''
+                            UPDATE runners
+                            SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE runner_id = ?
+                        ''', (current_mac, runner_id))
+                        conn.commit()
+                        logger.info(f"Updated runner {runner_id} with MAC address: {current_mac}")
+                    elif stored_mac and current_mac and stored_mac == current_mac:
                         matches.append("MAC")
 
                     # Check machine ID (strongest identifier)
-                    if stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
+                    # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
+                    if stored_machine_id is None and current_machine_id:
+                        matches.append("machine-ID-upgrade")
+                        # Update the database with the new machine ID
+                        cursor.execute('''
+                            UPDATE runners
+                            SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE runner_id = ?
+                        ''', (current_machine_id, runner_id))
+                        conn.commit()
+                        logger.info(f"Updated runner {runner_id} with machine ID: {current_machine_id}")
+                    elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
                         matches.append("machine-ID")
 
                     if not matches:
