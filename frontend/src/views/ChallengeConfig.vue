@@ -658,7 +658,7 @@ export default {
           config.coding_rate = challengeForm.value.coding_rate
         }
 
-        const response = await api.post('/challenges', {
+        await api.post('/challenges', {
           name: challengeForm.value.name,
           config: config
         })
