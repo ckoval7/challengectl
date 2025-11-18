@@ -254,7 +254,11 @@ LimeUtil --make=test --args="freq=146000000"
 
 Runners use a secure enrollment process that stores API keys bcrypt-hashed in the database (one-way hashing like passwords) instead of in configuration files.
 
-#### Step 1: Generate Enrollment Token
+#### Step 1: Generate Enrollment Credentials
+
+There are two ways to obtain enrollment credentials:
+
+**Option A: Manual Enrollment (via Web UI)**
 
 Have your server administrator:
 
@@ -263,11 +267,21 @@ Have your server administrator:
 3. Click the **Add Runner** button
 4. Enter a descriptive name for your runner (e.g., "sdr-station-1", "runner-west")
 5. Select an expiration time (default: 24 hours)
-6. Click **Generate Token**
+6. Click **Generate Credentials**
+7. Download or copy the complete configuration file
 
-The administrator will then provide you with:
-- **Enrollment Token**: A one-time use token (only valid for the specified time period)
-- **API Key**: A secure random key that will be encrypted and stored in the database
+**Option B: Provisioning API Key (for automation)**
+
+For automated deployments or CI/CD environments:
+
+1. Administrator creates a provisioning API key in **Runners** → **Provisioning Keys** tab
+2. Use the provisioning API to generate runner credentials programmatically
+3. See the [Provisioning API Key Guide](../examples/provisioning-api-key-guide.md) for details
+
+**What you receive:**
+- **Enrollment Token**: A one-time use token (valid for the specified time period)
+- **API Key**: A secure random key that will be bcrypt-hashed and stored in the database
+- **Complete Configuration**: A ready-to-use YAML configuration file
 
 **Security Note**: These credentials are only displayed once. Copy them immediately!
 
@@ -316,7 +330,7 @@ radios:
         - "420000000-450000000"  # 70cm band
 ```
 
-**Important**: After the first successful run, remove the `enrollment_token` line from your configuration and restart the runner. The API key will remain for authentication.
+**Note**: The `enrollment_token` can be left in the configuration file. After the first successful enrollment, it will be ignored on subsequent runs. Only the API key is used for authentication once enrolled.
 
 ## Configuration Parameters
 
@@ -324,7 +338,7 @@ radios:
 
 - **runner_id**: Unique identifier for this runner (alphanumeric, hyphens, underscores allowed)
 - **server_url**: Full URL to the ChallengeCtl server (including port)
-- **enrollment_token**: One-time enrollment token (remove after first successful run)
+- **enrollment_token**: One-time enrollment token (can be left in config, will be ignored once enrolled)
 - **api_key**: API key for authentication
 - **poll_interval**: Seconds between polling for new tasks (default: 10)
 - **heartbeat_interval**: Seconds between heartbeat messages (default: 30)

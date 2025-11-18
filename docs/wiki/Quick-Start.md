@@ -129,7 +129,7 @@ radios:
         - "144000000-148000000"
 ```
 
-**Important**: After the runner successfully enrolls on first run, **remove the `enrollment_token` line** from the config file and restart the runner. Keep the `api_key` line.
+**Note**: The `enrollment_token` can be left in the config file. After the first successful enrollment, it will be ignored on subsequent runs.
 
 ### Start the Runner
 

@@ -236,7 +236,7 @@ This guide covers common issues you might encounter when running ChallengeCtl an
    ```
    **Solution**: Check the enrollment status:
    - If first-time setup: Ensure both `enrollment_token` and `api_key` are in runner config
-   - If already enrolled: Remove `enrollment_token` from config, keep only `api_key`
+   - If already enrolled: Ensure the correct `api_key` is in config (enrollment_token can remain)
    - Verify the API key in the Web UI Runners page
    - Check server logs for authentication errors:
    ```bash
@@ -518,8 +518,8 @@ This guide covers common issues you might encounter when running ChallengeCtl an
    # 1. In Web UI: Runners page → Add Runner → Generate credentials
    # 2. Add both enrollment_token and api_key to runner-config.yml
    # 3. Start runner (it will auto-enroll)
-   # 4. Remove enrollment_token from config
-   # 5. Restart runner
+   # 4. Verify runner shows as "online" in Web UI
+   # Note: enrollment_token can be left in config, it will be ignored after first run
    ```
 
 2. **API key mismatch**

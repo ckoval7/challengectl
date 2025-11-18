@@ -129,7 +129,7 @@ runner:
 |-----------|------|---------|-------------|
 | `runner_id` | string | required | Unique identifier for this runner. |
 | `server_url` | string | required | Full URL to the ChallengeCtl server, including protocol and port. |
-| `enrollment_token` | string | optional | One-time enrollment token from Web UI (first-time setup only). Remove after enrollment. |
+| `enrollment_token` | string | optional | One-time enrollment token from Web UI (first-time setup only). Can be left in config after enrollment. |
 | `api_key` | string | required | API key for authentication. Obtained from Web UI during enrollment or legacy config. |
 | `ca_cert` | string | `""` | Path to CA certificate file for SSL verification. Empty uses system certificates. |
 | `verify_ssl` | boolean | `true` | Whether to verify SSL certificates. Set to `false` only for development with self-signed certs. |

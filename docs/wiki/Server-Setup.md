@@ -184,8 +184,8 @@ See the [Web Interface Guide](Web-Interface-Guide#user-management) for detailed 
 7. **Runner enrollment process**:
    - Runner starts with both `enrollment_token` and `api_key` in config
    - On first run, runner self-enrolls using the token
-   - After successful enrollment, remove `enrollment_token` from config
-   - Runner continues using only the `api_key`
+   - After successful enrollment, `enrollment_token` is ignored (can be left in config)
+   - Runner authenticates using only the `api_key`
 
 #### Security Features
 

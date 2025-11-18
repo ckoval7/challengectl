@@ -14,42 +14,27 @@ Provisioning keys follow the principle of least privilege by granting only the p
 
 ## Quick Start
 
-### Step 1: Create a Provisioning API Key (Admin)
+### Step 1: Create a Provisioning API Key
 
-You can create provisioning keys using either the Web UI or the API with admin credentials:
+**Recommended Method: Web UI**
 
-```bash
-# Login as admin
-curl -k -c cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"yourpassword"}' \
-  https://localhost:8443/api/auth/login
+The easiest way to create provisioning keys is through the Web UI:
 
-# Get CSRF token
-CSRF_TOKEN=$(grep csrf_token cookies.txt | awk '{print $7}')
+1. Log in to the ChallengeCtl web interface as an administrator.
+2. Navigate to the **Runners** page.
+3. Click on the **Provisioning Keys** tab.
+4. Click the **Create Provisioning Key** button.
+5. Enter a unique **Key ID** (e.g., "ci-cd-pipeline", "prod-terraform").
+6. Optionally, add a **Description** to document the key's purpose.
+7. Click **Create Key**.
+8. The API key will be displayed once. Copy it immediately and store it securely.
+9. A usage example with curl will be provided for quick reference.
 
-# Create provisioning key
-curl -k -b cookies.txt \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "X-CSRF-Token: $CSRF_TOKEN" \
-  -d '{
-    "key_id": "ci-cd-pipeline",
-    "description": "CI/CD runner deployment"
-  }' \
-  https://localhost:8443/api/provisioning/keys
-```
+**IMPORTANT:** The API key is only displayed once during creation. Make sure to copy it before closing the dialog.
 
-**Response:**
-```json
-{
-  "key_id": "ci-cd-pipeline",
-  "api_key": "ck_prov_1234567890abcdef1234567890abcdef",
-  "description": "CI/CD runner deployment"
-}
-```
+**Alternative Method: API**
 
-**IMPORTANT:** The API key is only displayed once during creation. Make sure to save it securely before closing the response.
+If you need to automate key creation or prefer using the API directly, you can use curl commands. See the "Creating Keys via API" section below for details.
 
 ### Step 2: Provision Runners (No Admin Credentials Required)
 
@@ -82,7 +67,63 @@ curl -k \
 
 The `config_yaml` field contains a complete, ready-to-use configuration file that can be saved directly to disk.
 
-## API Endpoints
+## Creating Keys via API
+
+If you need to automate key creation or cannot use the Web UI, you can create provisioning keys using the API:
+
+```bash
+# Login as admin
+curl -k -c cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"yourpassword"}' \
+  https://localhost:8443/api/auth/login
+
+# Get CSRF token
+CSRF_TOKEN=$(grep csrf_token cookies.txt | awk '{print $7}')
+
+# Create provisioning key
+curl -k -b cookies.txt \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -d '{
+    "key_id": "ci-cd-pipeline",
+    "description": "CI/CD runner deployment"
+  }' \
+  https://localhost:8443/api/provisioning/keys
+```
+
+**Response:**
+```json
+{
+  "key_id": "ci-cd-pipeline",
+  "api_key": "ck_prov_1234567890abcdef1234567890abcdef",
+  "description": "CI/CD runner deployment"
+}
+```
+
+Save the `api_key` value securely. It will not be displayed again.
+
+## Managing Keys via Web UI
+
+The Web UI provides a complete interface for managing provisioning keys:
+
+**Viewing Keys:**
+- Navigate to **Runners** → **Provisioning Keys** tab
+- View all keys with their status, creation date, and last usage
+- See which administrator created each key
+
+**Disabling Keys:**
+- Click **Disable** to temporarily revoke access without deleting the key
+- Disabled keys can be re-enabled later
+- Useful for key rotation or incident response
+
+**Deleting Keys:**
+- Click **Delete** to permanently remove a key
+- Requires confirmation to prevent accidental deletion
+- Cannot be undone
+
+## API Endpoints Reference
 
 ### Admin Endpoints (require admin auth + CSRF)
 

@@ -161,7 +161,7 @@ runner:
   runner_id: "sdr-station-1"
   server_url: "https://localhost:8443"
 
-  # Remove enrollment_token after first successful run
+  # Enrollment token can be left in config, it will be ignored once enrolled
   enrollment_token: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop"
   api_key: "ck_1234567890abcdef1234567890abcdef"
 

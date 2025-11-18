@@ -171,7 +171,7 @@ runner:
   server_url: "$SERVER_URL"
 
   # Enrollment credentials
-  # IMPORTANT: Remove enrollment_token after first successful run
+  # Note: enrollment_token can be left in config, it will be ignored once enrolled
   enrollment_token: "$ENROLLMENT_TOKEN"
   api_key: "$API_KEY"
 
@@ -237,12 +237,10 @@ echo "Next steps:"
 echo "  1. Copy $CONFIG_FILE to your runner machine"
 echo "  2. Customize the 'radios.devices' section for your SDRs"
 echo "  3. Start the runner:"
-echo "     python -m challengectl.runner.runner"
+echo "     python -m challengectl.runner.runner --config $CONFIG_FILE"
 echo ""
-echo "  4. After first successful run, edit the config file:"
-echo "     - Remove the 'enrollment_token' line"
-echo "     - Keep the 'api_key' line"
-echo "     - Restart the runner"
+echo "Note: The enrollment_token can be left in the config file."
+echo "      It will be ignored after the first successful enrollment."
 echo ""
 echo "Configuration file: $CONFIG_FILE"
 echo "=========================================="
