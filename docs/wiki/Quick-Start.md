@@ -43,9 +43,9 @@ server:
   port: 8443
 ```
 
-**Note**: Challenges can now be configured through the Web UI instead of in the YAML file. See [Challenge Management](Challenge-Management) for details.
+**Note**: Challenges can be configured through the Web UI or in the YAML file. See [Challenge Management](Challenge-Management) for details on using the Web UI.
 
-If you prefer to configure challenges in the YAML file (legacy method), you can add them like this:
+To configure challenges in the YAML file, you can add them like this:
 
 ```yaml
 challenges:
