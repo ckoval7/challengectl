@@ -2,9 +2,9 @@
   <div class="public-dashboard">
     <div class="header">
       <h1>Live Challenge Status</h1>
-      <p class="subtitle">
-        {{ conference.name }}
-      </p>
+      <div class="countdown-wrapper">
+        <ConferenceCountdown />
+      </div>
       <div class="header-controls">
         <el-button
           circle
@@ -181,12 +181,14 @@ import { api } from '../api'
 import config from '../config'
 import { Loading, Warning, Moon, Sunny } from '@element-plus/icons-vue'
 import { formatTime } from '../utils/time'
+import ConferenceCountdown from '../components/ConferenceCountdown.vue'
 
 export default {
   name: 'PublicDashboard',
   components: {
     Loading,
-    Warning
+    Warning,
+    ConferenceCountdown
   },
   setup() {
     const challenges = ref([])
@@ -366,6 +368,13 @@ export default {
   margin: 10px 0 0 0;
   font-size: 1.2em;
   color: var(--el-text-color-regular);
+}
+
+.countdown-wrapper {
+  margin: 15px 0;
+  font-size: 1.3em;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
 }
 
 .loading-container,

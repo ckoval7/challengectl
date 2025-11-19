@@ -75,7 +75,7 @@
     <!-- Runners and Activity -->
     <el-row :gutter="20">
       <el-col :span="12">
-        <el-card>
+        <el-card style="margin-bottom: 20px">
           <template #header>
             <div class="card-header">
               <span>Runners</span>
@@ -124,6 +124,72 @@
               </template>
             </el-table-column>
           </el-table>
+        </el-card>
+
+        <!-- Conference Settings -->
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>Conference Settings</span>
+            </div>
+          </template>
+          <el-form label-width="150px">
+            <el-form-item label="Day Start Time">
+              <el-time-select
+                v-model="dayStartTime"
+                :clearable="true"
+                start="00:00"
+                step="00:15"
+                end="23:45"
+                placeholder="Select time"
+                format="HH:mm"
+                style="width: 150px"
+              />
+              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Daily start time for countdown cycle
+              </div>
+            </el-form-item>
+            <el-form-item label="End of Day Time">
+              <el-time-select
+                v-model="endOfDayTime"
+                :clearable="true"
+                start="00:00"
+                step="00:15"
+                end="23:45"
+                placeholder="Select time"
+                format="HH:mm"
+                style="width: 150px"
+              />
+              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Daily end time for countdown cycle
+              </div>
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                type="primary"
+                @click="saveDayTimes"
+                :loading="savingDayTimes"
+              >
+                Save
+              </el-button>
+              <el-button
+                @click="clearDayTimes"
+                :loading="savingDayTimes"
+              >
+                Clear Both
+              </el-button>
+            </el-form-item>
+            <el-form-item label="Auto-Pause Daily">
+              <el-switch
+                v-model="autoPauseDaily"
+                @change="toggleAutoPause"
+                :loading="savingAutoPause"
+              />
+              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Automatically pause transmissions outside daily hours
+              </div>
+            </el-form-item>
+          </el-form>
         </el-card>
       </el-col>
 
@@ -190,6 +256,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
 import { formatTime } from '../utils/time'
+import { ElMessage } from 'element-plus'
 
 export default {
   name: 'Dashboard',
@@ -197,6 +264,11 @@ export default {
     const stats = ref({})
     const runners = ref([])
     const recentTransmissions = ref([])
+    const dayStartTime = ref('')
+    const endOfDayTime = ref('')
+    const savingDayTimes = ref(false)
+    const autoPauseDaily = ref(false)
+    const savingAutoPause = ref(false)
 
     const loadDashboard = async () => {
       try {
@@ -247,8 +319,76 @@ export default {
       }
     }
 
+    const loadConferenceSettings = async () => {
+      try {
+        const response = await api.get('/conference')
+        dayStartTime.value = response.data.day_start || ''
+        endOfDayTime.value = response.data.end_of_day || ''
+        autoPauseDaily.value = response.data.auto_pause_daily || false
+      } catch (error) {
+        console.error('Error loading conference settings:', error)
+      }
+    }
+
+    const toggleAutoPause = async () => {
+      savingAutoPause.value = true
+      try {
+        await api.put('/conference/auto-pause', {
+          auto_pause_daily: autoPauseDaily.value
+        })
+        ElMessage.success(`Auto-pause ${autoPauseDaily.value ? 'enabled' : 'disabled'}`)
+      } catch (error) {
+        console.error('Error toggling auto-pause:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to toggle auto-pause')
+        // Revert the toggle on error
+        autoPauseDaily.value = !autoPauseDaily.value
+      } finally {
+        savingAutoPause.value = false
+      }
+    }
+
+    const saveDayTimes = async () => {
+      if (!dayStartTime.value && !endOfDayTime.value) {
+        ElMessage.warning('Please select at least one time or use Clear Both to remove')
+        return
+      }
+
+      savingDayTimes.value = true
+      try {
+        await api.put('/conference/day-times', {
+          day_start: dayStartTime.value,
+          end_of_day: endOfDayTime.value
+        })
+        ElMessage.success('Day times updated successfully')
+      } catch (error) {
+        console.error('Error saving day times:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to save day times')
+      } finally {
+        savingDayTimes.value = false
+      }
+    }
+
+    const clearDayTimes = async () => {
+      savingDayTimes.value = true
+      try {
+        await api.put('/conference/day-times', {
+          day_start: '',
+          end_of_day: ''
+        })
+        dayStartTime.value = ''
+        endOfDayTime.value = ''
+        ElMessage.success('Day times cleared')
+      } catch (error) {
+        console.error('Error clearing day times:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to clear day times')
+      } finally {
+        savingDayTimes.value = false
+      }
+    }
+
     onMounted(() => {
       loadDashboard()
+      loadConferenceSettings()
 
       // Connect WebSocket
       websocket.connect()
@@ -270,6 +410,14 @@ export default {
       stats,
       runners,
       recentTransmissions,
+      dayStartTime,
+      endOfDayTime,
+      savingDayTimes,
+      autoPauseDaily,
+      savingAutoPause,
+      saveDayTimes,
+      clearDayTimes,
+      toggleAutoPause,
       formatTime,
       formatFrequency
     }

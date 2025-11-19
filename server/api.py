@@ -1135,6 +1135,110 @@ class ChallengeCtlAPI:
                 logger.error(f"Error getting public challenges: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
+        # Conference info endpoint (no auth required)
+        @self.app.route('/api/conference', methods=['GET'])
+        def get_conference_info():
+            """Get conference information including name and start/stop times."""
+            try:
+                conference = self.config.get('conference', {})
+
+                # Get day_start and end_of_day from system_state (runtime config) or fallback to config file
+                day_start = self.db.get_system_state('day_start', conference.get('day_start'))
+                end_of_day = self.db.get_system_state('end_of_day', conference.get('end_of_day'))
+                auto_pause_daily = self.db.get_system_state('auto_pause_daily', 'false') == 'true'
+
+                return jsonify({
+                    'name': conference.get('name', 'ChallengeCtl'),
+                    'start': conference.get('start'),
+                    'stop': conference.get('stop'),
+                    'day_start': day_start,
+                    'end_of_day': end_of_day,
+                    'auto_pause_daily': auto_pause_daily
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error getting conference info: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
+        # Conference settings endpoints (admin only)
+        @self.app.route('/api/conference/day-times', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_day_times():
+            """Update the day start and end of day times."""
+            try:
+                data = request.json
+                if not data:
+                    return jsonify({'error': 'Missing request body'}), 400
+
+                import re
+                time_pattern = r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+
+                # Update day_start if provided
+                if 'day_start' in data:
+                    day_start = data['day_start']
+                    if day_start and not re.match(time_pattern, day_start):
+                        return jsonify({'error': 'Invalid day_start format. Use HH:MM (e.g., 09:00)'}), 400
+                    self.db.set_system_state('day_start', day_start)
+                    logger.info(f"Day start updated to '{day_start}' by {request.admin_username}")
+
+                # Update end_of_day if provided
+                if 'end_of_day' in data:
+                    end_of_day = data['end_of_day']
+                    if end_of_day and not re.match(time_pattern, end_of_day):
+                        return jsonify({'error': 'Invalid end_of_day format. Use HH:MM (e.g., 17:00)'}), 400
+                    self.db.set_system_state('end_of_day', end_of_day)
+                    logger.info(f"End of day updated to '{end_of_day}' by {request.admin_username}")
+
+                return jsonify({
+                    'status': 'updated',
+                    'day_start': data.get('day_start'),
+                    'end_of_day': data.get('end_of_day')
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error updating day times: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
+        # Backward compatibility endpoint
+        @self.app.route('/api/conference/end-of-day', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_end_of_day_legacy():
+            """Update the end of day time (legacy endpoint)."""
+            return update_day_times()
+
+        # Auto-pause settings endpoint
+        @self.app.route('/api/conference/auto-pause', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_auto_pause():
+            """Update the auto-pause daily setting."""
+            try:
+                data = request.json
+                if not data or 'auto_pause_daily' not in data:
+                    return jsonify({'error': 'Missing auto_pause_daily field'}), 400
+
+                auto_pause = data['auto_pause_daily']
+
+                # Validate boolean
+                if not isinstance(auto_pause, bool):
+                    return jsonify({'error': 'auto_pause_daily must be a boolean'}), 400
+
+                # Store in system_state
+                self.db.set_system_state('auto_pause_daily', 'true' if auto_pause else 'false')
+
+                logger.info(f"Auto-pause daily updated to {auto_pause} by {request.admin_username}")
+
+                return jsonify({
+                    'status': 'updated',
+                    'auto_pause_daily': auto_pause
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error updating auto-pause: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
         # Runner endpoints
         # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats
         @self.app.route('/api/runners/register', methods=['POST'])
@@ -2295,9 +2399,12 @@ radios:
         def pause_system():
             """Pause all transmissions."""
             self.db.set_system_state('paused', 'true')
+            # Clear auto_paused flag when manually pausing (manual override)
+            self.db.set_system_state('auto_paused', 'false')
 
             self.broadcast_event('system_control', {
                 'action': 'pause',
+                'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
@@ -2309,13 +2416,23 @@ radios:
         def resume_system():
             """Resume transmissions."""
             self.db.set_system_state('paused', 'false')
+            # Clear auto_paused flag when manually resuming (manual override)
+            self.db.set_system_state('auto_paused', 'false')
 
             self.broadcast_event('system_control', {
                 'action': 'resume',
+                'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
 
             return jsonify({'status': 'resumed'}), 200
+
+        @self.app.route('/api/control/status', methods=['GET'])
+        @self.require_admin_auth
+        def get_control_status():
+            """Get current system control status."""
+            is_paused = self.db.get_system_state('paused', 'false') == 'true'
+            return jsonify({'paused': is_paused}), 200
 
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])
