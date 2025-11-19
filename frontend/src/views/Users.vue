@@ -113,21 +113,14 @@
             placeholder="Enter username"
           />
         </el-form-item>
-        <el-form-item
-          label="Password"
-          prop="password"
-          :rules="[
-            { required: true, message: 'Please enter password' },
-            { min: 8, message: 'Password must be at least 8 characters' }
-          ]"
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 20px"
         >
-          <el-input
-            v-model="createForm.password"
-            type="password"
-            placeholder="Minimum 8 characters"
-            show-password
-          />
-        </el-form-item>
+          A temporary password will be auto-generated. The user must change it and set up 2FA on first login.
+        </el-alert>
       </el-form>
 
       <template #footer>
@@ -144,7 +137,80 @@
       </template>
     </el-dialog>
 
-    <!-- TOTP Secret Dialog -->
+    <!-- Temporary User Created Dialog -->
+    <el-dialog
+      v-model="showTempUserDialog"
+      title="Temporary User Created"
+      width="600px"
+    >
+      <el-alert
+        type="success"
+        :closable="false"
+        style="margin-bottom: 20px"
+      >
+        <template #title>
+          User created successfully! Share these credentials:
+        </template>
+      </el-alert>
+
+      <div class="user-info">
+        <el-form label-width="180px">
+          <el-form-item label="Username:">
+            <el-input
+              :model-value="tempUserInfo.username"
+              readonly
+            >
+              <template #append>
+                <el-button @click="copyToClipboard(tempUserInfo.username)">
+                  Copy
+                </el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="Temporary Password:">
+            <el-input
+              :model-value="tempUserInfo.password"
+              readonly
+              type="text"
+            >
+              <template #append>
+                <el-button @click="copyToClipboard(tempUserInfo.password)">
+                  Copy
+                </el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+        </el-form>
+
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-top: 20px"
+        >
+          <template #title>
+            Important: User must complete setup within 24 hours
+          </template>
+          <p style="margin: 10px 0 0 0">The user must login and:</p>
+          <ul style="margin: 5px 0 0 20px; padding: 0">
+            <li>Change their password</li>
+            <li>Set up two-factor authentication (2FA)</li>
+          </ul>
+          <p style="margin: 10px 0 0 0">If not completed in 24 hours, the account will be automatically disabled.</p>
+        </el-alert>
+      </div>
+
+      <template #footer>
+        <el-button
+          type="primary"
+          @click="showTempUserDialog = false"
+        >
+          Done
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- TOTP Secret Dialog (for Reset TOTP feature) -->
     <el-dialog
       v-model="showTotpDialog"
       title="TOTP Secret"
@@ -156,13 +222,12 @@
         style="margin-bottom: 20px"
       >
         <template #title>
-          User created successfully! Save these details:
+          TOTP reset successfully! Save these details:
         </template>
       </el-alert>
 
       <div class="totp-info">
         <p><strong>Username:</strong> {{ totpInfo.username }}</p>
-        <p><strong>Password:</strong> (as entered)</p>
         <p><strong>TOTP Secret:</strong></p>
         <el-input
           :model-value="totpInfo.totp_secret"
@@ -223,9 +288,13 @@ export default {
     const loading = ref(false)
     const showCreateDialog = ref(false)
     const showTotpDialog = ref(false)
+    const showTempUserDialog = ref(false)
     const creating = ref(false)
     const createFormRef = ref(null)
     const createForm = ref({
+      username: ''
+    })
+    const tempUserInfo = ref({
       username: '',
       password: ''
     })
@@ -261,25 +330,33 @@ export default {
 
       try {
         const response = await api.post('/users', {
-          username: createForm.value.username,
-          password: createForm.value.password
+          username: createForm.value.username
         })
 
-        // Generate QR code
-        const qrCodeDataUrl = await QRCode.toDataURL(response.data.provisioning_uri)
+        showCreateDialog.value = false
 
-        totpInfo.value = {
-          username: response.data.username,
-          totp_secret: response.data.totp_secret,
-          provisioning_uri: response.data.provisioning_uri,
-          qrCode: qrCodeDataUrl
+        // Check if this is a temporary user or initial setup
+        if (response.data.is_temporary) {
+          // Temporary user - show password
+          tempUserInfo.value = {
+            username: response.data.username,
+            password: response.data.temporary_password
+          }
+          showTempUserDialog.value = true
+        } else {
+          // Initial setup user - show TOTP QR code
+          const qrCodeDataUrl = await QRCode.toDataURL(response.data.provisioning_uri)
+
+          totpInfo.value = {
+            username: response.data.username,
+            totp_secret: response.data.totp_secret,
+            provisioning_uri: response.data.provisioning_uri,
+            qrCode: qrCodeDataUrl
+          }
+          showTotpDialog.value = true
         }
 
-        showCreateDialog.value = false
-        showTotpDialog.value = true
-
         createForm.value.username = ''
-        createForm.value.password = ''
 
         loadUsers()
       } catch (error) {
@@ -390,10 +467,12 @@ export default {
       loading,
       showCreateDialog,
       showTotpDialog,
+      showTempUserDialog,
       creating,
       createFormRef,
       createForm,
       totpInfo,
+      tempUserInfo,
       loadUsers,
       createUser,
       toggleUserStatus,

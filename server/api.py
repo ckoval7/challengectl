@@ -1162,17 +1162,21 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing request body'}), 400
 
             username = data.get('username')
-            password = data.get('password')
+            password = data.get('password')  # Optional - will be auto-generated for temporary users
             permissions = data.get('permissions', [])  # List of permission names to grant
 
-            if not username or not password:
-                return jsonify({'error': 'Missing username or password'}), 400
-
-            if len(password) < 8:
-                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+            if not username:
+                return jsonify({'error': 'Missing username'}), 400
 
             # Check if this is initial setup (special case - no permission check needed)
             initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
+
+            # For initial setup, password is required
+            if initial_setup_required:
+                if not password:
+                    return jsonify({'error': 'Missing password'}), 400
+                if len(password) < 8:
+                    return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
             # For normal user creation (not initial setup), check create_users permission
             if not initial_setup_required:
@@ -1184,7 +1188,11 @@ class ChallengeCtlAPI:
                     )
                     return jsonify({'error': 'Permission denied: create_users permission required'}), 403
 
-            # Hash temporary password
+                # Auto-generate temporary password if not provided
+                if not password:
+                    password = secrets.token_urlsafe(12)  # Generates ~16 character password
+
+            # Hash password
             password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
             # Create temporary user (no TOTP, must complete setup on first login)
