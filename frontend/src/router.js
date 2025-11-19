@@ -30,19 +30,19 @@ const routes = [
     path: '/initial-setup',
     name: 'InitialSetup',
     component: InitialSetup,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, hideLayout: true }
   },
   {
     path: '/user-setup',
     name: 'UserSetup',
     component: UserSetup,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, hideLayout: true }
   },
   {
     path: '/change-password',
     name: 'ChangePassword',
     component: ChangePassword,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, hideLayout: true }
   },
   {
     path: '/admin',

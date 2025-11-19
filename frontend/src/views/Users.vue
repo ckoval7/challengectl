@@ -64,8 +64,30 @@
         </template>
       </el-table-column>
       <el-table-column
+        label="Permissions"
+        width="150"
+      >
+        <template #default="scope">
+          <el-tag
+            v-for="perm in (scope.row.permissions || [])"
+            :key="perm"
+            size="small"
+            style="margin: 2px"
+          >
+            {{ perm }}
+          </el-tag>
+          <el-tag
+            v-if="!scope.row.permissions || scope.row.permissions.length === 0"
+            size="small"
+            type="info"
+          >
+            None
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column
         label="Actions"
-        width="300"
+        width="400"
       >
         <template #default="scope">
           <el-button
@@ -74,6 +96,12 @@
             @click="toggleUserStatus(scope.row)"
           >
             {{ scope.row.enabled ? 'Disable' : 'Enable' }}
+          </el-button>
+          <el-button
+            size="small"
+            @click="showManagePermissionsDialog(scope.row)"
+          >
+            Permissions
           </el-button>
           <el-button
             size="small"
@@ -268,6 +296,59 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- Manage Permissions Dialog -->
+    <el-dialog
+      v-model="showPermissionsDialog"
+      title="Manage Permissions"
+      width="500px"
+    >
+      <div v-if="selectedUser">
+        <h3>User: {{ selectedUser.username }}</h3>
+
+        <h4 style="margin-top: 20px">Current Permissions:</h4>
+        <div v-if="userPermissions.length > 0" style="margin-bottom: 20px">
+          <el-tag
+            v-for="perm in userPermissions"
+            :key="perm"
+            closable
+            @close="revokePermission(perm)"
+            style="margin: 5px"
+          >
+            {{ perm }}
+          </el-tag>
+        </div>
+        <el-tag v-else type="info" style="margin-bottom: 20px">
+          No permissions granted
+        </el-tag>
+
+        <h4>Grant Permission:</h4>
+        <el-select
+          v-model="permissionToGrant"
+          placeholder="Select permission"
+          style="width: 100%; margin-bottom: 10px"
+        >
+          <el-option
+            label="create_users - Can create and manage users"
+            value="create_users"
+          />
+        </el-select>
+        <el-button
+          type="primary"
+          :disabled="!permissionToGrant"
+          @click="grantPermission"
+          style="width: 100%"
+        >
+          Grant Permission
+        </el-button>
+      </div>
+
+      <template #footer>
+        <el-button @click="showPermissionsDialog = false">
+          Close
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -289,6 +370,7 @@ export default {
     const showCreateDialog = ref(false)
     const showTotpDialog = ref(false)
     const showTempUserDialog = ref(false)
+    const showPermissionsDialog = ref(false)
     const creating = ref(false)
     const createFormRef = ref(null)
     const createForm = ref({
@@ -304,6 +386,9 @@ export default {
       provisioning_uri: '',
       qrCode: null
     })
+    const selectedUser = ref(null)
+    const userPermissions = ref([])
+    const permissionToGrant = ref('')
 
     const loadUsers = async () => {
       loading.value = true
@@ -458,6 +543,74 @@ export default {
       }
     }
 
+    const showManagePermissionsDialog = async (user) => {
+      selectedUser.value = user
+      permissionToGrant.value = ''
+      await loadUserPermissions(user.username)
+      showPermissionsDialog.value = true
+    }
+
+    const loadUserPermissions = async (username) => {
+      try {
+        const response = await api.get(`/users/${username}/permissions`)
+        userPermissions.value = response.data.permissions || []
+      } catch (error) {
+        ElMessage.error('Failed to load permissions')
+        userPermissions.value = []
+      }
+    }
+
+    const grantPermission = async () => {
+      if (!permissionToGrant.value || !selectedUser.value) return
+
+      try {
+        await api.post(`/users/${selectedUser.value.username}/permissions`, {
+          permission_name: permissionToGrant.value
+        })
+
+        ElMessage.success(`Granted permission: ${permissionToGrant.value}`)
+        permissionToGrant.value = ''
+        await loadUserPermissions(selectedUser.value.username)
+        await loadUsers() // Refresh user list to update permissions column
+      } catch (error) {
+        if (error.response?.data?.error) {
+          ElMessage.error(error.response.data.error)
+        } else {
+          ElMessage.error('Failed to grant permission')
+        }
+      }
+    }
+
+    const revokePermission = async (permission) => {
+      if (!selectedUser.value) return
+
+      try {
+        await ElMessageBox.confirm(
+          `Revoke "${permission}" permission from user "${selectedUser.value.username}"?`,
+          'Revoke Permission',
+          {
+            confirmButtonText: 'Revoke',
+            cancelButtonText: 'Cancel',
+            type: 'warning'
+          }
+        )
+
+        await api.delete(`/users/${selectedUser.value.username}/permissions/${permission}`)
+
+        ElMessage.success(`Revoked permission: ${permission}`)
+        await loadUserPermissions(selectedUser.value.username)
+        await loadUsers() // Refresh user list to update permissions column
+      } catch (error) {
+        if (error !== 'cancel') {
+          if (error.response?.data?.error) {
+            ElMessage.error(error.response.data.error)
+          } else {
+            ElMessage.error('Failed to revoke permission')
+          }
+        }
+      }
+    }
+
     onMounted(() => {
       loadUsers()
     })
@@ -468,17 +621,24 @@ export default {
       showCreateDialog,
       showTotpDialog,
       showTempUserDialog,
+      showPermissionsDialog,
       creating,
       createFormRef,
       createForm,
       totpInfo,
       tempUserInfo,
+      selectedUser,
+      userPermissions,
+      permissionToGrant,
       loadUsers,
       createUser,
       toggleUserStatus,
+      showManagePermissionsDialog,
       showResetTotpDialog,
       confirmDelete,
-      copyToClipboard
+      copyToClipboard,
+      grantPermission,
+      revokePermission
     }
   }
 }

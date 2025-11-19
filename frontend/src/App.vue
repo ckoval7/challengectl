@@ -118,9 +118,9 @@ export default {
     const isDark = ref(true) // Default to dark theme
     const conferenceName = ref('')
 
-    // Show admin layout for authenticated routes (but not during initial setup)
+    // Show admin layout for authenticated routes (but not during initial setup or user setup)
     const showAdminLayout = computed(() => {
-      return checkAuth() && route.meta.requiresAuth && !isInitialSetupRequired()
+      return checkAuth() && route.meta.requiresAuth && !route.meta.hideLayout
     })
 
     // Load conference name
