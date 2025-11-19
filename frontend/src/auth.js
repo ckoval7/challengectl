@@ -11,12 +11,17 @@ const isAuthenticated = computed(() => isAuthenticatedFlag.value)
 // Track if we've checked the session on this page load
 let sessionChecked = false
 
+// Track if initial setup is required (first-time admin login)
+const initialSetupRequired = ref(false)
+
 /**
  * Mark user as authenticated (called after successful login)
  * Note: Actual session token is in httpOnly cookie, not localStorage
+ * @param {boolean} setupRequired - Whether initial setup is required
  */
-export function login() {
+export function login(setupRequired = false) {
   isAuthenticatedFlag.value = true
+  initialSetupRequired.value = setupRequired
 }
 
 /**
@@ -25,6 +30,7 @@ export function login() {
  */
 export function logout() {
   isAuthenticatedFlag.value = false
+  initialSetupRequired.value = false
 
   // Disconnect WebSocket
   websocket.disconnect()
@@ -40,12 +46,14 @@ export async function validateSession() {
     const response = await api.get('/auth/session')
     if (response.data.authenticated) {
       isAuthenticatedFlag.value = true
+      initialSetupRequired.value = response.data.initial_setup_required || false
       sessionChecked = true
       return true
     }
   } catch (error) {
     // Session is invalid or expired
     isAuthenticatedFlag.value = false
+    initialSetupRequired.value = false
     sessionChecked = true
   }
   return false
@@ -66,6 +74,14 @@ export function checkAuth() {
  */
 export function isSessionChecked() {
   return sessionChecked
+}
+
+/**
+ * Check if initial setup is required
+ * @returns {boolean}
+ */
+export function isInitialSetupRequired() {
+  return initialSetupRequired.value
 }
 
 export { isAuthenticated }

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { checkAuth, validateSession, isSessionChecked } from './auth'
+import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired } from './auth'
 import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import ChallengeConfig from './views/ChallengeConfig.vue'
@@ -85,9 +85,22 @@ router.beforeEach(async (to, from, next) => {
 
   // If already authenticated in memory, fast path
   if (checkAuth()) {
+    // Check if initial setup is required
+    if (isInitialSetupRequired()) {
+      // User must complete initial setup before accessing other routes
+      if (to.path !== '/initial-setup' && to.path !== '/login') {
+        next('/initial-setup')
+        return
+      }
+    }
+
     if (to.path === '/login') {
-      // Already logged in, redirect to admin dashboard
-      next('/admin')
+      // Already logged in, redirect appropriately
+      if (isInitialSetupRequired()) {
+        next('/initial-setup')
+      } else {
+        next('/admin')
+      }
     } else {
       next()
     }
@@ -100,9 +113,22 @@ router.beforeEach(async (to, from, next) => {
     const isValid = await validateSession()
 
     if (isValid) {
-      // Session is valid, allow navigation
+      // Session is valid, check if initial setup is required
+      if (isInitialSetupRequired()) {
+        // User must complete initial setup before accessing other routes
+        if (to.path !== '/initial-setup' && to.path !== '/login') {
+          next('/initial-setup')
+          return
+        }
+      }
+
+      // Allow navigation
       if (to.path === '/login') {
-        next('/admin')
+        if (isInitialSetupRequired()) {
+          next('/initial-setup')
+        } else {
+          next('/admin')
+        }
       } else {
         next()
       }

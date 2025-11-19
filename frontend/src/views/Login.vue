@@ -177,7 +177,7 @@ export default {
         } else {
           // No TOTP required - user logged in directly
           // Session token is in httpOnly cookie (managed by browser)
-          login()
+          login(response.data.initial_setup_required)
 
           // Check if initial setup is required
           if (response.data.initial_setup_required) {
