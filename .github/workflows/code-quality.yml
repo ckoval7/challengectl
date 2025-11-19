@@ -59,6 +59,8 @@ jobs:
           pip install -r requirements-server.txt || true
           safety scan --output json > safety-report.json || true
           safety scan || true
+        with:
+          api-key: ${{ secrets.SAFETY_API_KEY }}
 
       - name: Upload safety report
         if: always()
