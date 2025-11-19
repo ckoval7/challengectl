@@ -13,9 +13,9 @@
         style="margin-bottom: 20px"
       >
         <template #title>
-          Set up your account within 24 hours
+          You must set up your account within 24 hours.
         </template>
-        <p>Your account is temporary. Complete setup by changing your password and enabling 2FA.</p>
+        <p>Please complete the setup process by changing your password and enabling two-factor authentication. If setup is not completed within 24 hours, your account will be automatically disabled.</p>
       </el-alert>
 
       <el-form
@@ -81,11 +81,11 @@
           style="margin-bottom: 20px"
         >
           <template #title>
-            Set up two-factor authentication
+            Set up two-factor authentication.
           </template>
         </el-alert>
 
-        <p><strong>Step 1:</strong> Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):</p>
+        <p><strong>Step 1:</strong> Scan this QR code with your authenticator app (such as Google Authenticator or Authy).</p>
 
         <div
           v-if="totpInfo.qrCode"
@@ -97,7 +97,7 @@
           >
         </div>
 
-        <p><strong>Step 2:</strong> Or manually enter this secret:</p>
+        <p><strong>Step 2:</strong> Alternatively, you can manually enter this secret into your authenticator app.</p>
         <el-input
           :model-value="totpInfo.totp_secret"
           readonly
@@ -110,7 +110,7 @@
           </template>
         </el-input>
 
-        <p><strong>Step 3:</strong> Enter a code from your authenticator app to verify:</p>
+        <p><strong>Step 3:</strong> Enter the 6-digit code from your authenticator app to verify the setup.</p>
         <el-input
           v-model="totpVerifyCode"
           placeholder="000000"
@@ -283,7 +283,7 @@ export default {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f5f5;
+  background-color: var(--el-bg-color-page);
   padding: 20px;
 }
 
@@ -298,7 +298,7 @@ export default {
 
 .card-header h2 {
   margin: 0;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .totp-setup {
@@ -308,6 +308,7 @@ export default {
 .totp-setup p {
   margin-bottom: 15px;
   text-align: left;
+  color: var(--el-text-color-regular);
 }
 
 .qr-code {
