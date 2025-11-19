@@ -130,6 +130,7 @@
         ref="createFormRef"
         :model="createForm"
         label-width="140px"
+        @submit.prevent="createUser"
       >
         <el-form-item
           label="Username"
@@ -139,6 +140,7 @@
           <el-input
             v-model="createForm.username"
             placeholder="Enter username"
+            @keyup.enter="createUser"
           />
         </el-form-item>
         <el-alert
