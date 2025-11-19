@@ -127,6 +127,31 @@ class ChallengeCtlServer:
             replace_existing=True
         )
 
+        def cleanup_stale_temporary_users():
+            """Cleanup task to disable temporary users that haven't completed setup within 24 hours."""
+            try:
+                stale_users = self.db.get_stale_temporary_users(hours=24)
+                if stale_users:
+                    for user in stale_users:
+                        username = user['username']
+                        self.db.disable_user(username)
+                        logger.warning(
+                            f"SECURITY: Disabled stale temporary user '{username}' "
+                            f"(created at {user['created_at']}, did not complete setup within 24 hours)"
+                        )
+                    logger.info(f"Cleanup: disabled {len(stale_users)} stale temporary user(s)")
+            except Exception as e:
+                logger.error(f"Error in cleanup_stale_temporary_users: {e}")
+
+        # Run temporary user cleanup every 5 minutes
+        self.scheduler.add_job(
+            cleanup_stale_temporary_users,
+            'interval',
+            seconds=300,  # 5 minutes
+            id='cleanup_temporary_users',
+            replace_existing=True
+        )
+
         def check_auto_pause_resume():
             """Check if system should be auto-paused or resumed based on daily hours."""
             try:

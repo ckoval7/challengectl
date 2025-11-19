@@ -424,6 +424,35 @@ class ChallengeCtlAPI:
 
         return decorated_function
 
+    def require_permission(self, permission_name: str):
+        """Decorator factory to require a specific permission.
+
+        Usage: @require_permission('create_users')
+
+        Must be used after @require_admin_auth decorator.
+        """
+        def decorator(f):
+            @wraps(f)
+            def decorated_function(*args, **kwargs):
+                # Get username from request context (set by require_admin_auth)
+                username = getattr(request, 'admin_username', None)
+
+                if not username:
+                    return jsonify({'error': 'Authentication required'}), 401
+
+                # Check if user has the required permission
+                if not self.db.has_permission(username, permission_name):
+                    logger.warning(
+                        f"SECURITY: Permission denied - username='{username}' permission='{permission_name}' "
+                        f"ip={request.remote_addr} path={request.path}"
+                    )
+                    return jsonify({'error': f'Permission denied: {permission_name} required'}), 403
+
+                return f(*args, **kwargs)
+
+            return decorated_function
+        return decorator
+
     def create_session(self, username: str, totp_verified: bool = False) -> str:
         """Create a new session token for a user (stored in database).
 
@@ -587,9 +616,57 @@ class ChallengeCtlAPI:
                 )
                 return jsonify({'error': 'Invalid credentials'}), 401
 
+            # Check if user is temporary (requires setup)
+            is_temporary = user.get('is_temporary', False)
+
             # Check if user has TOTP configured
             totp_secret = user.get('totp_secret')
             has_totp = totp_secret is not None and totp_secret != ''
+
+            # Temporary users need to complete setup (change password + set up TOTP)
+            if is_temporary:
+                # Create a limited session for setup (not yet TOTP verified)
+                session_token = self.create_session(username, totp_verified=False)
+
+                # Generate CSRF token for this session
+                csrf_token = self.generate_csrf_token()
+
+                # Set httpOnly cookie for security (prevents XSS attacks)
+                response = make_response(jsonify({
+                    'setup_required': True,
+                    'username': username,
+                    'message': 'Account setup required. Please change your password and set up 2FA.'
+                }), 200)
+
+                # Get security settings (auto-detects HTTP vs HTTPS)
+                cookie_settings = self.get_cookie_security_settings()
+
+                # Set secure httpOnly cookie for session token
+                response.set_cookie(
+                    'session_token',
+                    session_token,
+                    httponly=True,
+                    secure=cookie_settings['secure'],
+                    samesite=cookie_settings['samesite'],
+                    max_age=86400
+                )
+
+                # Set CSRF token cookie
+                response.set_cookie(
+                    'csrf_token',
+                    csrf_token,
+                    httponly=False,
+                    secure=cookie_settings['secure'],
+                    samesite=cookie_settings['samesite'],
+                    max_age=86400
+                )
+
+                logger.info(
+                    f"SECURITY: Temporary user login - username='{username}' ip={request.remote_addr} "
+                    f"setup_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+                )
+
+                return response
 
             if has_totp:
                 # Create session (not yet TOTP verified)
@@ -919,6 +996,81 @@ class ChallengeCtlAPI:
 
             return jsonify({'status': 'password changed'}), 200
 
+        @self.app.route('/api/auth/complete-setup', methods=['POST'])
+        def complete_setup():
+            """Complete setup for temporary users (change password + set up TOTP)."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            # Get session token from cookie
+            session_token = request.cookies.get('session_token')
+
+            if not session_token:
+                return jsonify({'error': 'Missing session token'}), 401
+
+            # Get session from database
+            session = self.db.get_session(session_token)
+
+            if not session:
+                return jsonify({'error': 'Invalid or expired session'}), 401
+
+            # Check if session is expired
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.utcnow() > expires:
+                self.db.delete_session(session_token)
+                return jsonify({'error': 'Session expired'}), 401
+
+            username = session['username']
+            new_password = data.get('new_password')
+            totp_secret = data.get('totp_secret')
+
+            if not new_password or not totp_secret:
+                return jsonify({'error': 'Missing new_password or totp_secret'}), 400
+
+            if len(new_password) < 8:
+                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+            # Verify user is temporary
+            user = self.db.get_user(username)
+
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            if not user.get('is_temporary', False):
+                return jsonify({'error': 'This endpoint is only for temporary users'}), 400
+
+            # Hash new password
+            password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            # Complete user setup (set password, TOTP, clear temporary flag)
+            if not self.db.complete_user_setup(username, password_hash, totp_secret):
+                return jsonify({'error': 'Failed to complete setup'}), 500
+
+            # Mark session as TOTP verified (user can now access the system)
+            self.db.update_session_totp(session_token)
+
+            # Update last login timestamp
+            self.db.update_last_login(username)
+
+            # Generate TOTP provisioning URI for QR code
+            totp = pyotp.TOTP(totp_secret)
+            conference_name = self.get_conference_name()
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
+
+            logger.info(
+                f"SECURITY: User setup completed - username='{username}' ip={request.remote_addr} "
+                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+            )
+
+            return jsonify({
+                'status': 'setup_complete',
+                'username': username,
+                'totp_secret': totp_secret,
+                'provisioning_uri': provisioning_uri
+            }), 200
+
         # User management endpoints (admin only)
         @self.app.route('/api/users', methods=['GET'])
         @self.require_admin_auth
@@ -931,7 +1083,7 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         @self.require_csrf
         def create_user_endpoint():
-            """Create a new user."""
+            """Create a new user (temporary by default, requires setup on first login)."""
             data = request.json
 
             if not data:
@@ -939,6 +1091,7 @@ class ChallengeCtlAPI:
 
             username = data.get('username')
             password = data.get('password')
+            permissions = data.get('permissions', [])  # List of permission names to grant
 
             if not username or not password:
                 return jsonify({'error': 'Missing username or password'}), 400
@@ -946,36 +1099,77 @@ class ChallengeCtlAPI:
             if len(password) < 8:
                 return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
-            # Generate TOTP secret
-            totp_secret = pyotp.random_base32()
+            # Check if this is initial setup (special case - no permission check needed)
+            initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
 
-            # Hash password
+            # For normal user creation (not initial setup), check create_users permission
+            if not initial_setup_required:
+                creator_username = request.admin_username
+                if not self.db.has_permission(creator_username, 'create_users'):
+                    logger.warning(
+                        f"SECURITY: User creation denied - username='{creator_username}' "
+                        f"missing 'create_users' permission ip={request.remote_addr}"
+                    )
+                    return jsonify({'error': 'Permission denied: create_users permission required'}), 403
+
+            # Hash temporary password
             password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-            # Create user
-            if not self.db.create_user(username, password_hash, totp_secret):
-                return jsonify({'error': 'User already exists'}), 409
+            # Create temporary user (no TOTP, must complete setup on first login)
+            # Note: For initial setup, we create a full user with TOTP
+            if initial_setup_required:
+                # Initial setup creates a full admin user with TOTP
+                totp_secret = pyotp.random_base32()
+                if not self.db.create_user(username, password_hash, totp_secret, is_temporary=False):
+                    return jsonify({'error': 'User already exists'}), 409
 
-            # Mark initial setup as complete if this is being done during initial setup
-            if self.db.get_system_state('initial_setup_required', 'false') == 'true':
+                # Mark initial setup as complete
                 self.db.set_system_state('initial_setup_required', 'false')
                 # Disable the default admin account for security
                 self.db.disable_user('admin')
                 logger.info("Initial setup completed - default admin account disabled")
 
-            # Generate TOTP provisioning URI
-            totp = pyotp.TOTP(totp_secret)
-            conference_name = self.get_conference_name()
-            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
+                # Grant full permissions to first user
+                self.db.grant_permission(username, 'create_users', 'system')
 
-            logger.info(f"User {username} created by {request.admin_username}")
+                # Generate TOTP provisioning URI
+                totp = pyotp.TOTP(totp_secret)
+                conference_name = self.get_conference_name()
+                provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
-            return jsonify({
-                'status': 'created',
-                'username': username,
-                'totp_secret': totp_secret,
-                'provisioning_uri': provisioning_uri
-            }), 201
+                logger.info(f"Initial admin user {username} created during setup")
+
+                return jsonify({
+                    'status': 'created',
+                    'username': username,
+                    'totp_secret': totp_secret,
+                    'provisioning_uri': provisioning_uri,
+                    'is_temporary': False
+                }), 201
+            else:
+                # Normal user creation - create temporary user
+                if not self.db.create_user(username, password_hash, totp_secret=None, is_temporary=True):
+                    return jsonify({'error': 'User already exists'}), 409
+
+                # Grant requested permissions to the new user
+                creator_username = request.admin_username
+                for permission in permissions:
+                    if permission in ['create_users']:  # Whitelist of valid permissions
+                        self.db.grant_permission(username, permission, creator_username)
+                        logger.info(f"Granted permission '{permission}' to new user {username}")
+
+                logger.info(
+                    f"Temporary user {username} created by {creator_username} "
+                    f"(must complete setup within 24 hours)"
+                )
+
+                return jsonify({
+                    'status': 'created',
+                    'username': username,
+                    'is_temporary': True,
+                    'setup_deadline_hours': 24,
+                    'temporary_password': password  # Return temp password so admin can share it
+                }), 201
 
         @self.app.route('/api/users/<username>', methods=['PUT'])
         @self.require_admin_auth
@@ -1121,6 +1315,81 @@ class ChallengeCtlAPI:
             logger.info(f"Password reset for user {username} by {request.admin_username} (invalidated {invalidated_count} session(s))")
 
             return jsonify({'status': 'password_reset'}), 200
+
+        # Permission management endpoints
+        @self.app.route('/api/users/<username>/permissions', methods=['GET'])
+        @self.require_admin_auth
+        def get_user_permissions_endpoint(username):
+            """Get permissions for a specific user."""
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            permissions = self.db.get_user_permissions(username)
+
+            return jsonify({
+                'username': username,
+                'permissions': permissions
+            }), 200
+
+        @self.app.route('/api/users/<username>/permissions', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('create_users')  # Only users with create_users can manage permissions
+        def grant_permission_endpoint(username):
+            """Grant a permission to a user."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            permission_name = data.get('permission')
+
+            if not permission_name:
+                return jsonify({'error': 'Missing permission field'}), 400
+
+            # Whitelist of valid permissions
+            valid_permissions = ['create_users']
+
+            if permission_name not in valid_permissions:
+                return jsonify({'error': f'Invalid permission: {permission_name}'}), 400
+
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Grant permission
+            if not self.db.grant_permission(username, permission_name, request.admin_username):
+                return jsonify({'error': 'Failed to grant permission'}), 500
+
+            logger.info(f"Permission '{permission_name}' granted to user {username} by {request.admin_username}")
+
+            return jsonify({'status': 'permission_granted', 'permission': permission_name}), 200
+
+        @self.app.route('/api/users/<username>/permissions/<permission_name>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('create_users')  # Only users with create_users can manage permissions
+        def revoke_permission_endpoint(username, permission_name):
+            """Revoke a permission from a user."""
+            # Check user exists
+            user = self.db.get_user(username)
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Don't allow revoking your own permissions
+            if username == request.admin_username:
+                return jsonify({'error': 'Cannot revoke your own permissions'}), 400
+
+            # Revoke permission
+            if not self.db.revoke_permission(username, permission_name):
+                return jsonify({'error': 'Failed to revoke permission'}), 500
+
+            logger.info(f"Permission '{permission_name}' revoked from user {username} by {request.admin_username}")
+
+            return jsonify({'status': 'permission_revoked', 'permission': permission_name}), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])

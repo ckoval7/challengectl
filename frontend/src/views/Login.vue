@@ -169,8 +169,16 @@ export default {
           password: form.value.password
         })
 
+        // Check if account setup is required (temporary user)
+        if (response.data.setup_required) {
+          // Temporary user needs to complete setup
+          // Session token is in httpOnly cookie
+          login(false)
+          ElMessage.info('Account setup required. Please change your password and set up 2FA.')
+          router.push('/user-setup')
+        }
         // Check if TOTP is required
-        if (response.data.totp_required) {
+        else if (response.data.totp_required) {
           // Move to TOTP step (session token is in httpOnly cookie)
           showTotpStep.value = true
           ElMessage.success('Password verified. Please enter your TOTP code.')

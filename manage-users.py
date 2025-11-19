@@ -36,8 +36,18 @@ def get_conference_name(config: dict) -> str:
     return config.get('conference', {}).get('name', 'ChallengeCtl')
 
 
-def create_user(db: Database, username: str, password: str = None, conference_name: str = "ChallengeCtl"):
-    """Create a new admin user with TOTP secret."""
+def create_user(db: Database, username: str, password: str = None, conference_name: str = "ChallengeCtl",
+               temporary: bool = False, permissions: list = None):
+    """Create a new admin user with optional TOTP secret.
+
+    Args:
+        db: Database instance
+        username: Username for the new user
+        password: Password (will prompt if not provided)
+        conference_name: Conference name for TOTP provisioning
+        temporary: If True, creates a temporary user without TOTP (must complete setup within 24h)
+        permissions: List of permissions to grant to the user
+    """
     # Check if user already exists
     existing_user = db.get_user(username)
     if existing_user:
@@ -60,42 +70,72 @@ def create_user(db: Database, username: str, password: str = None, conference_na
     # Hash password
     password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-    # Generate TOTP secret
-    totp_secret = pyotp.random_base32()
+    if temporary:
+        # Create temporary user without TOTP (user must complete setup on first login)
+        if db.create_user(username, password_hash, totp_secret=None, is_temporary=True):
+            print(f"\n✓ Temporary user '{username}' created successfully!")
+            print(f"\nTemporary Password: {password}")
+            print("\n⚠ Important:")
+            print("  - User must complete setup within 24 hours or account will be disabled")
+            print("  - On first login, user must change password and set up 2FA")
+            print("  - Share the temporary password securely with the user")
 
-    # Create user
-    if db.create_user(username, password_hash, totp_secret):
-        print(f"\nUser '{username}' created successfully!")
-        print(f"\nTOTP Secret: {totp_secret}")
-        print("\nSetup TOTP in your authenticator app:")
-        print("1. Scan the QR code below, OR")
-        print("2. Manually enter the secret above")
+            # Grant permissions
+            if permissions:
+                for perm in permissions:
+                    if db.grant_permission(username, perm, 'cli-admin'):
+                        print(f"  ✓ Granted permission: {perm}")
+                    else:
+                        print(f"  ✗ Failed to grant permission: {perm}")
 
-        # Generate QR code
-        totp = pyotp.TOTP(totp_secret)
-        provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
-
-        print("\n QR Code:")
-        qr = qrcode.QRCode()
-        qr.add_data(provisioning_uri)
-        qr.print_ascii(invert=True)
-
-        print(f"\nProvisioning URI: {provisioning_uri}")
-        print("\nTest your TOTP code before logging in:")
-        while True:
-            test_code = input("Enter TOTP code (or 'skip' to continue): ").strip()
-            if test_code.lower() == 'skip':
-                break
-            if totp.verify(test_code):
-                print("✓ TOTP code is valid!")
-                break
-            else:
-                print("✗ Invalid TOTP code. Try again.")
-
-        return 0
+            return 0
+        else:
+            print(f"Error: Failed to create user '{username}'")
+            return 1
     else:
-        print(f"Error: Failed to create user '{username}'")
-        return 1
+        # Create permanent user with TOTP
+        totp_secret = pyotp.random_base32()
+
+        if db.create_user(username, password_hash, totp_secret, is_temporary=False):
+            print(f"\n✓ User '{username}' created successfully!")
+            print(f"\nTOTP Secret: {totp_secret}")
+            print("\nSetup TOTP in your authenticator app:")
+            print("1. Scan the QR code below, OR")
+            print("2. Manually enter the secret above")
+
+            # Generate QR code
+            totp = pyotp.TOTP(totp_secret)
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
+
+            print("\nQR Code:")
+            qr = qrcode.QRCode()
+            qr.add_data(provisioning_uri)
+            qr.print_ascii(invert=True)
+
+            print(f"\nProvisioning URI: {provisioning_uri}")
+            print("\nTest your TOTP code before logging in:")
+            while True:
+                test_code = input("Enter TOTP code (or 'skip' to continue): ").strip()
+                if test_code.lower() == 'skip':
+                    break
+                if totp.verify(test_code):
+                    print("✓ TOTP code is valid!")
+                    break
+                else:
+                    print("✗ Invalid TOTP code. Try again.")
+
+            # Grant permissions
+            if permissions:
+                for perm in permissions:
+                    if db.grant_permission(username, perm, 'cli-admin'):
+                        print(f"  ✓ Granted permission: {perm}")
+                    else:
+                        print(f"  ✗ Failed to grant permission: {perm}")
+
+            return 0
+        else:
+            print(f"Error: Failed to create user '{username}'")
+            return 1
 
 
 def list_users(db: Database):
@@ -220,6 +260,69 @@ def reset_totp(db: Database, username: str, conference_name: str = "ChallengeCtl
     return 0
 
 
+def grant_permission(db: Database, username: str, permission: str):
+    """Grant a permission to a user."""
+    # Check if user exists
+    user = db.get_user(username)
+    if not user:
+        print(f"Error: User '{username}' does not exist")
+        return 1
+
+    # Valid permissions
+    valid_permissions = ['create_users']
+
+    if permission not in valid_permissions:
+        print(f"Error: Invalid permission '{permission}'")
+        print(f"Valid permissions: {', '.join(valid_permissions)}")
+        return 1
+
+    # Grant permission
+    if db.grant_permission(username, permission, 'cli-admin'):
+        print(f"✓ Granted permission '{permission}' to user '{username}'")
+        return 0
+    else:
+        print(f"Error: Failed to grant permission (may already exist)")
+        return 1
+
+
+def revoke_permission(db: Database, username: str, permission: str):
+    """Revoke a permission from a user."""
+    # Check if user exists
+    user = db.get_user(username)
+    if not user:
+        print(f"Error: User '{username}' does not exist")
+        return 1
+
+    # Revoke permission
+    if db.revoke_permission(username, permission):
+        print(f"✓ Revoked permission '{permission}' from user '{username}'")
+        return 0
+    else:
+        print(f"Error: Failed to revoke permission (may not exist)")
+        return 1
+
+
+def list_permissions(db: Database, username: str):
+    """List permissions for a user."""
+    # Check if user exists
+    user = db.get_user(username)
+    if not user:
+        print(f"Error: User '{username}' does not exist")
+        return 1
+
+    # Get permissions
+    permissions = db.get_user_permissions(username)
+
+    print(f"\nPermissions for user '{username}':")
+    if permissions:
+        for perm in permissions:
+            print(f"  • {perm}")
+    else:
+        print("  (none)")
+
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Manage admin users for ChallengeCtl server'
@@ -243,6 +346,10 @@ def main():
     create_parser = subparsers.add_parser('create', help='Create a new user')
     create_parser.add_argument('username', help='Username for the new user')
     create_parser.add_argument('--password', help='Password (will prompt if not provided)')
+    create_parser.add_argument('--temporary', action='store_true',
+                             help='Create temporary user (no TOTP, must complete setup within 24h)')
+    create_parser.add_argument('--grant', action='append', dest='permissions',
+                             help='Grant permission(s) to the user (can be used multiple times)')
 
     # List users
     subparsers.add_parser('list', help='List all users')
@@ -264,6 +371,20 @@ def main():
     totp_parser = subparsers.add_parser('reset-totp', help='Reset TOTP secret for a user')
     totp_parser.add_argument('username', help='Username')
 
+    # Grant permission
+    grant_perm_parser = subparsers.add_parser('grant-permission', help='Grant a permission to a user')
+    grant_perm_parser.add_argument('username', help='Username')
+    grant_perm_parser.add_argument('permission', help='Permission name (e.g., create_users)')
+
+    # Revoke permission
+    revoke_perm_parser = subparsers.add_parser('revoke-permission', help='Revoke a permission from a user')
+    revoke_perm_parser.add_argument('username', help='Username')
+    revoke_perm_parser.add_argument('permission', help='Permission name')
+
+    # List permissions
+    list_perm_parser = subparsers.add_parser('list-permissions', help='List permissions for a user')
+    list_perm_parser.add_argument('username', help='Username')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -279,7 +400,8 @@ def main():
 
     # Execute command
     if args.command == 'create':
-        return create_user(db, args.username, args.password, conference_name)
+        return create_user(db, args.username, args.password, conference_name,
+                          temporary=args.temporary, permissions=args.permissions)
     elif args.command == 'list':
         return list_users(db)
     elif args.command == 'disable':
@@ -290,6 +412,12 @@ def main():
         return change_password(db, args.username, args.password)
     elif args.command == 'reset-totp':
         return reset_totp(db, args.username, conference_name)
+    elif args.command == 'grant-permission':
+        return grant_permission(db, args.username, args.permission)
+    elif args.command == 'revoke-permission':
+        return revoke_permission(db, args.username, args.permission)
+    elif args.command == 'list-permissions':
+        return list_permissions(db, args.username)
     else:
         parser.print_help()
         return 1

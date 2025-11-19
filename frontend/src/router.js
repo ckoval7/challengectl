@@ -9,6 +9,7 @@ import PublicDashboard from './views/PublicDashboard.vue'
 import Login from './views/Login.vue'
 import ChangePassword from './views/ChangePassword.vue'
 import InitialSetup from './views/InitialSetup.vue'
+import UserSetup from './views/UserSetup.vue'
 
 const routes = [
   {
@@ -29,6 +30,12 @@ const routes = [
     path: '/initial-setup',
     name: 'InitialSetup',
     component: InitialSetup,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/user-setup',
+    name: 'UserSetup',
+    component: UserSetup,
     meta: { requiresAuth: true }
   },
   {
