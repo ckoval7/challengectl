@@ -153,7 +153,6 @@
           </el-table-column>
         </el-table>
       </el-card>
-
     </div>
 
     <!-- Empty State -->

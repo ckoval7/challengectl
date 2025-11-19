@@ -2,38 +2,71 @@
   <div class="users-container">
     <div class="header">
       <h1>User Management</h1>
-      <el-button type="primary" @click="showCreateDialog = true">
+      <el-button
+        type="primary"
+        @click="showCreateDialog = true"
+      >
         <el-icon><Plus /></el-icon>
         Create User
       </el-button>
     </div>
 
-    <el-table :data="users" style="width: 100%" v-loading="loading">
-      <el-table-column prop="username" label="Username" />
-      <el-table-column label="Status" width="120">
+    <el-table
+      v-loading="loading"
+      :data="users"
+      style="width: 100%"
+    >
+      <el-table-column
+        prop="username"
+        label="Username"
+      />
+      <el-table-column
+        label="Status"
+        width="120"
+      >
         <template #default="scope">
           <el-tag :type="scope.row.enabled ? 'success' : 'danger'">
             {{ scope.row.enabled ? 'Enabled' : 'Disabled' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Password Status" width="150">
+      <el-table-column
+        label="Password Status"
+        width="150"
+      >
         <template #default="scope">
-          <el-tag v-if="scope.row.password_change_required" type="warning">
+          <el-tag
+            v-if="scope.row.password_change_required"
+            type="warning"
+          >
             Change Required
           </el-tag>
-          <el-tag v-else type="success">
+          <el-tag
+            v-else
+            type="success"
+          >
             OK
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="Created" width="180" />
-      <el-table-column prop="last_login" label="Last Login" width="180">
+      <el-table-column
+        prop="created_at"
+        label="Created"
+        width="180"
+      />
+      <el-table-column
+        prop="last_login"
+        label="Last Login"
+        width="180"
+      >
         <template #default="scope">
           {{ scope.row.last_login || 'Never' }}
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="300">
+      <el-table-column
+        label="Actions"
+        width="300"
+      >
         <template #default="scope">
           <el-button
             size="small"
@@ -60,7 +93,11 @@
     </el-table>
 
     <!-- Create User Dialog -->
-    <el-dialog v-model="showCreateDialog" title="Create New User" width="500px">
+    <el-dialog
+      v-model="showCreateDialog"
+      title="Create New User"
+      width="500px"
+    >
       <el-form
         ref="createFormRef"
         :model="createForm"
@@ -71,7 +108,10 @@
           prop="username"
           :rules="[{ required: true, message: 'Please enter username' }]"
         >
-          <el-input v-model="createForm.username" placeholder="Enter username" />
+          <el-input
+            v-model="createForm.username"
+            placeholder="Enter username"
+          />
         </el-form-item>
         <el-form-item
           label="Password"
@@ -91,16 +131,30 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="showCreateDialog = false">Cancel</el-button>
-        <el-button type="primary" @click="createUser" :loading="creating">
+        <el-button @click="showCreateDialog = false">
+          Cancel
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="creating"
+          @click="createUser"
+        >
           Create
         </el-button>
       </template>
     </el-dialog>
 
     <!-- TOTP Secret Dialog -->
-    <el-dialog v-model="showTotpDialog" title="TOTP Secret" width="600px">
-      <el-alert type="success" :closable="false" style="margin-bottom: 20px">
+    <el-dialog
+      v-model="showTotpDialog"
+      title="TOTP Secret"
+      width="600px"
+    >
+      <el-alert
+        type="success"
+        :closable="false"
+        style="margin-bottom: 20px"
+      >
         <template #title>
           User created successfully! Save these details:
         </template>
@@ -129,13 +183,22 @@
           <li>Save the credentials securely and share them with the user</li>
         </ol>
 
-        <div class="qr-code" v-if="totpInfo.qrCode">
-          <img :src="totpInfo.qrCode" alt="QR Code" />
+        <div
+          v-if="totpInfo.qrCode"
+          class="qr-code"
+        >
+          <img
+            :src="totpInfo.qrCode"
+            alt="QR Code"
+          >
         </div>
       </div>
 
       <template #footer>
-        <el-button type="primary" @click="showTotpDialog = false">
+        <el-button
+          type="primary"
+          @click="showTotpDialog = false"
+        >
           Done
         </el-button>
       </template>

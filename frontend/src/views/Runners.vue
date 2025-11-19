@@ -4,432 +4,509 @@
       <h1>Runners</h1>
     </div>
 
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs
+      v-model="activeTab"
+      type="border-card"
+    >
       <!-- Runners Tab -->
-      <el-tab-pane label="Runners" name="runners">
+      <el-tab-pane
+        label="Runners"
+        name="runners"
+      >
         <div class="tab-header">
-          <el-button type="primary" @click="showAddRunnerDialog">
+          <el-button
+            type="primary"
+            @click="showAddRunnerDialog"
+          >
             Add Runner
           </el-button>
         </div>
 
         <el-table
-      :data="runners"
-      style="width: 100%"
-    >
-      <el-table-column
-        prop="runner_id"
-        label="Runner ID"
-        width="180"
-      />
-      <el-table-column
-        prop="hostname"
-        label="Hostname"
-        width="200"
-      />
-      <el-table-column
-        prop="ip_address"
-        label="IP Address"
-        width="150"
-      />
-      <el-table-column
-        label="Status"
-        width="150"
-      >
-        <template #default="scope">
-          <el-space>
-            <el-tag
-              :type="scope.row.status === 'online' ? 'success' : 'info'"
-              size="small"
-            >
-              {{ scope.row.status }}
-            </el-tag>
-            <el-tag
-              v-if="!scope.row.enabled"
-              type="warning"
-              size="small"
-            >
-              disabled
-            </el-tag>
-          </el-space>
-        </template>
-      </el-table-column>
-      <el-table-column
-        label="Devices"
-        width="100"
-      >
-        <template #default="scope">
-          {{ scope.row.devices?.length || 0 }}
-        </template>
-      </el-table-column>
-      <el-table-column
-        label="Last Heartbeat"
-        width="180"
-      >
-        <template #default="scope">
-          {{ formatTimestamp(scope.row.last_heartbeat) }}
-        </template>
-      </el-table-column>
-      <el-table-column
-        label="Actions"
-        width="300"
-      >
-        <template #default="scope">
-          <el-space>
-            <el-button
-              v-if="scope.row.enabled"
-              size="small"
-              type="warning"
-              @click="disableRunner(scope.row.runner_id)"
-            >
-              Disable
-            </el-button>
-            <el-button
-              v-else
-              size="small"
-              type="success"
-              @click="enableRunner(scope.row.runner_id)"
-            >
-              Enable
-            </el-button>
-            <el-button
-              size="small"
-              type="primary"
-              @click="showReEnrollDialog(scope.row.runner_id)"
-            >
-              Re-enroll
-            </el-button>
-            <el-button
-              size="small"
-              type="danger"
-              @click="kickRunner(scope.row.runner_id)"
-            >
-              Kick
-            </el-button>
-          </el-space>
-        </template>
-      </el-table-column>
-      <el-table-column type="expand">
-        <template #default="scope">
-          <div style="padding: 20px">
-            <h4>Devices:</h4>
-            <el-table
-              :data="scope.row.devices || []"
-              style="width: 100%"
-            >
-              <el-table-column
-                prop="device_id"
-                label="ID"
-                width="80"
-              />
-              <el-table-column
-                prop="model"
-                label="Model"
-                width="150"
-              />
-              <el-table-column
-                prop="name"
-                label="Name/Serial"
-              />
-              <el-table-column label="Frequency Limits">
-                <template #default="devScope">
-                  {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
+          :data="runners"
+          style="width: 100%"
+        >
+          <el-table-column
+            prop="runner_id"
+            label="Runner ID"
+            width="180"
+          />
+          <el-table-column
+            prop="hostname"
+            label="Hostname"
+            width="200"
+          />
+          <el-table-column
+            prop="ip_address"
+            label="IP Address"
+            width="150"
+          />
+          <el-table-column
+            label="Status"
+            width="150"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-tag
+                  :type="scope.row.status === 'online' ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ scope.row.status }}
+                </el-tag>
+                <el-tag
+                  v-if="!scope.row.enabled"
+                  type="warning"
+                  size="small"
+                >
+                  disabled
+                </el-tag>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Devices"
+            width="100"
+          >
+            <template #default="scope">
+              {{ scope.row.devices?.length || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Last Heartbeat"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            width="300"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-button
+                  v-if="scope.row.enabled"
+                  size="small"
+                  type="warning"
+                  @click="disableRunner(scope.row.runner_id)"
+                >
+                  Disable
+                </el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  type="success"
+                  @click="enableRunner(scope.row.runner_id)"
+                >
+                  Enable
+                </el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  @click="showReEnrollDialog(scope.row.runner_id)"
+                >
+                  Re-enroll
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  @click="kickRunner(scope.row.runner_id)"
+                >
+                  Kick
+                </el-button>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column type="expand">
+            <template #default="scope">
+              <div style="padding: 20px">
+                <h4>Devices:</h4>
+                <el-table
+                  :data="scope.row.devices || []"
+                  style="width: 100%"
+                >
+                  <el-table-column
+                    prop="device_id"
+                    label="ID"
+                    width="80"
+                  />
+                  <el-table-column
+                    prop="model"
+                    label="Model"
+                    width="150"
+                  />
+                  <el-table-column
+                    prop="name"
+                    label="Name/Serial"
+                  />
+                  <el-table-column label="Frequency Limits">
+                    <template #default="devScope">
+                      {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
 
-    <!-- Add Runner Dialog -->
-    <el-dialog
-      v-model="addRunnerDialogVisible"
-      title="Add Runner"
-      width="800px"
-      :close-on-click-modal="false"
-    >
-      <div v-if="!enrollmentData">
-        <!-- Step 1: Enter runner name and configuration -->
-        <el-form :model="addRunnerForm" label-width="150px">
-          <el-form-item label="Runner Name">
-            <el-input
-              v-model="addRunnerForm.runnerName"
-              placeholder="e.g., sdr-station-1"
-              @keyup.enter="generateEnrollmentToken"
-            />
-          </el-form-item>
-          <el-form-item label="Token Expiry">
-            <el-select v-model="addRunnerForm.expiresHours" placeholder="Select expiry time">
-              <el-option label="1 hour" :value="1" />
-              <el-option label="6 hours" :value="6" />
-              <el-option label="24 hours (default)" :value="24" />
-              <el-option label="7 days" :value="168" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Verify SSL">
-            <el-switch
-              v-model="addRunnerForm.verifySsl"
-              active-text="Enabled"
-              inactive-text="Disabled"
-            />
-            <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-              Disable only for development with self-signed certificates
-            </div>
-          </el-form-item>
+        <!-- Add Runner Dialog -->
+        <el-dialog
+          v-model="addRunnerDialogVisible"
+          title="Add Runner"
+          width="800px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!enrollmentData">
+            <!-- Step 1: Enter runner name and configuration -->
+            <el-form
+              :model="addRunnerForm"
+              label-width="150px"
+            >
+              <el-form-item label="Runner Name">
+                <el-input
+                  v-model="addRunnerForm.runnerName"
+                  placeholder="e.g., sdr-station-1"
+                  @keyup.enter="generateEnrollmentToken"
+                />
+              </el-form-item>
+              <el-form-item label="Token Expiry">
+                <el-select
+                  v-model="addRunnerForm.expiresHours"
+                  placeholder="Select expiry time"
+                >
+                  <el-option
+                    label="1 hour"
+                    :value="1"
+                  />
+                  <el-option
+                    label="6 hours"
+                    :value="6"
+                  />
+                  <el-option
+                    label="24 hours (default)"
+                    :value="24"
+                  />
+                  <el-option
+                    label="7 days"
+                    :value="168"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="Verify SSL">
+                <el-switch
+                  v-model="addRunnerForm.verifySsl"
+                  active-text="Enabled"
+                  inactive-text="Disabled"
+                />
+                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                  Disable only for development with self-signed certificates
+                </div>
+              </el-form-item>
 
-          <el-divider content-position="left">SDR Device Configuration (Optional)</el-divider>
+              <el-divider content-position="left">
+                SDR Device Configuration (Optional)
+              </el-divider>
 
-          <div v-for="(device, index) in addRunnerForm.devices" :key="index" class="device-config-item">
-            <div class="device-header">
-              <h4>Device {{ index + 1 }}</h4>
-              <el-button
-                v-if="addRunnerForm.devices.length > 1"
-                size="small"
-                type="danger"
-                @click="removeDevice(index)"
+              <div
+                v-for="(device, index) in addRunnerForm.devices"
+                :key="index"
+                class="device-config-item"
               >
-                Remove
+                <div class="device-header">
+                  <h4>Device {{ index + 1 }}</h4>
+                  <el-button
+                    v-if="addRunnerForm.devices.length > 1"
+                    size="small"
+                    type="danger"
+                    @click="removeDevice(index)"
+                  >
+                    Remove
+                  </el-button>
+                </div>
+
+                <el-form-item label="Device Name">
+                  <el-input
+                    v-model="device.name"
+                    placeholder="e.g., 0, 1, or serial number"
+                  />
+                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                    Device index (0, 1, 2) or serial number
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Model">
+                  <el-select
+                    v-model="device.model"
+                    placeholder="Select SDR model"
+                  >
+                    <el-option
+                      label="HackRF"
+                      value="hackrf"
+                    />
+                    <el-option
+                      label="BladeRF"
+                      value="bladerf"
+                    />
+                    <el-option
+                      label="USRP"
+                      value="usrp"
+                    />
+                    <el-option
+                      label="LimeSDR"
+                      value="limesdr"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="RF Gain">
+                  <el-input-number
+                    v-model="device.rf_gain"
+                    :min="0"
+                    :max="100"
+                  />
+                </el-form-item>
+
+                <el-form-item
+                  v-if="device.model === 'hackrf'"
+                  label="IF Gain"
+                >
+                  <el-input-number
+                    v-model="device.if_gain"
+                    :min="0"
+                    :max="47"
+                  />
+                </el-form-item>
+
+                <el-form-item label="Frequency Limits">
+                  <el-input
+                    v-model="device.frequency_limits"
+                    type="textarea"
+                    :rows="2"
+                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                  />
+                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                    Comma-separated ranges (optional). Leave blank for full range.
+                  </div>
+                </el-form-item>
+
+                <el-divider v-if="index < addRunnerForm.devices.length - 1" />
+              </div>
+
+              <el-button
+                type="primary"
+                plain
+                style="margin-top: 10px; width: 100%;"
+                @click="addDevice"
+              >
+                Add Another Device
               </el-button>
+            </el-form>
+          </div>
+
+          <div
+            v-else
+            class="enrollment-data"
+          >
+            <!-- Step 2: Display complete configuration -->
+            <el-alert
+              title="Important: Save this configuration now!"
+              type="warning"
+              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              :closable="false"
+              show-icon
+              style="margin-bottom: 20px"
+            />
+
+            <div style="margin-bottom: 15px;">
+              <el-space>
+                <el-button
+                  type="primary"
+                  @click="copyToClipboard(generatedConfig, 'Configuration')"
+                >
+                  Copy Full Config
+                </el-button>
+                <el-button
+                  type="success"
+                  @click="downloadConfig"
+                >
+                  Download runner-config.yml
+                </el-button>
+              </el-space>
             </div>
 
-            <el-form-item label="Device Name">
-              <el-input
-                v-model="device.name"
-                placeholder="e.g., 0, 1, or serial number"
-              />
-              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-                Device index (0, 1, 2) or serial number
+            <div class="config-display">
+              <h4>Complete Runner Configuration:</h4>
+              <pre class="config-content">{{ generatedConfig }}</pre>
+            </div>
+
+            <el-divider />
+
+            <div class="setup-instructions">
+              <h4>Setup Instructions:</h4>
+              <ol>
+                <li>Download or copy the complete configuration above</li>
+                <li>On your runner machine, save as <code>runner-config.yml</code></li>
+                <li>Customize the <code>radios</code> section for your SDR devices</li>
+                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
+                <li>After successful enrollment, remove the <code>enrollment_token</code> line from the config</li>
+              </ol>
+            </div>
+
+            <el-divider />
+
+            <div class="credential-block">
+              <h4>Token Expires:</h4>
+              <div class="credential-value">
+                <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
               </div>
-            </el-form-item>
+            </div>
+          </div>
 
-            <el-form-item label="Model">
-              <el-select v-model="device.model" placeholder="Select SDR model">
-                <el-option label="HackRF" value="hackrf" />
-                <el-option label="BladeRF" value="bladerf" />
-                <el-option label="USRP" value="usrp" />
-                <el-option label="LimeSDR" value="limesdr" />
-              </el-select>
-            </el-form-item>
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button
+                v-if="!enrollmentData"
+                @click="addRunnerDialogVisible = false"
+              >
+                Cancel
+              </el-button>
+              <el-button
+                v-if="!enrollmentData"
+                type="primary"
+                :disabled="!addRunnerForm.runnerName"
+                @click="generateEnrollmentToken"
+              >
+                Generate Token
+              </el-button>
+              <el-button
+                v-else
+                type="primary"
+                @click="closeAddRunnerDialog"
+              >
+                Done
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
 
-            <el-form-item label="RF Gain">
-              <el-input-number
-                v-model="device.rf_gain"
-                :min="0"
-                :max="100"
-              />
-            </el-form-item>
+        <!-- Re-enroll Runner Dialog -->
+        <el-dialog
+          v-model="reEnrollDialogVisible"
+          title="Re-enroll Runner"
+          width="800px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!reEnrollData">
+            <el-alert
+              title="Re-enrollment Process"
+              type="info"
+              description="Generate fresh credentials to migrate this runner to a different host or update compromised credentials."
+              :closable="false"
+              show-icon
+              style="margin-bottom: 20px"
+            />
+            <p><strong>Runner ID:</strong> {{ reEnrollRunnerId }}</p>
+            <p>This will generate new enrollment credentials. The old API key will remain valid until the runner re-enrolls with the new credentials.</p>
+          </div>
 
-            <el-form-item v-if="device.model === 'hackrf'" label="IF Gain">
-              <el-input-number
-                v-model="device.if_gain"
-                :min="0"
-                :max="47"
-              />
-            </el-form-item>
+          <div
+            v-else
+            class="enrollment-data"
+          >
+            <el-alert
+              title="Important: Save this configuration now!"
+              type="warning"
+              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              :closable="false"
+              show-icon
+              style="margin-bottom: 20px"
+            />
 
-            <el-form-item label="Frequency Limits">
-              <el-input
-                v-model="device.frequency_limits"
-                type="textarea"
-                :rows="2"
-                placeholder="e.g., 144000000-148000000, 420000000-450000000"
-              />
-              <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-                Comma-separated ranges (optional). Leave blank for full range.
+            <div style="margin-bottom: 15px;">
+              <el-space>
+                <el-button
+                  type="primary"
+                  @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
+                >
+                  Copy Full Config
+                </el-button>
+                <el-button
+                  type="success"
+                  @click="downloadReEnrollConfig"
+                >
+                  Download runner-config.yml
+                </el-button>
+              </el-space>
+            </div>
+
+            <div class="config-display">
+              <h4>Complete Runner Configuration:</h4>
+              <pre class="config-content">{{ reEnrollGeneratedConfig }}</pre>
+            </div>
+
+            <el-divider />
+
+            <div class="setup-instructions">
+              <h4>Re-enrollment Instructions:</h4>
+              <ol>
+                <li>Download or copy the complete configuration above</li>
+                <li>On the NEW runner machine, save as <code>runner-config.yml</code></li>
+                <li>Customize the <code>radios</code> section for your SDR devices</li>
+                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
+                <li>After successful re-enrollment, remove the <code>enrollment_token</code> line from the config</li>
+                <li>The old runner will be automatically kicked once the new one connects</li>
+              </ol>
+            </div>
+
+            <el-divider />
+
+            <div class="credential-block">
+              <h4>Token Expires:</h4>
+              <div class="credential-value">
+                <code>{{ formatTimestamp(reEnrollData.expires_at) }}</code>
               </div>
-            </el-form-item>
-
-            <el-divider v-if="index < addRunnerForm.devices.length - 1" />
+            </div>
           </div>
 
-          <el-button
-            type="primary"
-            plain
-            @click="addDevice"
-            style="margin-top: 10px; width: 100%;"
-          >
-            Add Another Device
-          </el-button>
-        </el-form>
-      </div>
-
-      <div v-else class="enrollment-data">
-        <!-- Step 2: Display complete configuration -->
-        <el-alert
-          title="Important: Save this configuration now!"
-          type="warning"
-          description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
-          :closable="false"
-          show-icon
-          style="margin-bottom: 20px"
-        />
-
-        <div style="margin-bottom: 15px;">
-          <el-space>
-            <el-button
-              type="primary"
-              @click="copyToClipboard(generatedConfig, 'Configuration')"
-            >
-              Copy Full Config
-            </el-button>
-            <el-button
-              type="success"
-              @click="downloadConfig"
-            >
-              Download runner-config.yml
-            </el-button>
-          </el-space>
-        </div>
-
-        <div class="config-display">
-          <h4>Complete Runner Configuration:</h4>
-          <pre class="config-content">{{ generatedConfig }}</pre>
-        </div>
-
-        <el-divider />
-
-        <div class="setup-instructions">
-          <h4>Setup Instructions:</h4>
-          <ol>
-            <li>Download or copy the complete configuration above</li>
-            <li>On your runner machine, save as <code>runner-config.yml</code></li>
-            <li>Customize the <code>radios</code> section for your SDR devices</li>
-            <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-            <li>After successful enrollment, remove the <code>enrollment_token</code> line from the config</li>
-          </ol>
-        </div>
-
-        <el-divider />
-
-        <div class="credential-block">
-          <h4>Token Expires:</h4>
-          <div class="credential-value">
-            <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button v-if="!enrollmentData" @click="addRunnerDialogVisible = false">
-            Cancel
-          </el-button>
-          <el-button
-            v-if="!enrollmentData"
-            type="primary"
-            :disabled="!addRunnerForm.runnerName"
-            @click="generateEnrollmentToken"
-          >
-            Generate Token
-          </el-button>
-          <el-button v-else type="primary" @click="closeAddRunnerDialog">
-            Done
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- Re-enroll Runner Dialog -->
-    <el-dialog
-      v-model="reEnrollDialogVisible"
-      title="Re-enroll Runner"
-      width="800px"
-      :close-on-click-modal="false"
-    >
-      <div v-if="!reEnrollData">
-        <el-alert
-          title="Re-enrollment Process"
-          type="info"
-          description="Generate fresh credentials to migrate this runner to a different host or update compromised credentials."
-          :closable="false"
-          show-icon
-          style="margin-bottom: 20px"
-        />
-        <p><strong>Runner ID:</strong> {{ reEnrollRunnerId }}</p>
-        <p>This will generate new enrollment credentials. The old API key will remain valid until the runner re-enrolls with the new credentials.</p>
-      </div>
-
-      <div v-else class="enrollment-data">
-        <el-alert
-          title="Important: Save this configuration now!"
-          type="warning"
-          description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
-          :closable="false"
-          show-icon
-          style="margin-bottom: 20px"
-        />
-
-        <div style="margin-bottom: 15px;">
-          <el-space>
-            <el-button
-              type="primary"
-              @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
-            >
-              Copy Full Config
-            </el-button>
-            <el-button
-              type="success"
-              @click="downloadReEnrollConfig"
-            >
-              Download runner-config.yml
-            </el-button>
-          </el-space>
-        </div>
-
-        <div class="config-display">
-          <h4>Complete Runner Configuration:</h4>
-          <pre class="config-content">{{ reEnrollGeneratedConfig }}</pre>
-        </div>
-
-        <el-divider />
-
-        <div class="setup-instructions">
-          <h4>Re-enrollment Instructions:</h4>
-          <ol>
-            <li>Download or copy the complete configuration above</li>
-            <li>On the NEW runner machine, save as <code>runner-config.yml</code></li>
-            <li>Customize the <code>radios</code> section for your SDR devices</li>
-            <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-            <li>After successful re-enrollment, remove the <code>enrollment_token</code> line from the config</li>
-            <li>The old runner will be automatically kicked once the new one connects</li>
-          </ol>
-        </div>
-
-        <el-divider />
-
-        <div class="credential-block">
-          <h4>Token Expires:</h4>
-          <div class="credential-value">
-            <code>{{ formatTimestamp(reEnrollData.expires_at) }}</code>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button v-if="!reEnrollData" @click="reEnrollDialogVisible = false">
-            Cancel
-          </el-button>
-          <el-button
-            v-if="!reEnrollData"
-            type="primary"
-            @click="generateReEnrollToken"
-          >
-            Generate Credentials
-          </el-button>
-          <el-button v-else type="primary" @click="closeReEnrollDialog">
-            Done
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button
+                v-if="!reEnrollData"
+                @click="reEnrollDialogVisible = false"
+              >
+                Cancel
+              </el-button>
+              <el-button
+                v-if="!reEnrollData"
+                type="primary"
+                @click="generateReEnrollToken"
+              >
+                Generate Credentials
+              </el-button>
+              <el-button
+                v-else
+                type="primary"
+                @click="closeReEnrollDialog"
+              >
+                Done
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <!-- Provisioning Keys Tab -->
-      <el-tab-pane label="Provisioning Keys" name="provisioning">
+      <el-tab-pane
+        label="Provisioning Keys"
+        name="provisioning"
+      >
         <div class="tab-header">
-          <el-button type="primary" @click="showCreateProvKeyDialog">
+          <el-button
+            type="primary"
+            @click="showCreateProvKeyDialog"
+          >
             Create Provisioning Key
           </el-button>
         </div>
@@ -526,7 +603,10 @@
           :close-on-click-modal="false"
         >
           <div v-if="!createdProvKey">
-            <el-form :model="createProvKeyForm" label-width="120px">
+            <el-form
+              :model="createProvKeyForm"
+              label-width="120px"
+            >
               <el-form-item label="Key ID">
                 <el-input
                   v-model="createProvKeyForm.keyId"
@@ -548,7 +628,10 @@
             </el-form>
           </div>
 
-          <div v-else class="created-key-display">
+          <div
+            v-else
+            class="created-key-display"
+          >
             <el-alert
               title="Important: Save this API key now!"
               type="warning"
@@ -573,7 +656,10 @@
                   Copy
                 </el-button>
               </div>
-              <div v-if="createdProvKey.description" class="key-row">
+              <div
+                v-if="createdProvKey.description"
+                class="key-row"
+              >
                 <strong>Description:</strong>
                 <span>{{ createdProvKey.description }}</span>
               </div>
@@ -595,7 +681,10 @@
 
           <template #footer>
             <span class="dialog-footer">
-              <el-button v-if="!createdProvKey" @click="closeCreateProvKeyDialog">Cancel</el-button>
+              <el-button
+                v-if="!createdProvKey"
+                @click="closeCreateProvKeyDialog"
+              >Cancel</el-button>
               <el-button
                 v-if="!createdProvKey"
                 type="primary"
@@ -603,7 +692,11 @@
               >
                 Create Key
               </el-button>
-              <el-button v-else type="primary" @click="closeCreateProvKeyDialog">
+              <el-button
+                v-else
+                type="primary"
+                @click="closeCreateProvKeyDialog"
+              >
                 Done
               </el-button>
             </span>
