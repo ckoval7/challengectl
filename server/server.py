@@ -127,6 +127,84 @@ class ChallengeCtlServer:
             replace_existing=True
         )
 
+        def check_auto_pause_resume():
+            """Check if system should be auto-paused or resumed based on daily hours."""
+            try:
+                # Check if auto-pause is enabled
+                auto_pause_enabled = self.db.get_system_state('auto_pause_daily', 'false') == 'true'
+                if not auto_pause_enabled:
+                    return
+
+                # Get day times from system_state or config
+                with open(self.config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+
+                day_start_str = self.db.get_system_state('day_start', config.get('conference', {}).get('day_start'))
+                end_of_day_str = self.db.get_system_state('end_of_day', config.get('conference', {}).get('end_of_day'))
+
+                if not day_start_str or not end_of_day_str:
+                    return  # Can't auto-pause without both times set
+
+                # Get current time
+                from datetime import timezone as tz
+                now = datetime.now(tz.utc)
+
+                # Parse day start and end times (format: HH:MM)
+                start_hours, start_minutes = map(int, day_start_str.split(':'))
+                end_hours, end_minutes = map(int, end_of_day_str.split(':'))
+
+                current_minutes = now.hour * 60 + now.minute
+                start_minutes_of_day = start_hours * 60 + start_minutes
+                end_minutes_of_day = end_hours * 60 + end_minutes
+
+                # Determine if we're outside daily hours
+                if end_minutes_of_day > start_minutes_of_day:
+                    # Normal case: day_start=09:00, end_of_day=17:00
+                    outside_hours = current_minutes < start_minutes_of_day or current_minutes >= end_minutes_of_day
+                else:
+                    # Overnight case: day_start=22:00, end_of_day=06:00
+                    outside_hours = current_minutes >= end_minutes_of_day and current_minutes < start_minutes_of_day
+
+                # Get current pause state
+                is_paused = self.db.get_system_state('paused', 'false') == 'true'
+                auto_paused = self.db.get_system_state('auto_paused', 'false') == 'true'
+
+                # Auto-pause if outside hours and not already paused
+                if outside_hours and not is_paused:
+                    self.db.set_system_state('paused', 'true')
+                    self.db.set_system_state('auto_paused', 'true')  # Mark as auto-paused
+                    logger.info("Auto-pause: System paused (outside daily hours)")
+
+                    self.api.broadcast_event('system_control', {
+                        'action': 'pause',
+                        'auto': True,
+                        'timestamp': now.isoformat()
+                    })
+
+                # Auto-resume if inside hours and was auto-paused
+                elif not outside_hours and is_paused and auto_paused:
+                    self.db.set_system_state('paused', 'false')
+                    self.db.set_system_state('auto_paused', 'false')  # Clear auto-paused flag
+                    logger.info("Auto-pause: System resumed (within daily hours)")
+
+                    self.api.broadcast_event('system_control', {
+                        'action': 'resume',
+                        'auto': True,
+                        'timestamp': now.isoformat()
+                    })
+
+            except Exception as e:
+                logger.error(f"Error in check_auto_pause_resume: {e}")
+
+        # Run auto-pause check every 30 seconds
+        self.scheduler.add_job(
+            check_auto_pause_resume,
+            'interval',
+            seconds=30,
+            id='auto_pause_resume',
+            replace_existing=True
+        )
+
         logger.info("Background cleanup tasks configured")
 
     def start(self, host='0.0.0.0', port=8443, debug=False):

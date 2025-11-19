@@ -92,12 +92,13 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth } from './auth'
 import { ElMessage } from 'element-plus'
+import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
 
 export default {
@@ -132,6 +133,21 @@ export default {
       }
     }
 
+    // Handle system control WebSocket events
+    const handleSystemControl = (event) => {
+      if (event.action === 'pause') {
+        systemPaused.value = true
+        if (event.auto) {
+          ElMessage.info('System auto-paused (outside daily hours)')
+        }
+      } else if (event.action === 'resume') {
+        systemPaused.value = false
+        if (event.auto) {
+          ElMessage.info('System auto-resumed (within daily hours)')
+        }
+      }
+    }
+
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
       const savedTheme = localStorage.getItem('theme')
@@ -140,6 +156,16 @@ export default {
       }
       applyTheme()
       loadConferenceName()
+
+      // Connect WebSocket if authenticated
+      if (checkAuth()) {
+        websocket.connect()
+        websocket.on('system_control', handleSystemControl)
+      }
+    })
+
+    onUnmounted(() => {
+      websocket.off('system_control', handleSystemControl)
     })
 
     const applyTheme = () => {

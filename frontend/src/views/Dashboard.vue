@@ -179,6 +179,16 @@
                 Clear Both
               </el-button>
             </el-form-item>
+            <el-form-item label="Auto-Pause Daily">
+              <el-switch
+                v-model="autoPauseDaily"
+                @change="toggleAutoPause"
+                :loading="savingAutoPause"
+              />
+              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Automatically pause transmissions outside daily hours
+              </div>
+            </el-form-item>
           </el-form>
         </el-card>
       </el-col>
@@ -257,6 +267,8 @@ export default {
     const dayStartTime = ref('')
     const endOfDayTime = ref('')
     const savingDayTimes = ref(false)
+    const autoPauseDaily = ref(false)
+    const savingAutoPause = ref(false)
 
     const loadDashboard = async () => {
       try {
@@ -312,8 +324,26 @@ export default {
         const response = await api.get('/conference')
         dayStartTime.value = response.data.day_start || ''
         endOfDayTime.value = response.data.end_of_day || ''
+        autoPauseDaily.value = response.data.auto_pause_daily || false
       } catch (error) {
         console.error('Error loading conference settings:', error)
+      }
+    }
+
+    const toggleAutoPause = async () => {
+      savingAutoPause.value = true
+      try {
+        await api.put('/conference/auto-pause', {
+          auto_pause_daily: autoPauseDaily.value
+        })
+        ElMessage.success(`Auto-pause ${autoPauseDaily.value ? 'enabled' : 'disabled'}`)
+      } catch (error) {
+        console.error('Error toggling auto-pause:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to toggle auto-pause')
+        // Revert the toggle on error
+        autoPauseDaily.value = !autoPauseDaily.value
+      } finally {
+        savingAutoPause.value = false
       }
     }
 
@@ -383,8 +413,11 @@ export default {
       dayStartTime,
       endOfDayTime,
       savingDayTimes,
+      autoPauseDaily,
+      savingAutoPause,
       saveDayTimes,
       clearDayTimes,
+      toggleAutoPause,
       formatTime,
       formatFrequency
     }
