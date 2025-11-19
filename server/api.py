@@ -1142,15 +1142,51 @@ class ChallengeCtlAPI:
             try:
                 conference = self.config.get('conference', {})
 
+                # Get end_of_day from system_state (runtime config) or fallback to config file
+                end_of_day = self.db.get_system_state('end_of_day', conference.get('end_of_day'))
+
                 return jsonify({
                     'name': conference.get('name', 'ChallengeCtl'),
                     'start': conference.get('start'),
                     'stop': conference.get('stop'),
-                    'end_of_day': conference.get('end_of_day')
+                    'end_of_day': end_of_day
                 }), 200
 
             except Exception as e:
                 logger.error(f"Error getting conference info: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
+        # Conference settings endpoints (admin only)
+        @self.app.route('/api/conference/end-of-day', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_end_of_day():
+            """Update the end of day time."""
+            try:
+                data = request.json
+                if not data or 'end_of_day' not in data:
+                    return jsonify({'error': 'Missing end_of_day field'}), 400
+
+                end_of_day = data['end_of_day']
+
+                # Validate format (HH:MM or empty string to clear)
+                if end_of_day:
+                    import re
+                    if not re.match(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', end_of_day):
+                        return jsonify({'error': 'Invalid time format. Use HH:MM (e.g., 17:00)'}), 400
+
+                # Store in system_state
+                self.db.set_system_state('end_of_day', end_of_day)
+
+                logger.info(f"End of day updated to '{end_of_day}' by {request.admin_username}")
+
+                return jsonify({
+                    'status': 'updated',
+                    'end_of_day': end_of_day
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error updating end of day: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
         # Runner endpoints

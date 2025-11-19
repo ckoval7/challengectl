@@ -72,6 +72,57 @@
       </el-col>
     </el-row>
 
+    <!-- Conference Settings -->
+    <el-row style="margin-bottom: 20px">
+      <el-col :span="24">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>Conference Settings</span>
+            </div>
+          </template>
+          <el-form
+            label-width="150px"
+            style="max-width: 600px"
+          >
+            <el-form-item label="End of Day Time">
+              <el-row :gutter="10">
+                <el-col :span="12">
+                  <el-time-select
+                    v-model="endOfDayTime"
+                    :clearable="true"
+                    start="00:00"
+                    step="00:15"
+                    end="23:45"
+                    placeholder="Select time"
+                    format="HH:mm"
+                  />
+                </el-col>
+                <el-col :span="12">
+                  <el-button
+                    type="primary"
+                    @click="saveEndOfDay"
+                    :loading="savingEndOfDay"
+                  >
+                    Save
+                  </el-button>
+                  <el-button
+                    @click="clearEndOfDay"
+                    :loading="savingEndOfDay"
+                  >
+                    Clear
+                  </el-button>
+                </el-col>
+              </el-row>
+              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Optional daily countdown to end of day (conference timezone)
+              </div>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- Runners and Activity -->
     <el-row :gutter="20">
       <el-col :span="12">
@@ -190,6 +241,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
 import { formatTime } from '../utils/time'
+import { ElMessage } from 'element-plus'
 
 export default {
   name: 'Dashboard',
@@ -197,6 +249,8 @@ export default {
     const stats = ref({})
     const runners = ref([])
     const recentTransmissions = ref([])
+    const endOfDayTime = ref('')
+    const savingEndOfDay = ref(false)
 
     const loadDashboard = async () => {
       try {
@@ -247,8 +301,54 @@ export default {
       }
     }
 
+    const loadConferenceSettings = async () => {
+      try {
+        const response = await api.get('/conference')
+        endOfDayTime.value = response.data.end_of_day || ''
+      } catch (error) {
+        console.error('Error loading conference settings:', error)
+      }
+    }
+
+    const saveEndOfDay = async () => {
+      if (!endOfDayTime.value) {
+        ElMessage.warning('Please select a time or use Clear to remove')
+        return
+      }
+
+      savingEndOfDay.value = true
+      try {
+        await api.put('/conference/end-of-day', {
+          end_of_day: endOfDayTime.value
+        })
+        ElMessage.success('End of day time updated successfully')
+      } catch (error) {
+        console.error('Error saving end of day:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to save end of day time')
+      } finally {
+        savingEndOfDay.value = false
+      }
+    }
+
+    const clearEndOfDay = async () => {
+      savingEndOfDay.value = true
+      try {
+        await api.put('/conference/end-of-day', {
+          end_of_day: ''
+        })
+        endOfDayTime.value = ''
+        ElMessage.success('End of day time cleared')
+      } catch (error) {
+        console.error('Error clearing end of day:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to clear end of day time')
+      } finally {
+        savingEndOfDay.value = false
+      }
+    }
+
     onMounted(() => {
       loadDashboard()
+      loadConferenceSettings()
 
       // Connect WebSocket
       websocket.connect()
@@ -270,6 +370,10 @@ export default {
       stats,
       runners,
       recentTransmissions,
+      endOfDayTime,
+      savingEndOfDay,
+      saveEndOfDay,
+      clearEndOfDay,
       formatTime,
       formatFrequency
     }
