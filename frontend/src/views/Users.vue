@@ -147,7 +147,7 @@
           show-icon
           style="margin-bottom: 20px"
         >
-          An initial password will be auto-generated. The user must change it and set up 2FA on first login.
+          An initial password will be automatically generated. The new user will be required to change their password and set up two-factor authentication on first login.
         </el-alert>
       </el-form>
 
@@ -217,14 +217,14 @@
           style="margin-top: 20px"
         >
           <template #title>
-            Important: User must complete setup within 24 hours
+            {{ tempUserInfo.username }} must set up their account within 24 hours.
           </template>
-          <p style="margin: 10px 0 0 0">The user must login and:</p>
+          <p style="margin: 10px 0 0 0">They must log in and complete the following steps:</p>
           <ul style="margin: 5px 0 0 20px; padding: 0">
-            <li>Change their password</li>
-            <li>Set up two-factor authentication (2FA)</li>
+            <li>Change their password.</li>
+            <li>Set up two-factor authentication (2FA).</li>
           </ul>
-          <p style="margin: 10px 0 0 0">If not completed in 24 hours, the account will be automatically disabled.</p>
+          <p style="margin: 10px 0 0 0">If setup is not completed within 24 hours, the account will be automatically disabled.</p>
         </el-alert>
       </div>
 
