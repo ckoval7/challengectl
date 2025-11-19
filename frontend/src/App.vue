@@ -96,7 +96,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth } from './auth'
+import { logout, checkAuth, isInitialSetupRequired } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
@@ -118,9 +118,9 @@ export default {
     const isDark = ref(true) // Default to dark theme
     const conferenceName = ref('')
 
-    // Show admin layout for authenticated routes
+    // Show admin layout for authenticated routes (but not during initial setup)
     const showAdminLayout = computed(() => {
-      return checkAuth() && route.meta.requiresAuth
+      return checkAuth() && route.meta.requiresAuth && !isInitialSetupRequired()
     })
 
     // Load conference name

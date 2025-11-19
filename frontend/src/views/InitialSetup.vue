@@ -260,16 +260,15 @@ export default {
         // Verify TOTP (should be required for new account)
         if (loginResponse.data.totp_required) {
           const verifyResponse = await api.post('/auth/verify-totp', {
-            session_token: loginResponse.data.session_token,
             totp_code: totpVerifyCode.value
           })
 
-          login(verifyResponse.data.session_token)
+          login(false) // Initial setup is complete
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         } else {
           // Shouldn't happen, but handle it
-          login(loginResponse.data.session_token)
+          login(false) // Initial setup is complete
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         }

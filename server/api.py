@@ -821,9 +821,13 @@ class ChallengeCtlAPI:
             if not user or not user.get('enabled'):
                 return jsonify({'authenticated': False, 'error': 'Account disabled'}), 401
 
+            # Check if initial setup is required
+            initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
+
             return jsonify({
                 'authenticated': True,
-                'username': username
+                'username': username,
+                'initial_setup_required': initial_setup_required
             }), 200
 
         @self.app.route('/api/auth/logout', methods=['POST'])
