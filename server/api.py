@@ -998,7 +998,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/auth/complete-setup', methods=['POST'])
         def complete_setup():
-            """Complete setup for temporary users (change password + set up TOTP)."""
+            """Step 1: Change password and generate TOTP for temporary users."""
             data = request.json
 
             if not data:
@@ -1024,10 +1024,9 @@ class ChallengeCtlAPI:
 
             username = session['username']
             new_password = data.get('new_password')
-            totp_secret = data.get('totp_secret')
 
-            if not new_password or not totp_secret:
-                return jsonify({'error': 'Missing new_password or totp_secret'}), 400
+            if not new_password:
+                return jsonify({'error': 'Missing new_password'}), 400
 
             if len(new_password) < 8:
                 return jsonify({'error': 'Password must be at least 8 characters'}), 400
@@ -1041,23 +1040,98 @@ class ChallengeCtlAPI:
             if not user.get('is_temporary', False):
                 return jsonify({'error': 'This endpoint is only for temporary users'}), 400
 
-            # Hash new password
+            # Hash new password and store in session temporarily
             password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-            # Complete user setup (set password, TOTP, clear temporary flag)
-            if not self.db.complete_user_setup(username, password_hash, totp_secret):
+            # Generate TOTP secret
+            totp_secret = pyotp.random_base32()
+            totp = pyotp.TOTP(totp_secret)
+            conference_name = self.get_conference_name()
+            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
+
+            # Store password hash and TOTP secret in session temporarily for verification
+            # We'll use a simple in-memory store tied to session token
+            if not hasattr(self, '_setup_pending'):
+                self._setup_pending = {}
+
+            self._setup_pending[session_token] = {
+                'password_hash': password_hash,
+                'totp_secret': totp_secret,
+                'timestamp': datetime.utcnow()
+            }
+
+            logger.info(
+                f"SECURITY: User setup initiated (step 1) - username='{username}' ip={request.remote_addr} "
+                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
+            )
+
+            return jsonify({
+                'status': 'awaiting_verification',
+                'username': username,
+                'totp_secret': totp_secret,
+                'provisioning_uri': provisioning_uri
+            }), 200
+
+        @self.app.route('/api/auth/verify-setup', methods=['POST'])
+        def verify_setup():
+            """Step 2: Verify TOTP code and complete setup for temporary users."""
+            data = request.json
+
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            # Get session token from cookie
+            session_token = request.cookies.get('session_token')
+
+            if not session_token:
+                return jsonify({'error': 'Missing session token'}), 401
+
+            # Get session from database
+            session = self.db.get_session(session_token)
+
+            if not session:
+                return jsonify({'error': 'Invalid or expired session'}), 401
+
+            # Check if session is expired
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.utcnow() > expires:
+                self.db.delete_session(session_token)
+                return jsonify({'error': 'Session expired'}), 401
+
+            username = session['username']
+            totp_code = data.get('totp_code')
+
+            if not totp_code:
+                return jsonify({'error': 'Missing totp_code'}), 400
+
+            # Get pending setup data
+            if not hasattr(self, '_setup_pending') or session_token not in self._setup_pending:
+                return jsonify({'error': 'No pending setup found. Please restart setup process.'}), 400
+
+            pending = self._setup_pending[session_token]
+
+            # Check if pending setup is too old (15 minutes)
+            if datetime.utcnow() - pending['timestamp'] > timedelta(minutes=15):
+                del self._setup_pending[session_token]
+                return jsonify({'error': 'Setup session expired. Please restart setup process.'}), 400
+
+            # Verify TOTP code
+            totp = pyotp.TOTP(pending['totp_secret'])
+            if not totp.verify(totp_code, valid_window=1):
+                return jsonify({'error': 'Invalid TOTP code'}), 401
+
+            # Complete user setup
+            if not self.db.complete_user_setup(username, pending['password_hash'], pending['totp_secret']):
                 return jsonify({'error': 'Failed to complete setup'}), 500
 
-            # Mark session as TOTP verified (user can now access the system)
+            # Clean up pending setup
+            del self._setup_pending[session_token]
+
+            # Mark session as TOTP verified
             self.db.update_session_totp(session_token)
 
             # Update last login timestamp
             self.db.update_last_login(username)
-
-            # Generate TOTP provisioning URI for QR code
-            totp = pyotp.TOTP(totp_secret)
-            conference_name = self.get_conference_name()
-            provisioning_uri = totp.provisioning_uri(name=username, issuer_name=conference_name)
 
             logger.info(
                 f"SECURITY: User setup completed - username='{username}' ip={request.remote_addr} "
@@ -1066,9 +1140,7 @@ class ChallengeCtlAPI:
 
             return jsonify({
                 'status': 'setup_complete',
-                'username': username,
-                'totp_secret': totp_secret,
-                'provisioning_uri': provisioning_uri
+                'username': username
             }), 200
 
         # User management endpoints (admin only)

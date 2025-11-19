@@ -140,7 +140,6 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
-import * as OTPAuth from 'otpauth'
 
 export default {
   name: 'UserSetup',
@@ -159,7 +158,6 @@ export default {
       qrCode: ''
     })
     const totpVerifyCode = ref('')
-    const generatedTotpSecret = ref('')
 
     const validatePasswordMatch = (rule, value, callback) => {
       if (value !== form.value.newPassword) {
@@ -178,28 +176,37 @@ export default {
         return
       }
 
-      // Generate TOTP secret
-      const secret = new OTPAuth.Secret({ size: 20 })
-      const secretBase32 = secret.base32
-      generatedTotpSecret.value = secretBase32
-
-      // Generate QR code
-      const username = 'user' // This will be replaced by actual username from session
-      const issuerName = 'ChallengeCtl'
-      const provisioning_uri = `otpauth://totp/${issuerName}:${username}?secret=${secretBase32}&issuer=${issuerName}`
+      loading.value = true
 
       try {
+        // Call backend to change password and generate TOTP secret
+        const response = await api.post('/auth/complete-setup', {
+          new_password: form.value.newPassword
+        })
+
+        // Backend returns TOTP secret and provisioning URI
+        const { totp_secret, provisioning_uri } = response.data
+
+        // Generate QR code from provisioning URI
         const qrCode = await QRCode.toDataURL(provisioning_uri)
+
         totpInfo.value = {
-          totp_secret: secret,
+          totp_secret: totp_secret,
           provisioning_uri: provisioning_uri,
           qrCode: qrCode
         }
 
-        // Show TOTP setup
+        // Show TOTP setup dialog
         showTotpDialog.value = true
       } catch (error) {
-        ElMessage.error('Failed to generate QR code')
+        if (error.response?.status === 401) {
+          ElMessage.error('Session expired. Please login again.')
+          router.push('/login')
+        } else {
+          ElMessage.error(error.response?.data?.error || 'Failed to initiate setup')
+        }
+      } finally {
+        loading.value = false
       }
     }
 
@@ -214,48 +221,29 @@ export default {
         return
       }
 
-      // Verify TOTP code locally before submitting
-      try {
-        const totp = new OTPAuth.TOTP({
-          issuer: 'ChallengeCtl',
-          label: 'user',
-          algorithm: 'SHA1',
-          digits: 6,
-          period: 30,
-          secret: OTPAuth.Secret.fromBase32(generatedTotpSecret.value)
-        })
-
-        const delta = totp.validate({
-          token: totpVerifyCode.value,
-          window: 1
-        })
-
-        if (delta === null) {
-          ElMessage.error('Invalid TOTP code. Please try again.')
-          return
-        }
-      } catch (error) {
-        ElMessage.error('Failed to verify TOTP code')
-        return
-      }
-
       loading.value = true
 
       try {
-        // Complete setup with new password and TOTP
-        await api.post('/auth/complete-setup', {
-          new_password: form.value.newPassword,
-          totp_secret: generatedTotpSecret.value
+        // Verify TOTP code and complete setup
+        await api.post('/auth/verify-setup', {
+          totp_code: totpVerifyCode.value
         })
 
         ElMessage.success('Account setup complete! You can now access the system.')
         router.push('/admin')
       } catch (error) {
         if (error.response?.status === 401) {
-          ElMessage.error('Session expired. Please login again.')
-          router.push('/login')
+          const errorMsg = error.response?.data?.error || 'Authentication failed'
+          if (errorMsg.includes('Invalid TOTP code')) {
+            ElMessage.error('Invalid TOTP code. Please try again.')
+          } else if (errorMsg.includes('Session expired')) {
+            ElMessage.error('Session expired. Please login again.')
+            router.push('/login')
+          } else {
+            ElMessage.error(errorMsg)
+          }
         } else if (error.response?.status === 400) {
-          ElMessage.error(error.response?.data?.error || 'Setup failed')
+          ElMessage.error(error.response?.data?.error || 'Setup failed. Please restart the setup process.')
         } else {
           ElMessage.error('Failed to complete setup. Please try again.')
         }
