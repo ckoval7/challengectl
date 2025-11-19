@@ -8,7 +8,8 @@ conference:
   # Year-Month-Day HH:mm:ss timezone"
   start: "2063-04-05 09:00:00 -5"
   stop: "2063-04-07 12:00:00 -5"
-  # Daily end time (HH:MM format in conference timezone). Optional countdown to end of day.
+  # Daily operating hours (HH:MM format in conference timezone). Optional countdown cycle.
+  day_start: "09:00"
   end_of_day: "17:00"
 
 # Settngs can be set per model, or per specific device.

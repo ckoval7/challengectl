@@ -1142,13 +1142,15 @@ class ChallengeCtlAPI:
             try:
                 conference = self.config.get('conference', {})
 
-                # Get end_of_day from system_state (runtime config) or fallback to config file
+                # Get day_start and end_of_day from system_state (runtime config) or fallback to config file
+                day_start = self.db.get_system_state('day_start', conference.get('day_start'))
                 end_of_day = self.db.get_system_state('end_of_day', conference.get('end_of_day'))
 
                 return jsonify({
                     'name': conference.get('name', 'ChallengeCtl'),
                     'start': conference.get('start'),
                     'stop': conference.get('stop'),
+                    'day_start': day_start,
                     'end_of_day': end_of_day
                 }), 200
 
@@ -1157,37 +1159,52 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Internal server error'}), 500
 
         # Conference settings endpoints (admin only)
-        @self.app.route('/api/conference/end-of-day', methods=['PUT'])
+        @self.app.route('/api/conference/day-times', methods=['PUT'])
         @self.require_admin_auth
         @self.require_csrf
-        def update_end_of_day():
-            """Update the end of day time."""
+        def update_day_times():
+            """Update the day start and end of day times."""
             try:
                 data = request.json
-                if not data or 'end_of_day' not in data:
-                    return jsonify({'error': 'Missing end_of_day field'}), 400
+                if not data:
+                    return jsonify({'error': 'Missing request body'}), 400
 
-                end_of_day = data['end_of_day']
+                import re
+                time_pattern = r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
 
-                # Validate format (HH:MM or empty string to clear)
-                if end_of_day:
-                    import re
-                    if not re.match(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', end_of_day):
-                        return jsonify({'error': 'Invalid time format. Use HH:MM (e.g., 17:00)'}), 400
+                # Update day_start if provided
+                if 'day_start' in data:
+                    day_start = data['day_start']
+                    if day_start and not re.match(time_pattern, day_start):
+                        return jsonify({'error': 'Invalid day_start format. Use HH:MM (e.g., 09:00)'}), 400
+                    self.db.set_system_state('day_start', day_start)
+                    logger.info(f"Day start updated to '{day_start}' by {request.admin_username}")
 
-                # Store in system_state
-                self.db.set_system_state('end_of_day', end_of_day)
-
-                logger.info(f"End of day updated to '{end_of_day}' by {request.admin_username}")
+                # Update end_of_day if provided
+                if 'end_of_day' in data:
+                    end_of_day = data['end_of_day']
+                    if end_of_day and not re.match(time_pattern, end_of_day):
+                        return jsonify({'error': 'Invalid end_of_day format. Use HH:MM (e.g., 17:00)'}), 400
+                    self.db.set_system_state('end_of_day', end_of_day)
+                    logger.info(f"End of day updated to '{end_of_day}' by {request.admin_username}")
 
                 return jsonify({
                     'status': 'updated',
-                    'end_of_day': end_of_day
+                    'day_start': data.get('day_start'),
+                    'end_of_day': data.get('end_of_day')
                 }), 200
 
             except Exception as e:
-                logger.error(f"Error updating end of day: {e}")
+                logger.error(f"Error updating day times: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
+
+        # Backward compatibility endpoint
+        @self.app.route('/api/conference/end-of-day', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_end_of_day_legacy():
+            """Update the end of day time (legacy endpoint)."""
+            return update_day_times()
 
         # Runner endpoints
         # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats

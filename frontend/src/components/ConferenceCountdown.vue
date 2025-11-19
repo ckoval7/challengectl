@@ -5,7 +5,7 @@
     <span v-else-if="hasEnded" class="ended">{{ conferenceName }} RFCTF has ended</span>
     <span v-else class="countdown">
       {{ countdownLabel }}: {{ formattedCountdown }}
-      <span v-if="showEndOfDay" class="end-of-day"> | Day ends: {{ endOfDayCountdown }}</span>
+      <span v-if="showDayEndTimer" class="end-of-day"> | Day ends: {{ dayEndCountdown }}</span>
     </span>
   </div>
 </template>
@@ -19,6 +19,7 @@ const error = ref(null)
 const conferenceName = ref('Conference')
 const conferenceStart = ref(null)
 const conferenceStop = ref(null)
+const dayStart = ref(null)
 const endOfDay = ref(null)
 const currentTime = ref(new Date())
 let intervalId = null
@@ -68,7 +69,24 @@ function formatCountdown(milliseconds) {
   return parts.join(' ')
 }
 
-// Calculate end of day time for today
+// Calculate day start time (today or tomorrow)
+function getDayStartTime() {
+  if (!dayStart.value) return null
+
+  const [hours, minutes] = dayStart.value.split(':').map(Number)
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(hours, minutes, 0, 0)
+
+  // If day start has passed, use tomorrow
+  if (start <= now) {
+    start.setDate(start.getDate() + 1)
+  }
+
+  return start
+}
+
+// Calculate end of day time (today or tomorrow)
 function getEndOfDayTime() {
   if (!endOfDay.value) return null
 
@@ -85,6 +103,28 @@ function getEndOfDayTime() {
   return eod
 }
 
+// Check if current time is outside daily operating hours
+function isOutsideDailyHours() {
+  if (!dayStart.value || !endOfDay.value) return false
+
+  const now = currentTime.value
+  const [startHours, startMinutes] = dayStart.value.split(':').map(Number)
+  const [endHours, endMinutes] = endOfDay.value.split(':').map(Number)
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const startMinutesOfDay = startHours * 60 + startMinutes
+  const endMinutesOfDay = endHours * 60 + endMinutes
+
+  // Handle cases where end_of_day might be before day_start (overnight)
+  if (endMinutesOfDay > startMinutesOfDay) {
+    // Normal case: day_start=09:00, end_of_day=17:00
+    return currentMinutes < startMinutesOfDay || currentMinutes >= endMinutesOfDay
+  } else {
+    // Overnight case: day_start=22:00, end_of_day=06:00
+    return currentMinutes >= endMinutesOfDay && currentMinutes < startMinutesOfDay
+  }
+}
+
 // Computed properties
 const hasEnded = computed(() => {
   if (!conferenceStop.value) return false
@@ -98,27 +138,46 @@ const beforeStart = computed(() => {
 
 const countdownLabel = computed(() => {
   if (beforeStart.value) return 'Starts in'
+
+  // During conference: check if we're outside daily hours
+  if (!hasEnded.value && isOutsideDailyHours()) {
+    return 'Day starts in'
+  }
+
   return 'Ends in'
 })
 
 const formattedCountdown = computed(() => {
   if (hasEnded.value) return ''
 
-  const targetTime = beforeStart.value ? conferenceStart.value : conferenceStop.value
-  if (!targetTime) return 'Unknown'
+  // Before conference starts
+  if (beforeStart.value) {
+    const diff = conferenceStart.value - currentTime.value
+    if (diff < 0) return '0s'
+    return formatCountdown(diff)
+  }
 
-  const diff = targetTime - currentTime.value
+  // During conference but outside daily hours - countdown to next day start
+  if (isOutsideDailyHours()) {
+    const nextStart = getDayStartTime()
+    if (!nextStart) return 'Unknown'
+    const diff = nextStart - currentTime.value
+    if (diff < 0) return '0s'
+    return formatCountdown(diff)
+  }
+
+  // During conference and within daily hours - countdown to conference end
+  const diff = conferenceStop.value - currentTime.value
   if (diff < 0) return '0s'
-
   return formatCountdown(diff)
 })
 
-const showEndOfDay = computed(() => {
-  // Only show end of day timer during the conference
-  return !beforeStart.value && !hasEnded.value && endOfDay.value
+const showDayEndTimer = computed(() => {
+  // Only show day end timer during conference, within daily hours, and when end_of_day is set
+  return !beforeStart.value && !hasEnded.value && !isOutsideDailyHours() && endOfDay.value
 })
 
-const endOfDayCountdown = computed(() => {
+const dayEndCountdown = computed(() => {
   const eodTime = getEndOfDayTime()
   if (!eodTime) return ''
 
@@ -135,6 +194,7 @@ onMounted(async () => {
     conferenceName.value = response.data.name || 'Conference'
     conferenceStart.value = parseDateTime(response.data.start)
     conferenceStop.value = parseDateTime(response.data.stop)
+    dayStart.value = response.data.day_start
     endOfDay.value = response.data.end_of_day
 
     loading.value = false
