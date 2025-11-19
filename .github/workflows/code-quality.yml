@@ -55,12 +55,21 @@ jobs:
 
       - name: Check dependencies for vulnerabilities
         continue-on-error: true
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         run: |
           pip install -r requirements-server.txt || true
-          safety scan --output json > safety-report.json || true
-          safety scan || true
-        with:
-          api-key: ${{ secrets.SAFETY_API_KEY }}
+
+          # Check if Safety API key is available
+          if [ -n "$SAFETY_API_KEY" ]; then
+            echo "Running Safety scan with API key..."
+            safety scan --output json > safety-report.json || true
+            safety scan || true
+          else
+            echo "⚠️  SAFETY_API_KEY not set - skipping vulnerability scan"
+            echo "To enable: Add SAFETY_API_KEY to repository secrets"
+            echo '{"skipped": true, "reason": "No API key configured"}' > safety-report.json
+          fi
 
       - name: Upload safety report
         if: always()
