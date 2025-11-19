@@ -6,12 +6,17 @@
       style="height: 100vh"
     >
       <el-header
-        height="60px"
+        height="80px"
         style="background: #409EFF; color: white; display: flex; align-items: center; padding: 0 20px;"
       >
-        <h2 style="margin: 0">
-          ChallengeCtl Control Center
-        </h2>
+        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-right: 20px;">
+          <h2 style="margin: 0; line-height: 1.3; font-size: 1.5em;">
+            ChallengeCtl Control Center<span v-if="conferenceName"> - {{ conferenceName }}</span>
+          </h2>
+          <div style="font-size: 0.9em; margin-top: 5px; opacity: 0.95;">
+            <ConferenceCountdown />
+          </div>
+        </div>
         <div style="flex: 1" />
         <el-button
           circle
@@ -93,6 +98,7 @@ import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting } from '@elem
 import { api } from './api'
 import { logout, checkAuth } from './auth'
 import { ElMessage } from 'element-plus'
+import ConferenceCountdown from './components/ConferenceCountdown.vue'
 
 export default {
   name: 'App',
@@ -101,18 +107,30 @@ export default {
     Connection,
     Notebook,
     User,
-    Setting
+    Setting,
+    ConferenceCountdown
   },
   setup() {
     const route = useRoute()
     const router = useRouter()
     const systemPaused = ref(false)
     const isDark = ref(true) // Default to dark theme
+    const conferenceName = ref('')
 
     // Show admin layout for authenticated routes
     const showAdminLayout = computed(() => {
       return checkAuth() && route.meta.requiresAuth
     })
+
+    // Load conference name
+    const loadConferenceName = async () => {
+      try {
+        const response = await api.get('/conference')
+        conferenceName.value = response.data.name
+      } catch (error) {
+        console.error('Failed to load conference name:', error)
+      }
+    }
 
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
@@ -121,6 +139,7 @@ export default {
         isDark.value = savedTheme === 'dark'
       }
       applyTheme()
+      loadConferenceName()
     })
 
     const applyTheme = () => {
@@ -177,6 +196,7 @@ export default {
       showAdminLayout,
       systemPaused,
       isDark,
+      conferenceName,
       Moon,
       Sunny,
       toggleTheme,

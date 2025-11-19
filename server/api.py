@@ -1135,6 +1135,24 @@ class ChallengeCtlAPI:
                 logger.error(f"Error getting public challenges: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
+        # Conference info endpoint (no auth required)
+        @self.app.route('/api/conference', methods=['GET'])
+        def get_conference_info():
+            """Get conference information including name and start/stop times."""
+            try:
+                conference = self.config.get('conference', {})
+
+                return jsonify({
+                    'name': conference.get('name', 'ChallengeCtl'),
+                    'start': conference.get('start'),
+                    'stop': conference.get('stop'),
+                    'end_of_day': conference.get('end_of_day')
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error getting conference info: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
         # Runner endpoints
         # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats
         @self.app.route('/api/runners/register', methods=['POST'])
