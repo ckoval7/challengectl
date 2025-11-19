@@ -35,7 +35,7 @@ The ChallengeCtl web interface provides a comprehensive view of your RF challeng
 
 ### Login Process
 
-The login process differs based on whether you're an existing user or a new temporary user.
+The login process differs based on whether you're an existing user or a newly created user requiring setup.
 
 #### Existing User Login
 
@@ -59,13 +59,13 @@ The login process differs based on whether you're an existing user or a new temp
 4. **Access the dashboard**:
    - Upon successful authentication, you'll be directed to the main dashboard
 
-#### New User First Login (Temporary User)
+#### New User First Login
 
-If an administrator created your account, you'll have a temporary account that requires setup:
+If an administrator created your account, you must complete setup on first login:
 
-1. **Navigate to the server URL** and enter your temporary credentials:
+1. **Navigate to the server URL** and enter your initial credentials:
    - Username: Provided by your administrator
-   - Password: Temporary password provided by administrator
+   - Password: Initial password provided by administrator
 
 2. **Account Setup Screen**:
    - You'll be automatically redirected to the setup page
@@ -89,8 +89,8 @@ If an administrator created your account, you'll have a temporary account that r
    - Future logins will use your new password and TOTP
 
 **Important Notes**:
-- Temporary accounts **must be activated within 24 hours** of creation
-- Accounts not activated in time are automatically disabled for security
+- New users **must complete setup within 24 hours** of account creation
+- Accounts not set up in time are automatically disabled for security
 - If your account is disabled, contact your administrator to create a new one
 - You cannot skip TOTP setup - all users must have 2FA enabled
 
@@ -561,29 +561,29 @@ Displays all admin users with:
 
 **Add User** (Requires `create_users` permission):
 
-Creating a new user now creates a **temporary account** by default:
+Creating a new user:
 
 1. Click "Add User" button
-2. Enter username and temporary password (minimum 8 characters)
+2. Enter username (password is auto-generated)
 3. (Optional) Grant permissions like `create_users`
 4. Click "Create User"
-5. **Important**: The temporary password is displayed only once
-6. Share the username and temporary password with the new user securely
+5. **Important**: The initial password is displayed only once
+6. Share the username and initial password with the new user securely
 7. The new user must complete setup within 24 hours
 
 The new user will:
-- Login with the temporary credentials
+- Login with the initial credentials
 - Be required to change their password
 - Be required to set up TOTP 2FA
 - Complete setup or have their account auto-disabled after 24 hours
 
-**Temporary vs Permanent Users**:
-- **Temporary users**: Created by admins, must complete setup on first login
+**User Account Types**:
+- **New users** (created via web UI): Must complete setup on first login
   - Ideal for onboarding new administrators
   - Auto-disabled after 24 hours if setup not completed
   - No TOTP configured initially
-- **Permanent users**: Created during initial server setup or via CLI
-  - Already have TOTP configured
+- **Initial admin**: Created during initial server setup
+  - Already has TOTP configured
   - Ready to use immediately
 
 **Enable/Disable User**:
@@ -659,7 +659,7 @@ ChallengeCtl uses a scalable permission system to control user capabilities:
 - Secrets are encrypted in the database using Fernet encryption
 
 **Account Security Features**:
-- **24-hour temporary account expiration**: Prevents unused accounts from remaining active
+- **24-hour setup deadline**: New accounts must complete setup within 24 hours or are auto-disabled
 - **Session invalidation**: Password/TOTP resets immediately log out all user sessions
 - **Permission-based access control**: Users can only perform actions they're authorized for
 - **Audit logging**: All permission grants/revokes are logged with granting administrator
@@ -668,7 +668,7 @@ ChallengeCtl uses a scalable permission system to control user capabilities:
 
 **Onboarding a New Administrator**:
 1. Click "Add User" with your account (must have `create_users` permission)
-2. Enter username and temporary password
+2. Enter username (initial password auto-generated)
 3. Grant `create_users` permission if they should manage users
 4. Share credentials securely with the new admin
 5. New admin logs in and completes setup within 24 hours

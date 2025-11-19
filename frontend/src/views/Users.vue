@@ -147,7 +147,7 @@
           show-icon
           style="margin-bottom: 20px"
         >
-          A temporary password will be auto-generated. The user must change it and set up 2FA on first login.
+          An initial password will be auto-generated. The user must change it and set up 2FA on first login.
         </el-alert>
       </el-form>
 
@@ -165,10 +165,10 @@
       </template>
     </el-dialog>
 
-    <!-- Temporary User Created Dialog -->
+    <!-- New User Created Dialog -->
     <el-dialog
       v-model="showTempUserDialog"
-      title="Temporary User Created"
+      title="User Created"
       width="600px"
     >
       <el-alert
@@ -195,7 +195,7 @@
               </template>
             </el-input>
           </el-form-item>
-          <el-form-item label="Temporary Password:">
+          <el-form-item label="Initial Password:">
             <el-input
               :model-value="tempUserInfo.password"
               readonly
@@ -420,16 +420,16 @@ export default {
 
         showCreateDialog.value = false
 
-        // Check if this is a temporary user or initial setup
+        // Check if this is a new user requiring setup or initial setup
         if (response.data.is_temporary) {
-          // Temporary user - show password
+          // New user - show initial password
           tempUserInfo.value = {
             username: response.data.username,
             password: response.data.temporary_password
           }
           showTempUserDialog.value = true
         } else {
-          // Initial setup user - show TOTP QR code
+          // Initial setup - show TOTP QR code
           const qrCodeDataUrl = await QRCode.toDataURL(response.data.provisioning_uri)
 
           totpInfo.value = {

@@ -66,13 +66,13 @@ Authorization: Bearer ck_provisioning_abc123def456...
 Admin endpoints require session-based authentication with username/password and TOTP:
 
 1. **Login**: POST credentials to `/api/auth/login`
-2. **Complete Setup** (temporary users only):
+2. **Complete Setup** (new users requiring setup):
    - Step 1: POST new password to `/api/auth/complete-setup` (returns TOTP provisioning URI)
    - Step 2: POST TOTP verification code to `/api/auth/verify-setup`
 3. **Verify TOTP** (existing users): POST TOTP code to `/api/auth/verify-totp`
 4. **Use session**: Session cookie is automatically included in subsequent requests
 
-**Temporary Users**: New users are created as temporary accounts. On first login, they must:
+**New User Setup**: Newly created users must complete setup on first login:
 - Change their password (backend generates TOTP secret)
 - Verify TOTP code from authenticator app
 - Complete setup within 24 hours or account is automatically disabled
@@ -160,7 +160,7 @@ Content-Type: application/json
 }
 ```
 
-**Response (temporary user - setup required):**
+**Response (new user - setup required):**
 ```json
 {
   "setup_required": true,
@@ -191,7 +191,7 @@ Sets session cookie for subsequent requests.
 
 #### POST /api/auth/complete-setup
 
-Step 1 of account setup for temporary users: change password and receive TOTP provisioning URI.
+Step 1 of account setup for new users: change password and receive TOTP provisioning URI.
 
 **Request:**
 ```http
@@ -226,7 +226,7 @@ The TOTP secret is generated server-side and returned for display. The user shou
 
 #### POST /api/auth/verify-setup
 
-Step 2 of account setup for temporary users: verify TOTP code and complete setup.
+Step 2 of account setup for new users: verify TOTP code and complete setup.
 
 **Request:**
 ```http
@@ -389,7 +389,7 @@ Cookie: session=...
 
 #### POST /api/users
 
-Create a new admin user. By default, creates a temporary user that must complete setup on first login.
+Create a new admin user. By default, users must complete setup (change password, configure 2FA) on first login.
 
 **Permissions required**: `create_users`
 
@@ -402,28 +402,28 @@ X-CSRF-Token: csrf_token_value
 
 {
   "username": "newuser",
-  "password": "temporaryPassword123",
+  "password": "initialPassword123",
   "permissions": ["create_users"]
 }
 ```
 
 **Parameters:**
 - `username` (required): Username for the new user
-- `password` (required): Temporary password (min 8 characters)
+- `password` (optional): Initial password (min 8 characters). If omitted, a secure password is auto-generated.
 - `permissions` (optional): Array of permissions to grant. Valid values: `["create_users"]`
 
-**Response (temporary user - default):**
+**Response (normal user creation - default):**
 ```json
 {
   "status": "created",
   "username": "newuser",
   "is_temporary": true,
   "setup_deadline_hours": 24,
-  "temporary_password": "temporaryPassword123"
+  "temporary_password": "auto-generated-password"
 }
 ```
 
-**Response (initial setup - creates permanent user):**
+**Response (initial setup - first admin user):**
 ```json
 {
   "status": "created",
@@ -434,15 +434,15 @@ X-CSRF-Token: csrf_token_value
 }
 ```
 
-**Temporary User Flow:**
-1. Admin creates temporary user with a password
-2. Admin shares username and temporary password with new user
+**New User Flow:**
+1. Admin creates user (password auto-generated if not provided)
+2. Admin shares username and initial password with new user
 3. New user logs in within 24 hours
 4. New user must change password and set up TOTP
 5. If not completed within 24 hours, account is automatically disabled
 
 **Security Notes:**
-- Temporary password is returned only once for admin to share
+- Initial password is returned only once for admin to share
 - User must complete setup within 24 hours or account is disabled
 - TOTP is mandatory - no users can skip 2FA
 - `create_users` permission is automatically granted to first user during initial setup
