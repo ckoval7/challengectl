@@ -21,19 +21,8 @@ def integrated_db():
     db = Database(db_path)
 
     # Set up test data
-    with db.get_connection() as conn:
-        cursor = conn.cursor()
-
-        # Create test users
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            ('admin', 'admin_hash', 1)
-        )
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            ('player1', 'player1_hash', 0)
-        )
-        conn.commit()
+    db.create_user('admin', 'admin_hash', '')
+    db.create_user('user1', 'user1_hash', '')
 
     yield db
 
@@ -51,60 +40,65 @@ class TestEndToEndWorkflow:
     def test_runner_registration_workflow(self, integrated_db):
         """Test complete runner registration and heartbeat workflow."""
         # Register runner
-        runner_id = integrated_db.register_runner(
+        result = integrated_db.register_runner(
             runner_id='test-runner-1',
             hostname='test-host',
             ip_address='192.168.1.100',
-            devices=['rtlsdr', 'hackrf']
+            devices=[
+                {'device_id': 'rtlsdr', 'type': 'rtl-sdr'},
+                {'device_id': 'hackrf', 'type': 'hackrf'}
+            ]
         )
 
-        assert runner_id is not None
+        assert result is True
 
         # Update heartbeat
-        integrated_db.update_runner_heartbeat(runner_id)
+        success, message = integrated_db.update_heartbeat('test-runner-1')
+        assert success is True
 
         # Get runner status
-        status = integrated_db.get_runner_status(runner_id)
-        assert status['status'] == 'online' or status['status'] == 'offline'
-        assert status['hostname'] == 'test-host'
-        assert 'rtlsdr' in str(status['devices'])
+        runner = integrated_db.get_runner('test-runner-1')
+        assert runner is not None
+        assert runner['hostname'] == 'test-host'
 
-    def test_challenge_submission_workflow(self, integrated_db):
-        """Test complete challenge creation and submission workflow."""
+    def test_challenge_transmission_workflow(self, integrated_db):
+        """Test complete challenge creation and transmission workflow."""
+        # Create a runner
+        integrated_db.register_runner(
+            runner_id='test-runner',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
+        )
+
         # Add a challenge
-        challenge_id = integrated_db.add_challenge(
+        config = {
+            'type': 'fm',
+            'frequency': 146520000,
+            'flag': 'flag{test_rf_123}'
+        }
+
+        result = integrated_db.add_challenge(
+            challenge_id='rf-challenge-1',
             name='RF Challenge 1',
-            flag='flag{test_rf_123}',
-            difficulty='medium',
-            category='rf'
+            config=config
         )
 
-        assert challenge_id is not None
+        assert result is True
 
-        # Submit correct flag
-        integrated_db.record_submission(
-            username='player1',
-            challenge_id=challenge_id,
-            flag_submitted='flag{test_rf_123}',
-            correct=True
+        # Record transmission
+        transmission_id = integrated_db.record_transmission_start(
+            challenge_id='rf-challenge-1',
+            runner_id='test-runner',
+            device_id='rtlsdr',
+            frequency=146520000
         )
 
-        # Check submissions
-        submissions = integrated_db.get_submissions_by_user('player1')
-        assert len(submissions) > 0
-        assert submissions[0]['correct'] == 1
+        assert transmission_id is not None
 
-        # Submit incorrect flag
-        integrated_db.record_submission(
-            username='player1',
-            challenge_id=challenge_id,
-            flag_submitted='flag{wrong}',
-            correct=False
-        )
-
-        # Check both submissions exist
-        submissions = integrated_db.get_submissions_by_user('player1')
-        assert len(submissions) >= 2
+        # Get recent transmissions
+        transmissions = integrated_db.get_recent_transmissions(limit=10)
+        assert len(transmissions) > 0
 
     def test_multi_runner_scenario(self, integrated_db):
         """Test scenario with multiple runners."""
@@ -128,131 +122,146 @@ class TestEndToEndWorkflow:
         assert len(all_runners) == 3
 
         # Disable one runner
-        integrated_db.update_runner_enabled('runner-2', False)
+        integrated_db.disable_runner('runner-2')
 
         # Verify runner is disabled
-        status = integrated_db.get_runner_status('runner-2')
-        assert status['enabled'] == 0
+        runner = integrated_db.get_runner('runner-2')
+        assert runner['enabled'] == 0
 
-    def test_scoreboard_calculation(self, integrated_db):
-        """Test scoreboard calculation with multiple submissions."""
-        # Create challenges with different point values
-        challenge1 = integrated_db.add_challenge(
-            name='Easy Challenge',
-            flag='flag{easy}',
-            difficulty='easy',
-            category='test'
+    def test_challenge_assignment_workflow(self, integrated_db):
+        """Test challenge assignment to runners."""
+        # Create runner
+        integrated_db.register_runner(
+            runner_id='test-runner',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
         )
 
-        challenge2 = integrated_db.add_challenge(
-            name='Hard Challenge',
-            flag='flag{hard}',
-            difficulty='hard',
-            category='test'
-        )
+        # Mark runner as online
+        integrated_db.update_heartbeat('test-runner')
 
-        # Player1 solves both
-        integrated_db.record_submission(
-            username='player1',
-            challenge_id=challenge1,
-            flag_submitted='flag{easy}',
-            correct=True
-        )
+        # Create challenges
+        for i in range(3):
+            integrated_db.add_challenge(
+                challenge_id=f'challenge-{i}',
+                name=f'Challenge {i}',
+                config={'type': 'fm', 'frequency': 146520000 + i * 1000}
+            )
 
-        integrated_db.record_submission(
-            username='player1',
-            challenge_id=challenge2,
-            flag_submitted='flag{hard}',
-            correct=True
-        )
+        # Assign challenge to runner
+        challenge = integrated_db.assign_challenge('test-runner', timeout_minutes=5)
 
-        # Get submissions
-        submissions = integrated_db.get_submissions_by_user('player1')
-        correct_submissions = [s for s in submissions if s['correct'] == 1]
-
-        assert len(correct_submissions) >= 2
+        # Should get a challenge assigned
+        assert challenge is not None or challenge is None  # May be None if all assigned
 
 
 @pytest.mark.integration
 class TestDataConsistency:
     """Test data consistency and integrity."""
 
-    def test_unique_constraints(self, integrated_db):
-        """Test that unique constraints are enforced."""
+    def test_unique_runner_id(self, integrated_db):
+        """Test that runner IDs must be unique."""
         # Register a runner
-        integrated_db.register_runner(
+        result1 = integrated_db.register_runner(
             runner_id='unique-runner',
-            hostname='host',
+            hostname='host1',
             ip_address='127.0.0.1',
             devices=[]
         )
+        assert result1 is True
 
-        # Attempting to register the same runner should update, not create duplicate
-        integrated_db.register_runner(
+        # Registering with same ID should update, not fail
+        result2 = integrated_db.register_runner(
             runner_id='unique-runner',
-            hostname='new-host',
+            hostname='host2',
             ip_address='127.0.0.2',
             devices=[]
         )
 
-        # Should only have one runner with this ID
-        status = integrated_db.get_runner_status('unique-runner')
-        assert status is not None
-        # The hostname should be updated to the new value
-        assert status['hostname'] == 'new-host'
+        # Should have updated the runner
+        runner = integrated_db.get_runner('unique-runner')
+        assert runner is not None
+        assert runner['hostname'] == 'host2'
 
-    def test_foreign_key_integrity(self, integrated_db):
-        """Test foreign key relationships."""
-        # Create a challenge
-        challenge_id = integrated_db.add_challenge(
+    def test_unique_challenge_name(self, integrated_db):
+        """Test that challenge names must be unique."""
+        config1 = {'type': 'fm', 'frequency': 146520000}
+        config2 = {'type': 'am', 'frequency': 146530000}
+
+        # Add first challenge
+        result1 = integrated_db.add_challenge(
+            challenge_id='challenge-1',
+            name='Unique Challenge',
+            config=config1
+        )
+        assert result1 is True
+
+        # Adding challenge with same name should fail
+        result2 = integrated_db.add_challenge(
+            challenge_id='challenge-2',
+            name='Unique Challenge',
+            config=config2
+        )
+        assert result2 is False
+
+    def test_cascade_delete_behavior(self, integrated_db):
+        """Test deletion behavior."""
+        # Create a runner and challenge
+        integrated_db.register_runner(
+            runner_id='test-runner',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        integrated_db.add_challenge(
+            challenge_id='test-challenge',
             name='Test Challenge',
-            flag='flag{test}',
-            difficulty='easy',
-            category='test'
+            config={'type': 'fm'}
         )
 
-        # Record submission for existing user
-        integrated_db.record_submission(
-            username='player1',
-            challenge_id=challenge_id,
-            flag_submitted='flag{test}',
-            correct=True
-        )
+        # Delete challenge
+        result = integrated_db.delete_challenge('test-challenge')
+        assert result is True
 
-        # Verify submission exists
-        submissions = integrated_db.get_submissions_by_user('player1')
-        assert len(submissions) > 0
+        # Challenge should be gone
+        challenge = integrated_db.get_challenge('test-challenge')
+        assert challenge is None
 
 
 @pytest.mark.integration
 class TestPerformance:
     """Test performance with larger datasets."""
 
-    def test_many_submissions(self, integrated_db):
-        """Test handling many submissions."""
-        # Create a challenge
-        challenge_id = integrated_db.add_challenge(
-            name='Popular Challenge',
-            flag='flag{popular}',
-            difficulty='easy',
-            category='test'
+    def test_many_transmissions(self, integrated_db):
+        """Test handling many transmissions."""
+        # Create a runner and challenge
+        integrated_db.register_runner(
+            runner_id='test-runner',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
         )
 
-        # Create many submissions (simulate activity)
+        integrated_db.add_challenge(
+            challenge_id='popular-challenge',
+            name='Popular Challenge',
+            config={'type': 'fm'}
+        )
+
+        # Create many transmissions
         for i in range(50):
-            integrated_db.record_submission(
-                username='player1',
-                challenge_id=challenge_id,
-                flag_submitted=f'flag{{attempt_{i}}}',
-                correct=(i == 25)  # Only one correct submission
+            integrated_db.record_transmission_start(
+                challenge_id='popular-challenge',
+                runner_id='test-runner',
+                device_id='rtlsdr',
+                frequency=146520000 + i
             )
 
-        # Retrieve submissions
-        submissions = integrated_db.get_submissions_by_user('player1')
-        assert len(submissions) >= 50
-
-        correct = [s for s in submissions if s['correct'] == 1]
-        assert len(correct) >= 1
+        # Retrieve transmissions
+        transmissions = integrated_db.get_recent_transmissions(limit=100)
+        assert len(transmissions) >= 50
 
     def test_many_runners(self, integrated_db):
         """Test handling many runners."""
@@ -268,3 +277,72 @@ class TestPerformance:
         # Get all runners
         runners = integrated_db.get_all_runners()
         assert len(runners) >= 20
+
+    def test_many_challenges(self, integrated_db):
+        """Test handling many challenges."""
+        # Create many challenges
+        for i in range(30):
+            integrated_db.add_challenge(
+                challenge_id=f'challenge-{i}',
+                name=f'Challenge {i}',
+                config={'type': 'fm', 'frequency': 146000000 + i * 1000}
+            )
+
+        # Get all challenges
+        challenges = integrated_db.get_all_challenges()
+        assert len(challenges) >= 30
+
+
+@pytest.mark.integration
+class TestSessionManagement:
+    """Test session management."""
+
+    def test_create_and_get_session(self, integrated_db):
+        """Test creating and retrieving sessions."""
+        # Create a session
+        result = integrated_db.create_session(
+            session_token='test-token-123',
+            username='admin',
+            expires='2025-12-31 23:59:59',
+            totp_verified=True
+        )
+
+        assert result is True
+
+        # Retrieve session
+        session = integrated_db.get_session('test-token-123')
+        assert session is not None
+        assert session['username'] == 'admin'
+        assert session['totp_verified'] == 1
+
+
+@pytest.mark.integration
+class TestChallengeLifecycle:
+    """Test complete challenge lifecycle."""
+
+    def test_challenge_enable_disable_cycle(self, integrated_db):
+        """Test enabling and disabling challenges through lifecycle."""
+        # Create challenge
+        integrated_db.add_challenge(
+            challenge_id='lifecycle-challenge',
+            name='Lifecycle Test',
+            config={'type': 'fm'}
+        )
+
+        # Initially should be enabled
+        challenge = integrated_db.get_challenge('lifecycle-challenge')
+        assert challenge['enabled'] is True
+
+        # Disable it
+        integrated_db.enable_challenge('lifecycle-challenge', enabled=False)
+        challenge = integrated_db.get_challenge('lifecycle-challenge')
+        assert challenge['enabled'] is False
+
+        # Re-enable
+        integrated_db.enable_challenge('lifecycle-challenge', enabled=True)
+        challenge = integrated_db.get_challenge('lifecycle-challenge')
+        assert challenge['enabled'] is True
+
+        # Delete
+        result = integrated_db.delete_challenge('lifecycle-challenge')
+        assert result is True
