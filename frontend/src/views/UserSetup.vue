@@ -140,7 +140,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
-import pyotp from 'pyotp'
+import * as OTPAuth from 'otpauth'
 
 export default {
   name: 'UserSetup',
@@ -179,13 +179,14 @@ export default {
       }
 
       // Generate TOTP secret
-      const secret = pyotp.randomBase32()
-      generatedTotpSecret.value = secret
+      const secret = new OTPAuth.Secret({ size: 20 })
+      const secretBase32 = secret.base32
+      generatedTotpSecret.value = secretBase32
 
       // Generate QR code
       const username = 'user' // This will be replaced by actual username from session
       const issuerName = 'ChallengeCtl'
-      const provisioning_uri = `otpauth://totp/${issuerName}:${username}?secret=${secret}&issuer=${issuerName}`
+      const provisioning_uri = `otpauth://totp/${issuerName}:${username}?secret=${secretBase32}&issuer=${issuerName}`
 
       try {
         const qrCode = await QRCode.toDataURL(provisioning_uri)
@@ -215,10 +216,21 @@ export default {
 
       // Verify TOTP code locally before submitting
       try {
-        const totp = new pyotp.TOTP(generatedTotpSecret.value)
-        const isValid = totp.verify(totpVerifyCode.value, { window: 1 })
+        const totp = new OTPAuth.TOTP({
+          issuer: 'ChallengeCtl',
+          label: 'user',
+          algorithm: 'SHA1',
+          digits: 6,
+          period: 30,
+          secret: OTPAuth.Secret.fromBase32(generatedTotpSecret.value)
+        })
 
-        if (!isValid) {
+        const delta = totp.validate({
+          token: totpVerifyCode.value,
+          window: 1
+        })
+
+        if (delta === null) {
           ElMessage.error('Invalid TOTP code. Please try again.')
           return
         }
