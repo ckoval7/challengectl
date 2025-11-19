@@ -1164,7 +1164,12 @@ class ChallengeCtlAPI:
 
             ip_address = request.remote_addr
 
-            success = self.db.register_runner(runner_id, hostname, ip_address, devices)
+            # Get host identifiers from custom headers (sent by runner)
+            mac_address = request.headers.get('X-Runner-MAC')
+            machine_id = request.headers.get('X-Runner-Machine-ID')
+
+            success = self.db.register_runner(runner_id, hostname, ip_address, devices,
+                                             mac_address=mac_address, machine_id=machine_id)
 
             if success:
                 # Broadcast runner online event
