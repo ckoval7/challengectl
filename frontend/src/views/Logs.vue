@@ -100,7 +100,11 @@
       <div style="color: #909399; font-size: 12px">
         Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
       </div>
-      <el-button @click="clearLogs" type="danger" plain>
+      <el-button
+        type="danger"
+        plain
+        @click="clearLogs"
+      >
         Clear Logs
       </el-button>
     </div>

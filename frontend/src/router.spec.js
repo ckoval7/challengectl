@@ -12,7 +12,7 @@ describe('Router', () => {
 
     expect(routeNames).toContain('Dashboard')
     expect(routeNames).toContain('Runners')
-    expect(routeNames).toContain('Challenges')
+    expect(routeNames).toContain('ChallengeConfig')
     expect(routeNames).toContain('Logs')
     expect(routeNames).toContain('PublicDashboard')
   })
@@ -26,14 +26,22 @@ describe('Router', () => {
     const runners = routes.find(r => r.name === 'Runners')
     expect(runners.path).toBe('/runners')
 
-    const challenges = routes.find(r => r.name === 'Challenges')
-    expect(challenges.path).toBe('/challenges')
+    const challengeConfig = routes.find(r => r.name === 'ChallengeConfig')
+    expect(challengeConfig.path).toBe('/challenge-config')
 
     const logs = routes.find(r => r.name === 'Logs')
     expect(logs.path).toBe('/logs')
 
     const publicDashboard = routes.find(r => r.name === 'PublicDashboard')
     expect(publicDashboard.path).toBe('/public')
+  })
+
+  it('should redirect /challenges to /challenge-config', () => {
+    const routes = router.getRoutes()
+    const challengesRedirect = routes.find(r => r.path === '/challenges')
+
+    expect(challengesRedirect).toBeDefined()
+    expect(challengesRedirect.redirect).toBe('/challenge-config')
   })
 
   it('should use history mode', () => {

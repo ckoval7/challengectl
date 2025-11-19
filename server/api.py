@@ -1981,6 +1981,13 @@ radios:
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
 
+            # Validate timing configuration
+            min_delay = config.get('min_delay')
+            max_delay = config.get('max_delay')
+            if min_delay is not None and max_delay is not None:
+                if min_delay > max_delay:
+                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
             # Ensure name is in config
             config['name'] = name
 
@@ -2029,6 +2036,13 @@ radios:
 
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
+
+            # Validate timing configuration
+            min_delay = config.get('min_delay')
+            max_delay = config.get('max_delay')
+            if min_delay is not None and max_delay is not None:
+                if min_delay > max_delay:
+                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
 
             success = self.db.update_challenge(challenge_id, config)
 
@@ -2176,6 +2190,14 @@ radios:
                         if 'flag' in challenge and challenge['flag'] in uploaded_files:
                             # Store as file hash reference
                             challenge['flag_file_hash'] = uploaded_files[challenge['flag']]
+
+                        # Validate timing configuration
+                        min_delay = challenge.get('min_delay')
+                        max_delay = challenge.get('max_delay')
+                        if min_delay is not None and max_delay is not None:
+                            if min_delay > max_delay:
+                                errors.append(f"Challenge {name}: min_delay must be less than or equal to max_delay")
+                                continue
 
                         try:
                             if name in existing_challenges:
@@ -2549,7 +2571,27 @@ radios:
             }
 
             # Conditionally add fields based on public view settings
-            public_view = config.get('public_view', {})
+            # Support both new public_view format and old public_fields array format
+            public_view = config.get('public_view')
+
+            # Backwards compatibility: convert old public_fields array to public_view object
+            if public_view is None and 'public_fields' in config:
+                public_fields = config.get('public_fields', [])
+                public_view = {
+                    'show_modulation': 'modulation' in public_fields,
+                    'show_frequency': 'frequency' in public_fields,
+                    'show_last_tx_time': 'last_tx_time' in public_fields,
+                    'show_active_status': 'status' in public_fields
+                }
+            elif public_view is None:
+                # No visibility settings at all - default to showing all fields
+                # for backwards compatibility with old challenges
+                public_view = {
+                    'show_modulation': True,
+                    'show_frequency': True,
+                    'show_last_tx_time': True,
+                    'show_active_status': True
+                }
 
             # Show modulation if enabled (default: True)
             if public_view.get('show_modulation', True):

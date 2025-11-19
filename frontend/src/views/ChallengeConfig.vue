@@ -1,10 +1,112 @@
 <template>
   <div class="challenge-config">
-    <h1>Challenge Configuration</h1>
+    <h1>Manage Challenges</h1>
 
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs
+      v-model="activeTab"
+      type="border-card"
+    >
+      <!-- Live Status Tab -->
+      <el-tab-pane
+        label="Live Status"
+        name="status"
+      >
+        <div style="margin-bottom: 20px">
+          <el-button
+            type="primary"
+            @click="reloadChallenges"
+          >
+            Reload from Config
+          </el-button>
+        </div>
+
+        <el-table
+          :data="challenges"
+          style="width: 100%"
+        >
+          <el-table-column
+            prop="name"
+            label="Name"
+            width="200"
+          />
+          <el-table-column
+            label="Modulation"
+            width="120"
+          >
+            <template #default="scope">
+              {{ scope.row.config?.modulation || 'N/A' }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Frequency"
+            width="150"
+          >
+            <template #default="scope">
+              {{ formatFrequency(scope.row.config?.frequency) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Status"
+            width="100"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="getStatusType(scope.row)"
+                size="small"
+              >
+                {{ !scope.row.enabled ? 'disabled' : scope.row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Enabled"
+            width="100"
+          >
+            <template #default="scope">
+              <el-switch
+                v-model="scope.row.enabled"
+                @change="toggleChallenge(scope.row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="TX Count"
+            width="100"
+          >
+            <template #default="scope">
+              {{ scope.row.transmission_count || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Last TX"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_tx_time) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            width="150"
+          >
+            <template #default="scope">
+              <el-button
+                size="small"
+                type="primary"
+                @click="triggerChallenge(scope.row.challenge_id)"
+              >
+                Trigger Now
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
       <!-- Create/Edit Challenge Tab -->
-      <el-tab-pane label="Create Challenge" name="create">
+      <el-tab-pane
+        label="Create Challenge"
+        name="create"
+      >
         <el-form
           ref="formRef"
           :model="challengeForm"
@@ -13,31 +115,64 @@
         >
           <h3>Basic Information</h3>
 
-          <el-form-item label="Challenge Name" required>
+          <el-form-item
+            label="Challenge Name"
+            required
+          >
             <el-input
               v-model="challengeForm.name"
               placeholder="e.g., NBFM_FLAG_1"
             />
           </el-form-item>
 
-          <el-form-item label="Modulation" required>
+          <el-form-item
+            label="Modulation"
+            required
+          >
             <el-select
               v-model="challengeForm.modulation"
               placeholder="Select modulation"
               @change="onModulationChange"
             >
-              <el-option label="NBFM (Narrowband FM)" value="nbfm" />
-              <el-option label="SSB (Single Sideband)" value="ssb" />
-              <el-option label="FreeDV" value="freedv" />
-              <el-option label="CW (Morse Code)" value="cw" />
-              <el-option label="ASK (Amplitude Shift Keying)" value="ask" />
-              <el-option label="POCSAG (Pager)" value="pocsag" />
-              <el-option label="FHSS (Frequency Hopping)" value="fhss" />
-              <el-option label="LoRa" value="lrs" />
+              <el-option
+                label="NBFM (Narrowband FM)"
+                value="nbfm"
+              />
+              <el-option
+                label="SSB (Single Sideband)"
+                value="ssb"
+              />
+              <el-option
+                label="FreeDV"
+                value="freedv"
+              />
+              <el-option
+                label="CW (Morse Code)"
+                value="cw"
+              />
+              <el-option
+                label="ASK (Amplitude Shift Keying)"
+                value="ask"
+              />
+              <el-option
+                label="POCSAG (Pager)"
+                value="pocsag"
+              />
+              <el-option
+                label="FHSS (Frequency Hopping)"
+                value="fhss"
+              />
+              <el-option
+                label="LoRa"
+                value="lrs"
+              />
             </el-select>
           </el-form-item>
 
-          <el-form-item label="Frequency (Hz)" required>
+          <el-form-item
+            label="Frequency (Hz)"
+            required
+          >
             <el-input-number
               v-model="challengeForm.frequency"
               :min="1000000"
@@ -68,7 +203,10 @@
               accept=".wav"
               @change="handleFlagFileChange"
             >
-              <el-button size="small" style="margin-top: 10px">
+              <el-button
+                size="small"
+                style="margin-top: 10px"
+              >
                 Choose File
               </el-button>
             </el-upload>
@@ -101,7 +239,10 @@
               accept=".bin"
               @change="handleFlagFileChange"
             >
-              <el-button size="small" style="margin-top: 10px">
+              <el-button
+                size="small"
+                style="margin-top: 10px"
+              >
                 Choose File
               </el-button>
             </el-upload>
@@ -113,18 +254,30 @@
             <el-input-number
               v-model="challengeForm.min_delay"
               :min="1"
-              :max="3600"
+              :max="challengeForm.max_delay"
               style="width: 100%"
             />
+            <div
+              v-if="challengeForm.min_delay > challengeForm.max_delay"
+              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+            >
+              Min delay must be less than or equal to max delay
+            </div>
           </el-form-item>
 
           <el-form-item label="Max Delay (seconds)">
             <el-input-number
               v-model="challengeForm.max_delay"
-              :min="1"
+              :min="challengeForm.min_delay"
               :max="3600"
               style="width: 100%"
             />
+            <div
+              v-if="challengeForm.max_delay < challengeForm.min_delay"
+              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+            >
+              Max delay must be greater than or equal to min delay
+            </div>
           </el-form-item>
 
           <el-form-item label="Priority">
@@ -134,12 +287,39 @@
               :max="100"
               style="width: 100%"
             />
-            <div style="font-size: 12px; color: #999; margin-top: 5px">
-              Higher priority challenges are transmitted first
+            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 5px">
+              Higher priority challenges are transmitted first (higher number = higher priority)
             </div>
           </el-form-item>
 
-          <h3 v-if="showModulationSpecificFields">Modulation-Specific Settings</h3>
+          <h3>Public Dashboard Visibility</h3>
+
+          <el-form-item label="Public Fields">
+            <el-checkbox-group v-model="challengeForm.public_fields">
+              <el-checkbox label="name">
+                Name
+              </el-checkbox>
+              <el-checkbox label="modulation">
+                Modulation
+              </el-checkbox>
+              <el-checkbox label="frequency">
+                Frequency
+              </el-checkbox>
+              <el-checkbox label="status">
+                Status
+              </el-checkbox>
+              <el-checkbox label="last_tx_time">
+                Last TX Time
+              </el-checkbox>
+            </el-checkbox-group>
+            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 5px">
+              Select which fields are visible on the public dashboard
+            </div>
+          </el-form-item>
+
+          <h3 v-if="showModulationSpecificFields">
+            Modulation-Specific Settings
+          </h3>
 
           <!-- NBFM/SSB/FreeDV/FHSS settings -->
           <el-form-item
@@ -222,9 +402,18 @@
                 v-model="challengeForm.bandwidth"
                 placeholder="Select bandwidth"
               >
-                <el-option label="125 kHz" :value="125000" />
-                <el-option label="250 kHz" :value="250000" />
-                <el-option label="500 kHz" :value="500000" />
+                <el-option
+                  label="125 kHz"
+                  :value="125000"
+                />
+                <el-option
+                  label="250 kHz"
+                  :value="250000"
+                />
+                <el-option
+                  label="500 kHz"
+                  :value="500000"
+                />
               </el-select>
             </el-form-item>
 
@@ -233,25 +422,45 @@
                 v-model="challengeForm.coding_rate"
                 placeholder="Select coding rate"
               >
-                <el-option label="4/5" value="4/5" />
-                <el-option label="4/6" value="4/6" />
-                <el-option label="4/7" value="4/7" />
-                <el-option label="4/8" value="4/8" />
+                <el-option
+                  label="4/5"
+                  value="4/5"
+                />
+                <el-option
+                  label="4/6"
+                  value="4/6"
+                />
+                <el-option
+                  label="4/7"
+                  value="4/7"
+                />
+                <el-option
+                  label="4/8"
+                  value="4/8"
+                />
               </el-select>
             </el-form-item>
           </template>
 
           <el-form-item>
-            <el-button type="primary" @click="createChallenge">
+            <el-button
+              type="primary"
+              @click="createChallenge"
+            >
               Create Challenge
             </el-button>
-            <el-button @click="resetForm">Reset</el-button>
+            <el-button @click="resetForm">
+              Reset
+            </el-button>
           </el-form-item>
         </el-form>
       </el-tab-pane>
 
       <!-- Import from YAML Tab -->
-      <el-tab-pane label="Import from YAML" name="import">
+      <el-tab-pane
+        label="Import from YAML"
+        name="import"
+      >
         <div style="max-width: 800px">
           <el-alert
             title="Import Challenges"
@@ -271,10 +480,14 @@
             accept=".yml,.yaml"
             @change="handleYamlChange"
           >
-            <el-button type="primary">Select YAML File</el-button>
+            <el-button type="primary">
+              Select YAML File
+            </el-button>
           </el-upload>
 
-          <h3 style="margin-top: 30px">Challenge Files (Optional)</h3>
+          <h3 style="margin-top: 30px">
+            Challenge Files (Optional)
+          </h3>
           <p style="color: #666; font-size: 14px">
             Upload audio files, binary files, or other resources referenced in your YAML.
             File paths in the YAML will be automatically updated.
@@ -300,7 +513,9 @@
             >
               Import Challenges
             </el-button>
-            <el-button @click="clearImportForm">Clear</el-button>
+            <el-button @click="clearImportForm">
+              Clear
+            </el-button>
           </div>
 
           <el-divider />
@@ -315,15 +530,18 @@
               <strong>POST /api/challenges/import</strong>
             </div>
             <div style="margin-top: 10px; font-family: monospace; font-size: 12px">
-              Content-Type: multipart/form-data<br />
-              Required: yaml_file (YAML file)<br />
+              Content-Type: multipart/form-data<br>
+              Required: yaml_file (YAML file)<br>
               Optional: Additional files referenced in YAML
             </div>
           </el-alert>
 
           <el-collapse>
-            <el-collapse-item title="Example cURL Command" name="curl">
-              <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto"><code>curl -X POST http://localhost:8080/api/challenges/import \
+            <el-collapse-item
+              title="Example cURL Command"
+              name="curl"
+            >
+              <pre class="code-example"><code>curl -X POST http://localhost:8080/api/challenges/import \
   -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
   -b "session=YOUR_SESSION_COOKIE" \
   -F "yaml_file=@challenges.yml" \
@@ -331,8 +549,11 @@
   -F "flag_data.bin=@/path/to/flag_data.bin"</code></pre>
             </el-collapse-item>
 
-            <el-collapse-item title="Example Python Script" name="python">
-              <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto"><code>import requests
+            <el-collapse-item
+              title="Example Python Script"
+              name="python"
+            >
+              <pre class="code-example"><code>import requests
 
 url = "http://localhost:8080/api/challenges/import"
 files = {
@@ -350,9 +571,15 @@ print(response.json())</code></pre>
       </el-tab-pane>
 
       <!-- Manage Challenges Tab -->
-      <el-tab-pane label="Manage Challenges" name="manage">
+      <el-tab-pane
+        label="Manage Challenges"
+        name="manage"
+      >
         <div style="margin-bottom: 20px">
-          <el-button type="success" @click="loadChallenges">
+          <el-button
+            type="success"
+            @click="loadChallenges"
+          >
             Refresh List
           </el-button>
         </div>
@@ -445,7 +672,10 @@ print(response.json())</code></pre>
         label-width="180px"
       >
         <el-form-item label="Challenge Name">
-          <el-input v-model="editForm.name" disabled />
+          <el-input
+            v-model="editForm.name"
+            disabled
+          />
         </el-form-item>
 
         <el-form-item label="Configuration (JSON)">
@@ -459,22 +689,30 @@ print(response.json())</code></pre>
       </el-form>
 
       <template #footer>
-        <el-button @click="editDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="saveEditedChallenge">Save</el-button>
+        <el-button @click="editDialogVisible = false">
+          Cancel
+        </el-button>
+        <el-button
+          type="primary"
+          @click="saveEditedChallenge"
+        >
+          Save
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
+import { formatDateTime } from '../utils/time'
 
 export default {
   name: 'ChallengeConfig',
   setup() {
-    const activeTab = ref('create')
+    const activeTab = ref('status')
     const challenges = ref([])
     const importing = ref(false)
 
@@ -488,6 +726,7 @@ export default {
       min_delay: 60,
       max_delay: 90,
       priority: 0,
+      public_fields: ['name', 'modulation', 'frequency', 'status'], // Default public fields
       wav_samplerate: 48000,
       speed: 35, // CW
       channel_spacing: 10000, // FHSS
@@ -516,6 +755,19 @@ export default {
     const showModulationSpecificFields = computed(() => {
       return challengeForm.value.modulation !== ''
     })
+
+    // Convert public_fields array to public_view object format
+    const convertPublicFieldsToView = (publicFields) => {
+      // Always explicitly set all fields (default to false if not in array)
+      // This ensures unchecked fields are hidden, not shown by backend defaults
+      const fields = publicFields || []
+      return {
+        show_modulation: fields.includes('modulation'),
+        show_frequency: fields.includes('frequency'),
+        show_last_tx_time: fields.includes('last_tx_time'),
+        show_active_status: fields.includes('status')
+      }
+    }
 
     const onModulationChange = () => {
       // Reset flag when modulation changes
@@ -548,6 +800,7 @@ export default {
         min_delay: 60,
         max_delay: 90,
         priority: 0,
+        public_fields: ['name', 'modulation', 'frequency', 'status'],
         wav_samplerate: 48000,
         speed: 35,
         channel_spacing: 10000,
@@ -591,6 +844,11 @@ export default {
         return
       }
 
+      if (challengeForm.value.min_delay > challengeForm.value.max_delay) {
+        ElMessage.error('Min delay must be less than or equal to max delay')
+        return
+      }
+
       try {
         // Build config object based on modulation type
         const config = {
@@ -601,6 +859,7 @@ export default {
           min_delay: challengeForm.value.min_delay,
           max_delay: challengeForm.value.max_delay,
           priority: challengeForm.value.priority,
+          public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
         }
 
         // Handle file upload if a file was selected
@@ -722,10 +981,61 @@ export default {
     const loadChallenges = async () => {
       try {
         const response = await api.get('/challenges')
-        challenges.value = response.data.challenges || []
+        // Ensure enabled is a proper boolean
+        challenges.value = (response.data.challenges || []).map(c => ({
+          ...c,
+          enabled: Boolean(c.enabled)
+        }))
       } catch (error) {
         console.error('Failed to load challenges:', error)
         ElMessage.error('Failed to load challenges')
+      }
+    }
+
+    const reloadChallenges = async () => {
+      try {
+        const response = await api.post('/challenges/reload')
+        ElMessage.success(`Reloaded challenges: ${response.data.added} added`)
+        loadChallenges()
+      } catch (error) {
+        console.error('Error reloading challenges:', error)
+        ElMessage.error('Failed to reload challenges')
+      }
+    }
+
+    const toggleChallenge = async (challenge) => {
+      try {
+        await api.post(`/challenges/${challenge.challenge_id}/enable`, {
+          enabled: challenge.enabled
+        })
+        ElMessage.success(`Challenge ${challenge.enabled ? 'enabled' : 'disabled'}`)
+        // Reload to ensure UI is in sync with database
+        await loadChallenges()
+      } catch (error) {
+        console.error('Error toggling challenge:', error)
+        ElMessage.error('Failed to update challenge')
+        loadChallenges()  // Reload to reset state
+      }
+    }
+
+    const triggerChallenge = async (challengeId) => {
+      try {
+        await api.post(`/challenges/${challengeId}/trigger`)
+        ElMessage.success('Challenge triggered')
+        loadChallenges()
+      } catch (error) {
+        console.error('Error triggering challenge:', error)
+        ElMessage.error('Failed to trigger challenge')
+      }
+    }
+
+    const getStatusType = (challenge) => {
+      if (!challenge.enabled) return 'info'
+      switch (challenge.status) {
+        case 'queued': return 'success'  // Green - ready
+        case 'waiting': return 'warning' // Orange - delay timer
+        case 'assigned': return ''       // Default - transmitting
+        default: return 'info'
       }
     }
 
@@ -781,6 +1091,10 @@ export default {
 
     onMounted(() => {
       loadChallenges()
+
+      // Refresh periodically for live status
+      const interval = setInterval(loadChallenges, 15000)
+      onUnmounted(() => clearInterval(interval))
     })
 
     return {
@@ -807,6 +1121,11 @@ export default {
       createChallenge,
       importChallenges,
       loadChallenges,
+      reloadChallenges,
+      toggleChallenge,
+      triggerChallenge,
+      getStatusType,
+      formatTimestamp: formatDateTime,
       editChallenge,
       saveEditedChallenge,
       deleteChallenge,
@@ -828,10 +1147,26 @@ h1 {
 h3 {
   margin-top: 20px;
   margin-bottom: 15px;
-  color: #333;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 
 .el-tabs {
   margin-top: 20px;
+}
+
+.code-example {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 4px;
+  overflow-x: auto;
+  color: #333;
+}
+
+/* Dark mode adjustments */
+html.dark .code-example {
+  background: #2d2d2d;
+  color: #e0e0e0;
+  border: 1px solid #444;
 }
 </style>

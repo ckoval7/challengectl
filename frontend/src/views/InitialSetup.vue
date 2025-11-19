@@ -93,8 +93,19 @@
     </el-card>
 
     <!-- TOTP Setup Dialog -->
-    <el-dialog v-model="showTotpDialog" title="Set Up Two-Factor Authentication" width="600px" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false">
-      <el-alert type="success" :closable="false" style="margin-bottom: 20px">
+    <el-dialog
+      v-model="showTotpDialog"
+      title="Set Up Two-Factor Authentication"
+      width="600px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <el-alert
+        type="success"
+        :closable="false"
+        style="margin-bottom: 20px"
+      >
         <template #title>
           Account created! Set up TOTP to complete setup.
         </template>
@@ -103,8 +114,14 @@
       <div class="totp-setup">
         <p><strong>Step 1:</strong> Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):</p>
 
-        <div class="qr-code" v-if="totpInfo.qrCode">
-          <img :src="totpInfo.qrCode" alt="QR Code" />
+        <div
+          v-if="totpInfo.qrCode"
+          class="qr-code"
+        >
+          <img
+            :src="totpInfo.qrCode"
+            alt="QR Code"
+          >
         </div>
 
         <p><strong>Step 2:</strong> Or manually enter this secret:</p>
