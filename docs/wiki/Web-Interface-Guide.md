@@ -566,8 +566,10 @@ System controls affect the entire ChallengeCtl server and all runners.
 
 System control buttons are located in the **header bar** at the top of every page:
 
-- **Pause button**: Visible when system is running normally
-- **Resume button**: Visible when system is paused (replaces Pause button)
+- **Pause button**: Visible when system is running normally (yellow)
+- **Resume button**: Visible when system is paused (green, replaces Pause button)
+- Button state syncs in real-time across all connected admin sessions via WebSocket
+- Initial state is loaded when the page loads to show correct button
 
 ### Pause vs Disable
 
@@ -778,9 +780,16 @@ Automatically pause and resume the system based on daily operating hours.
 3. Runs in background every 30 seconds
 4. Works across multiple days during conference
 
+**Timezone Handling**:
+- Auto-pause uses the **conference timezone** from config.yml
+- Timezone offset is extracted from conference start time (e.g., `-5` from `"2024-04-05 09:00:00 -5"`)
+- Daily times (e.g., 09:00, 17:00) are interpreted in this conference timezone
+- System correctly handles pause/resume regardless of server's local timezone
+
 **Requirements**:
 - Both day start and end of day times must be set
 - Auto-pause toggle must be enabled
+- Conference timezone must be specified in config.yml start time
 
 #### Enabling Auto-Pause
 
@@ -821,16 +830,16 @@ The manual Pause/Resume button in the header **always works** and overrides auto
 - Won't override manual pause with auto-resume
 - Manual resume during off-hours is allowed (for testing, etc.)
 
-#### WebSocket Notifications
+#### WebSocket Notifications and State Sync
 
-All connected admin users receive real-time notifications:
+All connected admin users receive real-time notifications and button state updates:
 
 **Auto-Pause Event**:
 ```
 ℹ System auto-paused (outside daily hours)
 ```
 - Appears when auto-pause triggers
-- Pause button changes to Resume button
+- Pause button changes to Resume button for **all connected admins**
 - Blue info notification
 
 **Auto-Resume Event**:
@@ -838,12 +847,19 @@ All connected admin users receive real-time notifications:
 ℹ System auto-resumed (within daily hours)
 ```
 - Appears when auto-resume triggers
-- Resume button changes to Pause button
+- Resume button changes to Pause button for **all connected admins**
 - Blue info notification
 
 **Manual Pause/Resume**:
 - Uses standard success messages (green)
 - No "auto" prefix in notification
+- Button state syncs across all connected admin sessions via WebSocket
+- If one admin pauses, all admins see the Resume button immediately
+
+**Initial State Loading**:
+- When you load the page, the pause button state is fetched from the server
+- Ensures the button always shows the correct state (Pause or Resume)
+- No refresh needed to see current system state
 
 ### Configuration Workflow
 
