@@ -746,15 +746,14 @@ export default {
 
     // Convert public_fields array to public_view object format
     const convertPublicFieldsToView = (publicFields) => {
-      if (!publicFields || publicFields.length === 0) {
-        return {}
-      }
-
+      // Always explicitly set all fields (default to false if not in array)
+      // This ensures unchecked fields are hidden, not shown by backend defaults
+      const fields = publicFields || []
       return {
-        show_modulation: publicFields.includes('modulation'),
-        show_frequency: publicFields.includes('frequency'),
-        show_last_tx_time: publicFields.includes('last_tx_time'),
-        show_active_status: publicFields.includes('status')
+        show_modulation: fields.includes('modulation'),
+        show_frequency: fields.includes('frequency'),
+        show_last_tx_time: fields.includes('last_tx_time'),
+        show_active_status: fields.includes('status')
       }
     }
 

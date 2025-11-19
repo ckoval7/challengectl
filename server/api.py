@@ -2549,7 +2549,27 @@ radios:
             }
 
             # Conditionally add fields based on public view settings
-            public_view = config.get('public_view', {})
+            # Support both new public_view format and old public_fields array format
+            public_view = config.get('public_view')
+
+            # Backwards compatibility: convert old public_fields array to public_view object
+            if public_view is None and 'public_fields' in config:
+                public_fields = config.get('public_fields', [])
+                public_view = {
+                    'show_modulation': 'modulation' in public_fields,
+                    'show_frequency': 'frequency' in public_fields,
+                    'show_last_tx_time': 'last_tx_time' in public_fields,
+                    'show_active_status': 'status' in public_fields
+                }
+            elif public_view is None:
+                # No visibility settings at all - default to showing all fields
+                # for backwards compatibility with old challenges
+                public_view = {
+                    'show_modulation': True,
+                    'show_frequency': True,
+                    'show_last_tx_time': True,
+                    'show_active_status': True
+                }
 
             # Show modulation if enabled (default: True)
             if public_view.get('show_modulation', True):
