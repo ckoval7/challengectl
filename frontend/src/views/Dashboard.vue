@@ -145,7 +145,7 @@
                 format="HH:mm"
                 style="width: 150px"
               />
-              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div style="margin-top: 16px; color: var(--el-text-color-secondary); font-size: 12px;">
                 Daily start time for countdown cycle
               </div>
             </el-form-item>
@@ -160,7 +160,7 @@
                 format="HH:mm"
                 style="width: 150px"
               />
-              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div style="margin-top: 16px; color: var(--el-text-color-secondary); font-size: 12px;">
                 Daily end time for countdown cycle
               </div>
             </el-form-item>
@@ -185,7 +185,7 @@
                 @change="toggleAutoPause"
                 :loading="savingAutoPause"
               />
-              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div style="margin-top: 16px; color: var(--el-text-color-secondary); font-size: 12px;">
                 Automatically pause transmissions outside daily hours
               </div>
             </el-form-item>
