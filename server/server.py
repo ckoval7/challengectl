@@ -208,45 +208,57 @@ class ChallengeCtlServer:
         if not is_reloader_process or not debug:
             sync_status = self.api.check_config_sync()
 
-            if sync_status.get('in_sync') is False:
-                # Concise log message for syslog
-                logger.warning(f"Configuration out of sync: {len(sync_status.get('new', []))} new, {len(sync_status.get('removed', []))} removed, {len(sync_status.get('updated', []))} updated challenges")
+            # Only check sync if there are challenges defined in the config file
+            # If total_config is 0, user is using database-only challenge management
+            if sync_status.get('total_config', 0) > 0:
+                if sync_status.get('in_sync') is False:
+                    # Concise log message for syslog
+                    logger.warning(f"Configuration out of sync: {len(sync_status.get('new', []))} new, {len(sync_status.get('removed', []))} removed, {len(sync_status.get('updated', []))} updated challenges")
 
-                # Detailed console output
-                print("\n" + "="*60)
-                print("CONFIG OUT OF SYNC WARNING")
-                print("="*60)
-                print("The configuration file has changes not reflected in the database:")
-                print()
-
-                if sync_status['new']:
-                    print(f"  New challenges in config ({len(sync_status['new'])}):")
-                    for name in sync_status['new']:
-                        print(f"    - {name}")
+                    # Detailed console output
+                    print("\n" + "="*60)
+                    print("CONFIG OUT OF SYNC WARNING")
+                    print("="*60)
+                    print("The configuration file has changes not reflected in the database:")
                     print()
 
-                if sync_status['removed']:
-                    print(f"  Challenges removed from config ({len(sync_status['removed'])}):")
-                    for name in sync_status['removed']:
-                        print(f"    - {name}")
-                    print()
+                    if sync_status['new']:
+                        print(f"  New challenges in config ({len(sync_status['new'])}):")
+                        for name in sync_status['new']:
+                            print(f"    - {name}")
+                        print()
 
-                if sync_status['updated']:
-                    print(f"  Challenges with updated config ({len(sync_status['updated'])}):")
-                    for name in sync_status['updated']:
-                        print(f"    - {name}")
-                    print()
+                    if sync_status['removed']:
+                        print(f"  Challenges removed from config ({len(sync_status['removed'])}):")
+                        for name in sync_status['removed']:
+                            print(f"    - {name}")
+                        print()
 
-                print("RECOMMENDED ACTIONS:")
-                print("  1. Use the web UI: Go to Challenges page and click 'Reload from Config'")
-                print("  2. OR restart the server after reviewing your configuration file")
-                print("="*60 + "\n")
-            elif sync_status.get('in_sync') is True:
-                print(f"Configuration in sync: {sync_status['total_config']} challenges")
-                logger.info(f"Configuration in sync: {sync_status['total_config']} challenges")
-            elif sync_status.get('error'):
-                print(f"Warning: Could not check config sync: {sync_status['error']}")
-                logger.error(f"Could not check config sync: {sync_status['error']}")
+                    if sync_status['updated']:
+                        print(f"  Challenges with updated config ({len(sync_status['updated'])}):")
+                        for name in sync_status['updated']:
+                            print(f"    - {name}")
+                        print()
+
+                    print("RECOMMENDED ACTIONS:")
+                    print("  1. Use the web UI: Go to Manage Challenges > Live Status and click 'Reload from Config'")
+                    print("  2. OR restart the server after reviewing your configuration file")
+                    print("="*60 + "\n")
+                elif sync_status.get('in_sync') is True:
+                    print(f"Configuration in sync: {sync_status['total_config']} challenges")
+                    logger.info(f"Configuration in sync: {sync_status['total_config']} challenges")
+                elif sync_status.get('error'):
+                    print(f"Warning: Could not check config sync: {sync_status['error']}")
+                    logger.error(f"Could not check config sync: {sync_status['error']}")
+            else:
+                # Database-only challenge management (no challenges in config file)
+                total_db = sync_status.get('total_db', 0)
+                if total_db > 0:
+                    print(f"Challenge management: Database-only mode ({total_db} challenges in database)")
+                    logger.info(f"Database-only challenge management: {total_db} challenges")
+                else:
+                    print("Challenge management: No challenges configured")
+                    logger.info("No challenges configured in database or config file")
 
         # Handle shutdown gracefully
         def shutdown_handler(signum, frame):
