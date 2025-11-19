@@ -42,9 +42,30 @@ jobs:
         working-directory: ./frontend
         run: npm run lint
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: ./frontend
-        run: npm test -- --run
+        run: npm run test:coverage -- --run
+
+      - name: Upload coverage reports
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 30
+
+      - name: Check coverage thresholds
+        if: matrix.node-version == '20.x'
+        working-directory: ./frontend
+        run: |
+          # Extract coverage percentage from coverage-summary.json
+          if [ -f "coverage/coverage-summary.json" ]; then
+            COVERAGE=$(node -pe "JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json')).total.lines.pct")
+            echo "Current coverage: ${COVERAGE}%"
+            if (( $(echo "$COVERAGE < 50" | bc -l) )); then
+              echo "Warning: Coverage is below 50%"
+            fi
+          fi
 
   build:
     name: Build Frontend
