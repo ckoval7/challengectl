@@ -77,7 +77,7 @@ If an administrator created your account, you'll have a temporary account that r
    - Click "Continue to 2FA Setup"
 
 4. **Set Up Two-Factor Authentication**:
-   - A TOTP secret will be generated
+   - After submitting your password, the server generates a TOTP secret
    - Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
    - Or manually enter the secret if QR code scanning isn't available
    - Enter the 6-digit code from your app to verify setup

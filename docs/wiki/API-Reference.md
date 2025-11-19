@@ -66,13 +66,15 @@ Authorization: Bearer ck_provisioning_abc123def456...
 Admin endpoints require session-based authentication with username/password and TOTP:
 
 1. **Login**: POST credentials to `/api/auth/login`
-2. **Complete Setup** (temporary users only): POST new password and TOTP to `/api/auth/complete-setup`
+2. **Complete Setup** (temporary users only):
+   - Step 1: POST new password to `/api/auth/complete-setup` (returns TOTP provisioning URI)
+   - Step 2: POST TOTP verification code to `/api/auth/verify-setup`
 3. **Verify TOTP** (existing users): POST TOTP code to `/api/auth/verify-totp`
 4. **Use session**: Session cookie is automatically included in subsequent requests
 
 **Temporary Users**: New users are created as temporary accounts. On first login, they must:
-- Change their password
-- Set up TOTP 2FA
+- Change their password (backend generates TOTP secret)
+- Verify TOTP code from authenticator app
 - Complete setup within 24 hours or account is automatically disabled
 
 ```http
@@ -189,7 +191,7 @@ Sets session cookie for subsequent requests.
 
 #### POST /api/auth/complete-setup
 
-Complete account setup for temporary users (change password and set up TOTP).
+Step 1 of account setup for temporary users: change password and receive TOTP provisioning URI.
 
 **Request:**
 ```http
@@ -198,8 +200,42 @@ Cookie: session=...
 Content-Type: application/json
 
 {
-  "new_password": "newSecurePassword123",
-  "totp_secret": "JBSWY3DPEHPK3PXP"
+  "new_password": "newSecurePassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "awaiting_verification",
+  "username": "newuser",
+  "totp_secret": "JBSWY3DPEHPK3PXP",
+  "provisioning_uri": "otpauth://totp/ChallengeCtl:newuser?secret=JBSWY3DPEHPK3PXP&issuer=ChallengeCtl"
+}
+```
+
+The TOTP secret is generated server-side and returned for display. The user should:
+1. Scan the QR code (generated from provisioning_uri) or manually enter the totp_secret
+2. Get a 6-digit code from their authenticator app
+3. Call `/api/auth/verify-setup` with the code
+
+**Security Notes:**
+- TOTP secret generated server-side (consistent with other user creation flows)
+- Pending setup data stored temporarily (expires after 15 minutes)
+- Must complete verification within 15 minutes
+
+#### POST /api/auth/verify-setup
+
+Step 2 of account setup for temporary users: verify TOTP code and complete setup.
+
+**Request:**
+```http
+POST /api/auth/verify-setup HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "totp_code": "123456"
 }
 ```
 
@@ -207,21 +243,19 @@ Content-Type: application/json
 ```json
 {
   "status": "setup_complete",
-  "username": "newuser",
-  "totp_secret": "JBSWY3DPEHPK3PXP",
-  "provisioning_uri": "otpauth://totp/ChallengeCtl:newuser?secret=JBSWY3DPEHPK3PXP&issuer=ChallengeCtl"
+  "username": "newuser"
 }
 ```
 
-After successful setup:
+After successful verification:
 - User is marked as permanent (no longer temporary)
 - Session is fully authenticated
 - User can access the system
 
-**Security Notes:**
-- Must be called within 24 hours of account creation
-- Temporary users are auto-disabled after 24 hours if setup not completed
-- TOTP secret should be generated client-side and verified before submission
+**Error Responses:**
+- `400`: No pending setup found (need to restart from `/api/auth/complete-setup`)
+- `401`: Invalid TOTP code
+- `400`: Setup session expired (15 minutes)
 
 #### POST /api/auth/verify-totp
 
