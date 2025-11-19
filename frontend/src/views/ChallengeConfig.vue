@@ -254,18 +254,30 @@
             <el-input-number
               v-model="challengeForm.min_delay"
               :min="1"
-              :max="3600"
+              :max="challengeForm.max_delay"
               style="width: 100%"
             />
+            <div
+              v-if="challengeForm.min_delay > challengeForm.max_delay"
+              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+            >
+              Min delay must be less than or equal to max delay
+            </div>
           </el-form-item>
 
           <el-form-item label="Max Delay (seconds)">
             <el-input-number
               v-model="challengeForm.max_delay"
-              :min="1"
+              :min="challengeForm.min_delay"
               :max="3600"
               style="width: 100%"
             />
+            <div
+              v-if="challengeForm.max_delay < challengeForm.min_delay"
+              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+            >
+              Max delay must be greater than or equal to min delay
+            </div>
           </el-form-item>
 
           <el-form-item label="Priority">
@@ -829,6 +841,11 @@ export default {
 
       if (!challengeForm.value.frequency) {
         ElMessage.error('Frequency is required')
+        return
+      }
+
+      if (challengeForm.value.min_delay > challengeForm.value.max_delay) {
+        ElMessage.error('Min delay must be less than or equal to max delay')
         return
       }
 

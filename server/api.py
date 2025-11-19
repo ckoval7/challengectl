@@ -1981,6 +1981,13 @@ radios:
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
 
+            # Validate timing configuration
+            min_delay = config.get('min_delay')
+            max_delay = config.get('max_delay')
+            if min_delay is not None and max_delay is not None:
+                if min_delay > max_delay:
+                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
             # Ensure name is in config
             config['name'] = name
 
@@ -2029,6 +2036,13 @@ radios:
 
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
+
+            # Validate timing configuration
+            min_delay = config.get('min_delay')
+            max_delay = config.get('max_delay')
+            if min_delay is not None and max_delay is not None:
+                if min_delay > max_delay:
+                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
 
             success = self.db.update_challenge(challenge_id, config)
 
@@ -2176,6 +2190,14 @@ radios:
                         if 'flag' in challenge and challenge['flag'] in uploaded_files:
                             # Store as file hash reference
                             challenge['flag_file_hash'] = uploaded_files[challenge['flag']]
+
+                        # Validate timing configuration
+                        min_delay = challenge.get('min_delay')
+                        max_delay = challenge.get('max_delay')
+                        if min_delay is not None and max_delay is not None:
+                            if min_delay > max_delay:
+                                errors.append(f"Challenge {name}: min_delay must be less than or equal to max_delay")
+                                continue
 
                         try:
                             if name in existing_challenges:
