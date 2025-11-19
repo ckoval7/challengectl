@@ -89,7 +89,7 @@ class TestRunnerOperations:
         runner = temp_db.get_runner('test-runner')
         assert runner is not None
         assert runner['runner_id'] == 'test-runner'
-        assert runner['status'] == 'offline'
+        assert runner['status'] == 'online'  # Runner is online when actively registering
 
     def test_update_heartbeat(self, temp_db):
         """Test updating runner heartbeat."""
