@@ -72,61 +72,10 @@
       </el-col>
     </el-row>
 
-    <!-- Conference Settings -->
-    <el-row style="margin-bottom: 20px">
-      <el-col :span="24">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>Conference Settings</span>
-            </div>
-          </template>
-          <el-form
-            label-width="150px"
-            style="max-width: 600px"
-          >
-            <el-form-item label="End of Day Time">
-              <el-row :gutter="10">
-                <el-col :span="12">
-                  <el-time-select
-                    v-model="endOfDayTime"
-                    :clearable="true"
-                    start="00:00"
-                    step="00:15"
-                    end="23:45"
-                    placeholder="Select time"
-                    format="HH:mm"
-                  />
-                </el-col>
-                <el-col :span="12">
-                  <el-button
-                    type="primary"
-                    @click="saveEndOfDay"
-                    :loading="savingEndOfDay"
-                  >
-                    Save
-                  </el-button>
-                  <el-button
-                    @click="clearEndOfDay"
-                    :loading="savingEndOfDay"
-                  >
-                    Clear
-                  </el-button>
-                </el-col>
-              </el-row>
-              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
-                Optional daily countdown to end of day (conference timezone)
-              </div>
-            </el-form-item>
-          </el-form>
-        </el-card>
-      </el-col>
-    </el-row>
-
     <!-- Runners and Activity -->
     <el-row :gutter="20">
       <el-col :span="12">
-        <el-card>
+        <el-card style="margin-bottom: 20px">
           <template #header>
             <div class="card-header">
               <span>Runners</span>
@@ -175,6 +124,50 @@
               </template>
             </el-table-column>
           </el-table>
+        </el-card>
+
+        <!-- Conference Settings -->
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>Conference Settings</span>
+            </div>
+          </template>
+          <el-form label-width="150px">
+            <el-form-item label="End of Day Time">
+              <el-row :gutter="10">
+                <el-col :span="12">
+                  <el-time-select
+                    v-model="endOfDayTime"
+                    :clearable="true"
+                    start="00:00"
+                    step="00:15"
+                    end="23:45"
+                    placeholder="Select time"
+                    format="HH:mm"
+                  />
+                </el-col>
+                <el-col :span="12">
+                  <el-button
+                    type="primary"
+                    @click="saveEndOfDay"
+                    :loading="savingEndOfDay"
+                  >
+                    Save
+                  </el-button>
+                  <el-button
+                    @click="clearEndOfDay"
+                    :loading="savingEndOfDay"
+                  >
+                    Clear
+                  </el-button>
+                </el-col>
+              </el-row>
+              <div style="margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px;">
+                Optional daily countdown to end of day (conference timezone)
+              </div>
+            </el-form-item>
+          </el-form>
         </el-card>
       </el-col>
 
