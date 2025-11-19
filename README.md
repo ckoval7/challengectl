@@ -50,7 +50,7 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
 - [ ] Implement WebUI
   - [x] Admin Status Page
   - [x] Public Status Page
-  - [ ] Challenge Editor
+  - [x] Challenge Editor
   - [x] Log Viewer
 - [x] Create a multihost mode with a runner that can query a controller
   - [x] Create "API" to communicate between runner and controller
