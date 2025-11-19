@@ -744,6 +744,20 @@ export default {
       return challengeForm.value.modulation !== ''
     })
 
+    // Convert public_fields array to public_view object format
+    const convertPublicFieldsToView = (publicFields) => {
+      if (!publicFields || publicFields.length === 0) {
+        return {}
+      }
+
+      return {
+        show_modulation: publicFields.includes('modulation'),
+        show_frequency: publicFields.includes('frequency'),
+        show_last_tx_time: publicFields.includes('last_tx_time'),
+        show_active_status: publicFields.includes('status')
+      }
+    }
+
     const onModulationChange = () => {
       // Reset flag when modulation changes
       challengeForm.value.flag = ''
@@ -829,7 +843,7 @@ export default {
           min_delay: challengeForm.value.min_delay,
           max_delay: challengeForm.value.max_delay,
           priority: challengeForm.value.priority,
-          public_fields: challengeForm.value.public_fields,
+          public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
         }
 
         // Handle file upload if a file was selected
