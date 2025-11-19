@@ -1,11 +1,271 @@
 # ChallengeCtl Command-Line Interface
 
-ChallengeCtl provides several command-line utilities for managing the system and running challenges. This guide covers the standalone challenge runner and API key generation tools.
+ChallengeCtl provides several command-line utilities for managing the system and running challenges. This guide covers the standalone challenge runner, user management, and API key generation tools.
 
 ## Table of Contents
 
+- [User Management](#user-management)
 - [Standalone Challenge Runner](#standalone-challenge-runner)
 - [API Key Generation](#api-key-generation)
+
+## User Management
+
+The `manage-users.py` script provides command-line user management for ChallengeCtl server administrators. Use this tool to create users, manage permissions, and perform administrative tasks without using the web interface.
+
+### Overview
+
+The user management CLI supports:
+
+- Creating temporary and permanent users
+- Managing user permissions
+- Enabling/disabling users
+- Resetting passwords and TOTP secrets
+- Listing users and their permissions
+
+### Basic Usage
+
+```bash
+python3 manage-users.py [OPTIONS] <command> [arguments]
+```
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--db PATH` | Path to database file (default: challengectl.db) |
+| `--config PATH` | Path to server config file (default: server-config.yml) |
+
+### Commands
+
+#### create
+
+Create a new user account.
+
+**Syntax:**
+```bash
+python3 manage-users.py create <username> [OPTIONS]
+```
+
+**Options:**
+- `--password PASSWORD` - Set password (will prompt if not provided)
+- `--temporary` - Create temporary user (must complete setup within 24 hours)
+- `--grant PERMISSION` - Grant permission(s) (can be used multiple times)
+
+**Examples:**
+
+Create a permanent user with TOTP (interactive):
+```bash
+python3 manage-users.py create alice
+```
+
+Create a temporary user with a password:
+```bash
+python3 manage-users.py create bob --temporary --password tempPassword123
+```
+
+Create a user with permissions:
+```bash
+python3 manage-users.py create charlie --temporary --password temp456 --grant create_users
+```
+
+**Temporary vs Permanent Users:**
+
+- **Permanent users**: Created with full TOTP setup immediately, ready to use
+- **Temporary users**: Created with temporary password, must complete setup on first login
+  - Must change password
+  - Must set up TOTP 2FA
+  - Must complete setup within 24 hours or account is disabled
+  - Ideal for onboarding new administrators
+
+#### list
+
+List all user accounts.
+
+**Syntax:**
+```bash
+python3 manage-users.py list
+```
+
+**Example output:**
+```
+Users:
+Username: admin
+  Enabled: True
+  Password change required: False
+  Temporary: False
+  Created: 2024-01-15 10:00:00
+  Last login: 2024-01-15 14:30:00
+
+Username: operator
+  Enabled: True
+  Password change required: False
+  Temporary: True
+  Created: 2024-01-15 11:00:00
+  Last login: None
+```
+
+#### disable / enable
+
+Disable or enable a user account.
+
+**Syntax:**
+```bash
+python3 manage-users.py disable <username>
+python3 manage-users.py enable <username>
+```
+
+**Examples:**
+```bash
+python3 manage-users.py disable alice
+python3 manage-users.py enable alice
+```
+
+#### change-password
+
+Change a user's password.
+
+**Syntax:**
+```bash
+python3 manage-users.py change-password <username> [--password PASSWORD]
+```
+
+**Example:**
+```bash
+python3 manage-users.py change-password alice
+```
+
+Password will be prompted securely if not provided.
+
+#### reset-totp
+
+Reset a user's TOTP secret (generates new QR code).
+
+**Syntax:**
+```bash
+python3 manage-users.py reset-totp <username>
+```
+
+**Example:**
+```bash
+python3 manage-users.py reset-totp alice
+```
+
+Displays new TOTP secret and ASCII QR code for scanning.
+
+#### grant-permission
+
+Grant a permission to a user.
+
+**Syntax:**
+```bash
+python3 manage-users.py grant-permission <username> <permission>
+```
+
+**Valid permissions:**
+- `create_users` - Allows user to create other users and manage permissions
+
+**Example:**
+```bash
+python3 manage-users.py grant-permission alice create_users
+```
+
+#### revoke-permission
+
+Revoke a permission from a user.
+
+**Syntax:**
+```bash
+python3 manage-users.py revoke-permission <username> <permission>
+```
+
+**Example:**
+```bash
+python3 manage-users.py revoke-permission alice create_users
+```
+
+#### list-permissions
+
+List all permissions for a specific user.
+
+**Syntax:**
+```bash
+python3 manage-users.py list-permissions <username>
+```
+
+**Example output:**
+```
+Permissions for user 'alice':
+  • create_users
+```
+
+### Common Workflows
+
+#### Initial Server Setup
+
+Create the first admin user with full permissions:
+
+```bash
+# During initial setup, this creates a permanent user with TOTP
+python3 manage-users.py create admin --password securePassword123
+# Follow the prompts to scan the QR code with your authenticator app
+```
+
+The first user automatically receives `create_users` permission.
+
+#### Onboarding a New Administrator
+
+Create a temporary user for a new admin:
+
+```bash
+# Create temporary user with user creation permissions
+python3 manage-users.py create newadmin --temporary \
+  --password temp789xyz --grant create_users
+
+# Share the username and temporary password with the new admin
+# They must login and complete setup within 24 hours
+```
+
+The new admin will:
+1. Login with temporary credentials
+2. Be prompted to change password
+3. Set up TOTP 2FA with QR code
+4. Gain full access after completing setup
+
+#### Rotating TOTP for Security
+
+If a user's authenticator app is compromised or lost:
+
+```bash
+# Reset TOTP secret
+python3 manage-users.py reset-totp alice
+
+# User must scan new QR code with authenticator app
+```
+
+#### Granting Limited Permissions
+
+Create a user who can view but not create users:
+
+```bash
+# Create user without create_users permission
+python3 manage-users.py create viewer --temporary --password viewOnly456
+```
+
+Later, grant permission if needed:
+
+```bash
+python3 manage-users.py grant-permission viewer create_users
+```
+
+### Security Notes
+
+- **Temporary users auto-disable**: Temporary users not completing setup within 24 hours are automatically disabled by a background task
+- **TOTP is mandatory**: All users must have TOTP configured (no exceptions)
+- **Password requirements**: Minimum 8 characters
+- **Permission system**: Designed to be extensible - additional permissions can be added in the future
+- **Audit trail**: All permission grants are logged with the granting administrator's username
+
+---
 
 ## Standalone Challenge Runner
 
