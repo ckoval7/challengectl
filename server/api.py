@@ -2427,6 +2427,13 @@ radios:
 
             return jsonify({'status': 'resumed'}), 200
 
+        @self.app.route('/api/control/status', methods=['GET'])
+        @self.require_admin_auth
+        def get_control_status():
+            """Get current system control status."""
+            is_paused = self.db.get_system_state('paused', 'false') == 'true'
+            return jsonify({'paused': is_paused}), 200
+
         # File management
         @self.app.route('/api/files/<file_hash>', methods=['GET'])
         @self.require_api_key

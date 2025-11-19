@@ -133,6 +133,16 @@ export default {
       }
     }
 
+    // Load initial pause state
+    const loadPauseState = async () => {
+      try {
+        const response = await api.get('/control/status')
+        systemPaused.value = response.data.paused
+      } catch (error) {
+        console.error('Failed to load pause state:', error)
+      }
+    }
+
     // Handle system control WebSocket events
     const handleSystemControl = (event) => {
       if (event.action === 'pause') {
@@ -159,6 +169,7 @@ export default {
 
       // Connect WebSocket if authenticated
       if (checkAuth()) {
+        loadPauseState()
         websocket.connect()
         websocket.on('system_control', handleSystemControl)
       }

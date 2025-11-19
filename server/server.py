@@ -145,9 +145,21 @@ class ChallengeCtlServer:
                 if not day_start_str or not end_of_day_str:
                     return  # Can't auto-pause without both times set
 
-                # Get current time
-                from datetime import timezone as tz
-                now = datetime.now(tz.utc)
+                # Get conference timezone offset from start time
+                # Format: "2063-04-05 09:00:00 -5"
+                from datetime import timezone as tz, timedelta
+                conference_start = config.get('conference', {}).get('start', '')
+                tz_offset_hours = 0
+
+                if conference_start:
+                    import re
+                    match = re.search(r'\s([+-]\d+)$', conference_start)
+                    if match:
+                        tz_offset_hours = int(match.group(1))
+
+                # Get current time in conference timezone
+                conference_tz = tz(timedelta(hours=tz_offset_hours))
+                now = datetime.now(tz.utc).astimezone(conference_tz)
 
                 # Parse day start and end times (format: HH:MM)
                 start_hours, start_minutes = map(int, day_start_str.split(':'))
