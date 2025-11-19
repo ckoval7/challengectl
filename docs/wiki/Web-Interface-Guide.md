@@ -8,8 +8,7 @@ This guide covers the ChallengeCtl web interface, explaining how to monitor syst
 - [Accessing the Web Interface](#accessing-the-web-interface)
 - [Dashboard](#dashboard)
 - [Runners Management](#runners-management)
-- [Challenges Management](#challenges-management)
-- [Challenge Configuration](#challenge-configuration)
+- [Manage Challenges](#manage-challenges)
 - [Logs Viewer](#logs-viewer)
 - [User Management](#user-management)
 - [System Controls](#system-controls)
@@ -161,61 +160,89 @@ Each runner shows:
 
 **Key difference**: Disabled runners stay connected but idle. Kicked runners are forcibly disconnected and must re-register.
 
-## Challenges Management
+## Manage Challenges
 
-The Challenges page allows you to control which challenges are active and manually trigger transmissions.
+The Manage Challenges page provides a unified interface for monitoring, creating, importing, editing, and controlling your challenges. This combines real-time monitoring with configuration management in a single location.
 
-### Challenge List
+### Overview
 
-Each challenge displays:
+The Manage Challenges page has four tabs:
+
+1. **Live Status**: Monitor and control active challenges in real-time
+2. **Create Challenge**: Form-based interface for creating individual challenges
+3. **Import from YAML**: Batch import challenges from YAML files with file uploads
+4. **Manage Challenges**: View, edit, and delete existing challenges
+
+**When to use each tab**:
+- **Live Status**: For monitoring challenge execution, enabling/disabling, and triggering transmissions
+- **Create Challenge**: For adding one challenge at a time with guided validation
+- **Import from YAML**: For batch operations, migration, or automation
+- **Manage Challenges**: For editing existing challenges or removing old ones
+
+For comprehensive documentation on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
+
+### Live Status Tab
+
+**Purpose**: Real-time monitoring and control of challenge execution.
+
+**Key Features**:
+- Auto-refresh every 15 seconds
+- Enable/disable toggle switches
+- Manual trigger controls
+- Real-time status updates
+- Transmission count tracking
+- Reload from config functionality
+
+**Displayed Information**:
 
 **Challenge Name**: Unique identifier
 
-**Frequency**: Transmission frequency in Hz (displayed as MHz)
-
 **Modulation**: Modulation type (CW, NBFM, SSB, FHSS, etc.)
 
-**State**: Current challenge state
-- **Queued**: Waiting for delay period to elapse before marking as waiting
-- **Waiting**: Ready to be assigned to a runner
-- **Assigned**: Currently being executed by a runner
-- **Disabled**: Challenge is not active
+**Frequency**: Transmission frequency in Hz (displayed as MHz)
 
-**Last Run**: Timestamp of most recent transmission
-- Shows "Never" if challenge hasn't been transmitted yet
+**Status**: Current challenge state with color-coded tags
+- **Queued** (green): Waiting for delay period to elapse
+- **Waiting** (orange): Ready to be assigned to a runner
+- **Assigned** (default): Currently being executed by a runner
+- **Disabled** (gray): Challenge is not active
+
+**Enabled**: Toggle switch to activate/deactivate the challenge
+- Enabled challenges will be queued for transmission
+- Disabled challenges will not be queued
+
+**TX Count**: Number of times the challenge has been transmitted
 - Updates in real-time as transmissions complete
 
-**Delays**: Min and max delay between transmissions in seconds
-- Format: "60-90s" means 60 to 90 seconds between transmissions
+**Last TX**: Timestamp of most recent transmission
+- Shows relative time (e.g., "2 minutes ago")
+- Updates automatically
 
-### Challenge Actions
+**Actions Available**:
 
-**Enable Challenge**: Activate the challenge for automatic transmission
-- Enabled challenges will be queued for transmission
-- The system randomly waits between min_delay and max_delay before transmitting
-- Button shows "Enabled" when active
+**Reload from Config**:
+- Reloads challenges from server-config.yml
+- Adds new challenges from config file
+- Does not affect database-stored challenges
+- Use when adding challenges via config file
 
-**Disable Challenge**: Deactivate the challenge
-- Disabled challenges will not be queued
-- If currently assigned, the transmission completes before disabling
-- Use this to remove challenges from rotation
-- Button shows "Disabled" when inactive
+**Enable/Disable Toggle**:
+- Click switch to activate or deactivate a challenge
+- Enabled challenges enter the transmission queue
+- Disabled challenges are skipped
+- Changes take effect immediately
 
-**Trigger Now**: Manually queue the challenge for immediate transmission
+**Trigger Now**:
+- Manually queue the challenge for immediate transmission
 - Bypasses the delay timer
 - Queues the challenge as "waiting" immediately
 - The next available compatible runner will execute it
 - Use this for testing or demonstrations
 - Does not affect the regular scheduling cycle
 
-**Edit Challenge**: Modify challenge parameters (if supported)
-- Adjust min/max delays
-- Enable/disable public visibility settings
-- Changes take effect immediately
+**Challenge Workflow**:
 
-### Challenge Workflow
-
-1. **Disabled**: Challenge exists in configuration but is inactive
+1. **Disabled**: Challenge exists but is inactive
 2. **Enabled**: Challenge is activated and enters the queue
 3. **Queued**: Waiting for random delay period (between min_delay and max_delay)
 4. **Waiting**: Ready for assignment, available to compatible runners
@@ -223,25 +250,6 @@ Each challenge displays:
 6. **Completed**: Transmission finished, returns to queued state
 
 **Note**: The cycle repeats continuously for enabled challenges.
-
-## Challenge Configuration
-
-The Challenge Configuration page ("Configure Challenges" in the navigation) provides tools for creating, importing, editing, and deleting challenges. This is the primary interface for managing your challenge inventory.
-
-### Overview
-
-The Challenge Configuration page has three tabs:
-
-1. **Create Challenge**: Form-based interface for creating individual challenges
-2. **Import from YAML**: Batch import challenges from YAML files with file uploads
-3. **Manage Challenges**: View, edit, and delete existing challenges
-
-**When to use each tab**:
-- **Create Challenge**: For adding one challenge at a time with guided validation
-- **Import from YAML**: For batch operations, migration, or automation
-- **Manage Challenges**: For editing existing challenges or removing old ones
-
-For comprehensive documentation on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
 
 ### Create Challenge Tab
 
@@ -252,13 +260,28 @@ For comprehensive documentation on challenge configuration, see the [Challenge M
 - Built-in validation for required fields
 - File upload for audio and binary files
 - Modulation-specific parameter configuration
+- Public field visibility configuration
 
 **Workflow**:
 1. Enter basic information (name, modulation, frequency)
 2. Configure challenge content (flag text or file upload)
 3. Set timing parameters (min/max delay, priority)
-4. Configure modulation-specific settings (if applicable)
-5. Click "Create Challenge"
+4. Configure public dashboard visibility (select which fields are visible on public dashboard)
+5. Configure modulation-specific settings (if applicable)
+6. Click "Create Challenge"
+
+**Priority Field**:
+- Priority range: 0-100
+- Higher number = higher priority
+- Higher priority challenges are transmitted first
+- Default: 0 (normal priority)
+- Use for time-sensitive or important challenges
+
+**Public Dashboard Visibility**:
+- Select which fields are visible on the public dashboard
+- Available fields: name, modulation, frequency, status, last TX time
+- Default: name, modulation, frequency, status
+- Allows you to control what information participants can see
 
 **Example Use Case**:
 - Creating a new NBFM challenge during a CTF event
@@ -397,29 +420,17 @@ print(response.json())
 - Don't delete files that might be used by multiple challenges
 - Track file hashes for deduplication
 
-### Relationship to Challenges Page
+### Typical Workflow
 
-**Challenge Configuration** vs **Challenges**:
+The unified Manage Challenges interface streamlines challenge management:
 
-**Configure Challenges** (Configuration page):
-- Create new challenges
-- Import/export challenges
-- Edit challenge parameters
-- Delete challenges
-- Focus: Managing challenge inventory
+1. **Create/Import**: Use the **Create Challenge** or **Import from YAML** tabs to add challenges
+2. **Configure**: Set up timing, priority, and public visibility settings
+3. **Monitor**: Switch to **Live Status** tab to monitor execution
+4. **Control**: Use **Live Status** to enable/disable or trigger challenges
+5. **Edit**: Use **Manage Challenges** tab to edit or delete existing challenges
 
-**Challenges** (Management page):
-- View challenge status (queued, waiting, assigned)
-- Enable/disable challenges
-- Trigger immediate transmission
-- Monitor last transmission time
-- Focus: Runtime control and monitoring
-
-**Typical Workflow**:
-1. Use **Configure Challenges** to create/import challenges
-2. Use **Challenges** page to enable/disable during events
-3. Use **Challenges** page to trigger test transmissions
-4. Use **Configure Challenges** to edit parameters or remove challenges
+This unified approach eliminates the need to switch between separate pages for configuration and monitoring.
 
 ## Logs Viewer
 
@@ -727,11 +738,11 @@ The web interface uses WebSocket connections for real-time updates without page 
 4. Consider kicking and letting it re-register
 
 **Challenge won't transmit**:
-1. Check Challenges page for the challenge state
+1. Check **Manage Challenges > Live Status** tab for the challenge state
 2. Verify at least one runner is online and enabled
 3. Check runner frequency limits include the challenge frequency
 4. Look for errors in Logs page
-5. Try manual trigger to test
+5. Try manual trigger from Live Status tab to test
 
 **System slow or unresponsive**:
 1. Check number of active runners (too many?)

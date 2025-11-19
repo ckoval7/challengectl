@@ -149,7 +149,7 @@ The runner will register with the server and begin polling for tasks.
 
 Now that the server and runner are connected, you can configure challenges through the Web UI:
 
-1. **Navigate to "Configure Challenges"**: Click the "Configure Challenges" menu item in the left sidebar.
+1. **Navigate to "Manage Challenges"**: Click the "Manage Challenges" menu item in the left sidebar.
 
 2. **Create your first challenge**:
    - Select the **"Create Challenge"** tab
@@ -160,6 +160,8 @@ Now that the server and runner are connected, you can configure challenges throu
      - Flag: Upload a WAV file or enter a path
      - Min Delay: `60` seconds
      - Max Delay: `120` seconds
+     - Priority: `0` (higher number = higher priority)
+     - Public Fields: Select which fields are visible on public dashboard
      - Enabled: Check the box
    - Click **"Create Challenge"**
 
@@ -168,6 +170,12 @@ Now that the server and runner are connected, you can configure challenges throu
    - Upload a YAML file with your challenges
    - Optionally upload associated audio or binary files
    - Click **"Import Challenges"**
+
+4. **Monitor Execution**:
+   - Switch to the **"Live Status"** tab
+   - View real-time challenge status and transmission counts
+   - Use toggle switches to enable/disable challenges
+   - Click "Trigger Now" to test transmissions immediately
 
 For detailed information on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
 
@@ -185,7 +193,7 @@ For detailed information on challenge configuration, see the [Challenge Manageme
 
 Now that you have a basic setup running, you can:
 
-- **Add more challenges** using the Configure Challenges page
+- **Add more challenges** using the Manage Challenges page
 - **Deploy runners** on additional SDR devices
 - **Configure frequency limits** and device-specific settings
 - **Set up a production deployment** with nginx as a reverse proxy
@@ -216,7 +224,7 @@ Verify that:
 ### No Challenges Are Transmitting
 
 Check that:
-- At least one challenge is enabled (check the Challenges page or Configure Challenges page)
+- At least one challenge is enabled (check Manage Challenges > Live Status tab)
 - The runner's frequency limits include the challenge frequency
 - Challenge files exist in the specified locations
 - The runner device is properly connected
