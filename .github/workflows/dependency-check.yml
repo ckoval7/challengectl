@@ -1,0 +1,96 @@
+name: Dependency Check
+
+on:
+  schedule:
+    # Run weekly on Mondays at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual trigger
+  pull_request:
+    paths:
+      - 'requirements*.txt'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+
+jobs:
+  python-dependencies:
+    name: Check Python Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit safety
+
+      - name: Run pip-audit
+        continue-on-error: true
+        run: |
+          pip-audit -r requirements-server.txt --format json > pip-audit-server.json || true
+          pip-audit -r requirements-server.txt || true
+
+          if [ -f requirements-runner.txt ]; then
+            pip-audit -r requirements-runner.txt --format json > pip-audit-runner.json || true
+            pip-audit -r requirements-runner.txt || true
+          fi
+
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dependency-audit
+          path: |
+            pip-audit-*.json
+          retention-days: 90
+
+      - name: Check for outdated packages
+        continue-on-error: true
+        run: |
+          pip install -r requirements-server.txt || true
+          pip list --outdated
+
+  npm-dependencies:
+    name: Check NPM Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: ./frontend
+        continue-on-error: true
+        run: |
+          npm audit --json > npm-audit.json || true
+          npm audit || true
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-dependency-audit
+          path: frontend/npm-audit.json
+          retention-days: 90
+
+      - name: Check for outdated packages
+        working-directory: ./frontend
+        continue-on-error: true
+        run: npm outdated || true

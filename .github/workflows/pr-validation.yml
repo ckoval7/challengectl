@@ -1,0 +1,109 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-checks:
+    name: Pull Request Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR title format
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          echo "PR Title: $PR_TITLE"
+
+          # Check if title is not empty and has reasonable length
+          if [ ${#PR_TITLE} -lt 10 ]; then
+            echo "::warning::PR title is too short (less than 10 characters)"
+          fi
+
+          if [ ${#PR_TITLE} -gt 100 ]; then
+            echo "::warning::PR title is too long (more than 100 characters)"
+          fi
+
+      - name: Check for merge conflicts
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git merge-tree $(git merge-base HEAD origin/${{ github.base_ref }}) origin/${{ github.base_ref }} HEAD | grep -q '<<<<<<<'; then
+            echo "::error::This PR has merge conflicts that need to be resolved"
+            exit 1
+          fi
+
+      - name: Check file sizes
+        run: |
+          echo "Checking for large files..."
+          # Find files larger than 1MB
+          large_files=$(find . -type f -size +1M -not -path "./.git/*" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/coverage/*")
+
+          if [ -n "$large_files" ]; then
+            echo "::warning::Large files detected (>1MB):"
+            echo "$large_files"
+          else
+            echo "No large files detected"
+          fi
+
+      - name: Check for sensitive data patterns
+        run: |
+          echo "Scanning for potential secrets..."
+
+          # Check for common secret patterns
+          secrets_found=0
+
+          # API keys
+          if grep -r "api[_-]key.*=.*['\"][a-zA-Z0-9]\{20,\}" . --exclude-dir={.git,node_modules,dist,coverage} 2>/dev/null; then
+            echo "::warning::Potential API key found"
+            secrets_found=1
+          fi
+
+          # Private keys
+          if grep -r "BEGIN.*PRIVATE KEY" . --exclude-dir={.git,node_modules,dist,coverage} 2>/dev/null; then
+            echo "::error::Private key found in repository"
+            secrets_found=1
+          fi
+
+          # Passwords
+          if grep -r "password.*=.*['\"][^'\"]\{8,\}" . --exclude-dir={.git,node_modules,dist,coverage} 2>/dev/null | grep -v "password_hash" | grep -v "test" | grep -v "example"; then
+            echo "::warning::Potential hardcoded password found"
+            secrets_found=1
+          fi
+
+          if [ $secrets_found -eq 0 ]; then
+            echo "No obvious secrets detected"
+          fi
+
+      - name: Check Python syntax
+        if: contains(github.event.pull_request.changed_files, '.py')
+        run: |
+          python3 -m py_compile server/*.py tests/*.py 2>/dev/null || true
+          echo "Python syntax check completed"
+
+      - name: Count changes
+        run: |
+          FILES_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          LINES_ADDED=$(git diff --shortstat origin/${{ github.base_ref }}...HEAD | grep -oP '\d+(?= insertion)' || echo "0")
+          LINES_DELETED=$(git diff --shortstat origin/${{ github.base_ref }}...HEAD | grep -oP '\d+(?= deletion)' || echo "0")
+
+          echo "Files changed: $FILES_CHANGED"
+          echo "Lines added: $LINES_ADDED"
+          echo "Lines deleted: $LINES_DELETED"
+
+          if [ $FILES_CHANGED -gt 50 ]; then
+            echo "::warning::This PR changes many files ($FILES_CHANGED). Consider splitting into smaller PRs."
+          fi
+
+      - name: Check commit messages
+        run: |
+          echo "Checking commit messages..."
+          git log origin/${{ github.base_ref }}..HEAD --pretty=format:"%s" | while read msg; do
+            if [ ${#msg} -lt 10 ]; then
+              echo "::warning::Short commit message detected: $msg"
+            fi
+          done
