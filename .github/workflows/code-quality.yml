@@ -98,21 +98,6 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run ESLint with report
-        working-directory: ./frontend
-        continue-on-error: true
-        run: |
-          npm run lint -- --format json --output-file eslint-report.json || true
-          npm run lint || true
-
-      - name: Upload ESLint report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: eslint-report
-          path: frontend/eslint-report.json
-          retention-days: 30
-
       - name: Check for console.log statements
         working-directory: ./frontend
         continue-on-error: true
