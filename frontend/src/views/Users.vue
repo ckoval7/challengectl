@@ -87,42 +87,40 @@
       </el-table-column>
       <el-table-column
         label="Actions"
-        width="400"
+        width="120"
+        align="center"
       >
         <template #default="scope">
-          <el-button
-            size="small"
-            :type="scope.row.enabled ? 'warning' : 'success'"
-            @click="toggleUserStatus(scope.row)"
-          >
-            {{ scope.row.enabled ? 'Disable' : 'Enable' }}
-          </el-button>
-          <el-button
-            size="small"
-            @click="showManagePermissionsDialog(scope.row)"
-          >
-            Permissions
-          </el-button>
-          <el-button
-            size="small"
-            type="warning"
-            @click="resetUserPassword(scope.row)"
-          >
-            Reset Password
-          </el-button>
-          <el-button
-            size="small"
-            @click="showResetTotpDialog(scope.row)"
-          >
-            Reset TOTP
-          </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            @click="confirmDelete(scope.row)"
-          >
-            Delete
-          </el-button>
+          <el-dropdown @command="(command) => handleUserAction(command, scope.row)">
+            <el-button size="small" type="primary">
+              Actions
+              <el-icon style="margin-left: 5px;"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
+                  <el-icon><Switch /></el-icon>
+                  {{ scope.row.enabled ? 'Disable User' : 'Enable User' }}
+                </el-dropdown-item>
+                <el-dropdown-item command="permissions">
+                  <el-icon><Key /></el-icon>
+                  Manage Permissions
+                </el-dropdown-item>
+                <el-dropdown-item command="reset-password" divided>
+                  <el-icon><Lock /></el-icon>
+                  Reset Password
+                </el-dropdown-item>
+                <el-dropdown-item command="reset-totp">
+                  <el-icon><Unlock /></el-icon>
+                  Reset TOTP
+                </el-dropdown-item>
+                <el-dropdown-item command="delete" divided>
+                  <el-icon><Delete /></el-icon>
+                  <span style="color: var(--el-color-danger);">Delete User</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -431,7 +429,7 @@
 
 <script>
 import { ref, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, ArrowDown, Switch, Key, Lock, Unlock, Delete } from '@element-plus/icons-vue'
 import { api } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import QRCode from 'qrcode'
@@ -649,6 +647,27 @@ export default {
       }
     }
 
+    const handleUserAction = (command, user) => {
+      switch (command) {
+        case 'enable':
+        case 'disable':
+          toggleUserStatus(user)
+          break
+        case 'permissions':
+          showManagePermissionsDialog(user)
+          break
+        case 'reset-password':
+          resetUserPassword(user)
+          break
+        case 'reset-totp':
+          showResetTotpDialog(user)
+          break
+        case 'delete':
+          confirmDelete(user)
+          break
+      }
+    }
+
     const copyToClipboard = async (text) => {
       try {
         await navigator.clipboard.writeText(text)
@@ -754,6 +773,7 @@ export default {
       showResetTotpDialog,
       resetUserPassword,
       confirmDelete,
+      handleUserAction,
       copyToClipboard,
       grantPermission,
       revokePermission
