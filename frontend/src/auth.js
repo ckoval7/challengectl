@@ -14,6 +14,9 @@ let sessionChecked = false
 // Track if initial setup is required (first-time admin login)
 const initialSetupRequired = ref(false)
 
+// Track user permissions
+const userPermissions = ref([])
+
 /**
  * Mark user as authenticated (called after successful login)
  * Note: Actual session token is in httpOnly cookie, not localStorage
@@ -31,6 +34,7 @@ export function login(setupRequired = false) {
 export function logout() {
   isAuthenticatedFlag.value = false
   initialSetupRequired.value = false
+  userPermissions.value = []
 
   // Disconnect WebSocket
   websocket.disconnect()
@@ -47,6 +51,7 @@ export async function validateSession() {
     if (response.data.authenticated) {
       isAuthenticatedFlag.value = true
       initialSetupRequired.value = response.data.initial_setup_required || false
+      userPermissions.value = response.data.permissions || []
       sessionChecked = true
       return true
     }
@@ -54,6 +59,7 @@ export async function validateSession() {
     // Session is invalid or expired
     isAuthenticatedFlag.value = false
     initialSetupRequired.value = false
+    userPermissions.value = []
     sessionChecked = true
   }
   return false
@@ -84,4 +90,21 @@ export function isInitialSetupRequired() {
   return initialSetupRequired.value
 }
 
-export { isAuthenticated }
+/**
+ * Check if user has a specific permission
+ * @param {string} permission - The permission to check
+ * @returns {boolean}
+ */
+export function hasPermission(permission) {
+  return userPermissions.value.includes(permission)
+}
+
+/**
+ * Get all user permissions
+ * @returns {Array<string>}
+ */
+export function getPermissions() {
+  return userPermissions.value
+}
+
+export { isAuthenticated, userPermissions }

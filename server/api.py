@@ -901,10 +901,14 @@ class ChallengeCtlAPI:
             # Check if initial setup is required
             initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
 
+            # Get user permissions
+            permissions = self.db.get_user_permissions(username)
+
             return jsonify({
                 'authenticated': True,
                 'username': username,
-                'initial_setup_required': initial_setup_required
+                'initial_setup_required': initial_setup_required,
+                'permissions': permissions
             }), 200
 
         @self.app.route('/api/auth/logout', methods=['POST'])

@@ -73,7 +73,10 @@
               <el-icon><Notebook /></el-icon>
               <span>Logs</span>
             </el-menu-item>
-            <el-menu-item index="/users">
+            <el-menu-item
+              v-if="userPermissions.includes('create_users')"
+              index="/users"
+            >
               <el-icon><User /></el-icon>
               <span>Users</span>
             </el-menu-item>
@@ -96,7 +99,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, isInitialSetupRequired } from './auth'
+import { logout, checkAuth, isInitialSetupRequired, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
