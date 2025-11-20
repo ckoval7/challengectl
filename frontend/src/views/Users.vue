@@ -99,7 +99,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
-                  <el-icon><Switch /></el-icon>
+                  <el-icon><SwitchIcon /></el-icon>
                   {{ scope.row.enabled ? 'Disable User' : 'Enable User' }}
                 </el-dropdown-item>
                 <el-dropdown-item command="permissions">
@@ -433,7 +433,7 @@
 
 <script>
 import { ref, onMounted } from 'vue'
-import { Plus, ArrowDown, Switch, Key, Lock, Unlock, Delete } from '@element-plus/icons-vue'
+import { Plus, ArrowDown, Switch as SwitchIcon, Key, Lock, Unlock, Delete } from '@element-plus/icons-vue'
 import { api } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import QRCode from 'qrcode'
@@ -443,7 +443,7 @@ export default {
   components: {
     Plus,
     ArrowDown,
-    Switch,
+    SwitchIcon,
     Key,
     Lock,
     Unlock,
