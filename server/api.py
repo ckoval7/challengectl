@@ -1153,6 +1153,11 @@ class ChallengeCtlAPI:
         def get_users():
             """Get all users."""
             users = self.db.get_all_users()
+
+            # Add permissions for each user
+            for user in users:
+                user['permissions'] = self.db.get_user_permissions(user['username'])
+
             return jsonify({'users': users}), 200
 
         @self.app.route('/api/users', methods=['POST'])
