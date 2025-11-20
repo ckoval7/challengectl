@@ -80,10 +80,7 @@
               <el-icon><Monitor /></el-icon>
               <span>Dashboard</span>
             </el-menu-item>
-            <el-menu-item
-              v-if="userPermissions.includes('create_provisioning_key')"
-              index="/runners"
-            >
+            <el-menu-item index="/runners">
               <el-icon><Connection /></el-icon>
               <span>Runners</span>
             </el-menu-item>
