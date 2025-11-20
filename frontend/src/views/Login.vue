@@ -133,7 +133,7 @@
 <script>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '../auth'
+import { login, validateSession } from '../auth'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 
@@ -174,6 +174,8 @@ export default {
           // Temporary user needs to complete setup
           // Session token is in httpOnly cookie
           login(false)
+          // Validate session to populate username and permissions
+          await validateSession()
           ElMessage.info('Account setup required. Please change your password and set up 2FA.')
           router.push('/user-setup')
         }
@@ -186,6 +188,8 @@ export default {
           // No TOTP required - user logged in directly
           // Session token is in httpOnly cookie (managed by browser)
           login(response.data.initial_setup_required)
+          // Validate session to populate username and permissions
+          await validateSession()
 
           // Check if initial setup is required
           if (response.data.initial_setup_required) {
@@ -228,6 +232,8 @@ export default {
 
         // Mark user as authenticated (session token in httpOnly cookie)
         login()
+        // Validate session to populate username and permissions
+        await validateSession()
 
         // Check if password change is required
         if (response.data.password_change_required) {
