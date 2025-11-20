@@ -105,6 +105,13 @@
           </el-button>
           <el-button
             size="small"
+            type="warning"
+            @click="resetUserPassword(scope.row)"
+          >
+            Reset Password
+          </el-button>
+          <el-button
+            size="small"
             @click="showResetTotpDialog(scope.row)"
           >
             Reset TOTP
@@ -234,6 +241,74 @@
         <el-button
           type="primary"
           @click="showTempUserDialog = false"
+        >
+          Done
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Password Reset Dialog -->
+    <el-dialog
+      v-model="showPasswordResetDialog"
+      title="Password Reset"
+      width="600px"
+    >
+      <el-alert
+        type="success"
+        :closable="false"
+        style="margin-bottom: 20px"
+      >
+        <template #title>
+          Password reset successfully! Share these credentials:
+        </template>
+      </el-alert>
+
+      <div class="user-info">
+        <el-form label-width="180px">
+          <el-form-item label="Username:">
+            <el-input
+              :model-value="resetPasswordInfo.username"
+              readonly
+            >
+              <template #append>
+                <el-button @click="copyToClipboard(resetPasswordInfo.username)">
+                  Copy
+                </el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="New Password:">
+            <el-input
+              :model-value="resetPasswordInfo.password"
+              readonly
+              type="text"
+            >
+              <template #append>
+                <el-button @click="copyToClipboard(resetPasswordInfo.password)">
+                  Copy
+                </el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+        </el-form>
+
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-top: 20px"
+        >
+          <template #title>
+            {{ resetPasswordInfo.username }} must change their password on next login.
+          </template>
+          <p style="margin: 10px 0 0 0">The user will be required to change this temporary password when they log in. All existing sessions for this user have been invalidated.</p>
+        </el-alert>
+      </div>
+
+      <template #footer>
+        <el-button
+          type="primary"
+          @click="showPasswordResetDialog = false"
         >
           Done
         </el-button>
@@ -372,6 +447,7 @@ export default {
     const showCreateDialog = ref(false)
     const showTotpDialog = ref(false)
     const showTempUserDialog = ref(false)
+    const showPasswordResetDialog = ref(false)
     const showPermissionsDialog = ref(false)
     const creating = ref(false)
     const createFormRef = ref(null)
@@ -379,6 +455,10 @@ export default {
       username: ''
     })
     const tempUserInfo = ref({
+      username: '',
+      password: ''
+    })
+    const resetPasswordInfo = ref({
       username: '',
       password: ''
     })
@@ -509,6 +589,39 @@ export default {
       }
     }
 
+    const resetUserPassword = async (user) => {
+      try {
+        await ElMessageBox.confirm(
+          `This will reset the password for user "${user.username}". A new temporary password will be generated and all existing sessions will be invalidated. The user will be required to change their password on next login. Continue?`,
+          'Reset Password',
+          {
+            confirmButtonText: 'Reset',
+            cancelButtonText: 'Cancel',
+            type: 'warning'
+          }
+        )
+
+        const response = await api.post(`/users/${user.username}/reset-password`)
+
+        resetPasswordInfo.value = {
+          username: user.username,
+          password: response.data.temporary_password
+        }
+
+        showPasswordResetDialog.value = true
+        ElMessage.success('Password reset successfully')
+        loadUsers()
+      } catch (error) {
+        if (error !== 'cancel') {
+          if (error.response?.data?.error) {
+            ElMessage.error(error.response.data.error)
+          } else {
+            ElMessage.error('Failed to reset password')
+          }
+        }
+      }
+    }
+
     const confirmDelete = async (user) => {
       try {
         await ElMessageBox.confirm(
@@ -623,12 +736,14 @@ export default {
       showCreateDialog,
       showTotpDialog,
       showTempUserDialog,
+      showPasswordResetDialog,
       showPermissionsDialog,
       creating,
       createFormRef,
       createForm,
       totpInfo,
       tempUserInfo,
+      resetPasswordInfo,
       selectedUser,
       userPermissions,
       permissionToGrant,
@@ -637,6 +752,7 @@ export default {
       toggleUserStatus,
       showManagePermissionsDialog,
       showResetTotpDialog,
+      resetUserPassword,
       confirmDelete,
       copyToClipboard,
       grantPermission,

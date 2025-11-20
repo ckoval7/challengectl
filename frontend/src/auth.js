@@ -14,6 +14,9 @@ let sessionChecked = false
 // Track if initial setup is required (first-time admin login)
 const initialSetupRequired = ref(false)
 
+// Track current username
+const currentUsername = ref('')
+
 // Track user permissions
 const userPermissions = ref([])
 
@@ -34,6 +37,7 @@ export function login(setupRequired = false) {
 export function logout() {
   isAuthenticatedFlag.value = false
   initialSetupRequired.value = false
+  currentUsername.value = ''
   userPermissions.value = []
 
   // Disconnect WebSocket
@@ -51,6 +55,7 @@ export async function validateSession() {
     if (response.data.authenticated) {
       isAuthenticatedFlag.value = true
       initialSetupRequired.value = response.data.initial_setup_required || false
+      currentUsername.value = response.data.username || ''
       userPermissions.value = response.data.permissions || []
       sessionChecked = true
       return true
@@ -59,6 +64,7 @@ export async function validateSession() {
     // Session is invalid or expired
     isAuthenticatedFlag.value = false
     initialSetupRequired.value = false
+    currentUsername.value = ''
     userPermissions.value = []
     sessionChecked = true
   }
@@ -107,4 +113,4 @@ export function getPermissions() {
   return userPermissions.value
 }
 
-export { isAuthenticated, userPermissions }
+export { isAuthenticated, currentUsername, userPermissions }

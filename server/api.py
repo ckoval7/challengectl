@@ -1358,23 +1358,17 @@ class ChallengeCtlAPI:
         @self.require_csrf
         def reset_user_password(username):
             """Reset a user's password (admin only)."""
-            data = request.json
-
-            if not data:
-                return jsonify({'error': 'Missing request body'}), 400
-
-            new_password = data.get('new_password')
-
-            if not new_password:
-                return jsonify({'error': 'Missing new_password'}), 400
-
-            if len(new_password) < 8:
-                return jsonify({'error': 'Password must be at least 8 characters'}), 400
+            # Don't allow resetting your own password (use change password instead)
+            if username == request.admin_username:
+                return jsonify({'error': 'Cannot reset your own password. Use change password instead.'}), 400
 
             # Check user exists
             user = self.db.get_user(username)
             if not user:
                 return jsonify({'error': 'User not found'}), 404
+
+            # Auto-generate a temporary password
+            new_password = secrets.token_urlsafe(12)  # Generates ~16 character password
 
             # Hash new password
             password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -1398,7 +1392,11 @@ class ChallengeCtlAPI:
 
             logger.info(f"Password reset for user {username} by {request.admin_username} (invalidated {invalidated_count} session(s))")
 
-            return jsonify({'status': 'password_reset'}), 200
+            return jsonify({
+                'status': 'password_reset',
+                'username': username,
+                'temporary_password': new_password  # Return temp password so admin can share it
+            }), 200
 
         # Permission management endpoints
         @self.app.route('/api/users/<username>/permissions', methods=['GET'])
