@@ -1,0 +1,52 @@
+/**
+ * Common CSS Variables
+ *
+ * This file defines custom CSS variables for colors, spacing, and other design tokens.
+ * These variables extend Element Plus's built-in variables and provide app-specific values.
+ */
+
+:root {
+  /* Brand Colors */
+  --app-primary-color: #409EFF;
+  --app-primary-hover: #66B1FF;
+  --app-primary-active: #3A8FE6;
+
+  /* Text Colors (fallback for Element Plus) */
+  --app-text-primary: #606266;
+  --app-text-secondary: #909399;
+  --app-text-placeholder: #C0C4CC;
+
+  /* Spacing System */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+
+  /* Border Radius */
+  --border-radius-sm: 2px;
+  --border-radius-md: 4px;
+  --border-radius-lg: 8px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+  /* Layout */
+  --header-height: 80px;
+  --sidebar-width: 200px;
+
+  /* Transitions */
+  --transition-fast: 0.15s;
+  --transition-base: 0.3s;
+  --transition-slow: 0.5s;
+}
+
+/* Dark mode specific variables */
+html.dark {
+  --app-text-primary: #E4E7ED;
+  --app-text-secondary: #A8ABB2;
+}

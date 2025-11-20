@@ -289,50 +289,6 @@ export default {
 </script>
 
 <style>
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-}
-
-#app {
-  height: 100vh;
-}
-
-.sidebar {
-  background: var(--el-bg-color-page);
-  padding: 20px;
-  border-right: 1px solid var(--el-border-color);
-}
-
-.sidebar-menu {
-  border: none;
-  background: transparent;
-}
-
-/* Dark mode adjustments */
-html.dark {
-  color-scheme: dark;
-}
-
-html.dark body {
-  background-color: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-}
-
-/* User menu styling */
-.user-menu-trigger {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 8px 12px;
-  border-radius: 4px;
-  transition: background-color 0.3s;
-  color: white;
-  font-size: 14px;
-}
-
-.user-menu-trigger:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
+/* App-specific styles have been moved to /src/styles/global.css */
+/* Component-specific styles can remain here if needed */
 </style>
