@@ -324,7 +324,7 @@ export default {
 
 .setup-card {
   width: 100%;
-  max-width: 500px;
+  max-width: 400px;
 }
 
 .card-header h2 {

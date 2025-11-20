@@ -283,21 +283,18 @@ export default {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: var(--el-bg-color-page);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
 }
 
 .setup-card {
   width: 100%;
-  max-width: 500px;
-}
-
-.card-header {
-  text-align: center;
+  max-width: 400px;
 }
 
 .card-header h2 {
   margin: 0;
+  text-align: center;
   color: var(--el-text-color-primary);
 }
 
