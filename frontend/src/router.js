@@ -55,7 +55,7 @@ const routes = [
     path: '/runners',
     name: 'Runners',
     component: Runners,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiresPermission: 'create_provisioning_key' }
   },
   {
     path: '/challenges',

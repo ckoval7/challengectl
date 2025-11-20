@@ -407,6 +407,10 @@
             label="create_users - Can create and manage users"
             value="create_users"
           />
+          <el-option
+            label="create_provisioning_key - Can create provisioning keys for runners"
+            value="create_provisioning_key"
+          />
         </el-select>
         <el-button
           type="primary"

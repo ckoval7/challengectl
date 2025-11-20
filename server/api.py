@@ -1220,6 +1220,7 @@ class ChallengeCtlAPI:
 
                 # Grant full permissions to first user
                 self.db.grant_permission(username, 'create_users', 'system')
+                self.db.grant_permission(username, 'create_provisioning_key', 'system')
 
                 # Generate TOTP provisioning URI
                 totp = pyotp.TOTP(totp_secret)
@@ -1243,7 +1244,7 @@ class ChallengeCtlAPI:
                 # Grant requested permissions to the new user
                 creator_username = request.admin_username
                 for permission in permissions:
-                    if permission in ['create_users']:  # Whitelist of valid permissions
+                    if permission in ['create_users', 'create_provisioning_key']:  # Whitelist of valid permissions
                         self.db.grant_permission(username, permission, creator_username)
                         logger.info(f"Granted permission '{permission}' to new user {username}")
 
@@ -1437,7 +1438,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing permission field'}), 400
 
             # Whitelist of valid permissions
-            valid_permissions = ['create_users']
+            valid_permissions = ['create_users', 'create_provisioning_key']
 
             if permission_name not in valid_permissions:
                 return jsonify({'error': f'Invalid permission: {permission_name}'}), 400
@@ -2197,6 +2198,14 @@ class ChallengeCtlAPI:
                 key_id: The key identifier
                 api_key: The generated API key (only shown once!)
             """
+            # Check create_provisioning_key permission
+            if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
+                logger.warning(
+                    f"SECURITY: Provisioning key creation denied - username='{request.admin_username}' "
+                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
+                )
+                return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
+
             data = request.json or {}
 
             key_id = data.get('key_id')
@@ -2211,9 +2220,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'key_id must contain only alphanumeric characters, hyphens, and underscores'}), 400
 
             # Get current user
-            session_token = request.cookies.get('session_token')
-            session = self.db.get_session(session_token)
-            username = session['username'] if session else 'unknown'
+            username = request.admin_username
 
             # Generate API key
             api_key = self.generate_api_key()
@@ -2244,6 +2251,14 @@ class ChallengeCtlAPI:
         @self.require_csrf
         def delete_provisioning_key(key_id):
             """Delete a provisioning API key."""
+            # Check create_provisioning_key permission
+            if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
+                logger.warning(
+                    f"SECURITY: Provisioning key deletion denied - username='{request.admin_username}' "
+                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
+                )
+                return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
+
             success = self.db.delete_provisioning_api_key(key_id)
 
             if success:
@@ -2256,6 +2271,14 @@ class ChallengeCtlAPI:
         @self.require_csrf
         def toggle_provisioning_key(key_id):
             """Enable or disable a provisioning API key."""
+            # Check create_provisioning_key permission
+            if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
+                logger.warning(
+                    f"SECURITY: Provisioning key toggle denied - username='{request.admin_username}' "
+                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
+                )
+                return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
+
             data = request.json or {}
             enabled = data.get('enabled', True)
 
