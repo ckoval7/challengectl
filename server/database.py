@@ -318,6 +318,37 @@ class Database:
                 ON transmissions(started_at DESC)
             ''')
 
+            # Critical indexes for authentication performance
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_runners_api_key
+                ON runners(api_key_hash)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_runners_enabled
+                ON runners(enabled, status)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_sessions_token
+                ON sessions(session_token)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_sessions_expires
+                ON sessions(expires)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_users_username
+                ON users(username)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_permissions_username
+                ON permissions(username)
+            ''')
+
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
 
@@ -566,6 +597,41 @@ class Database:
                         logger.debug(f"Runner {runner_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
 
             return True
+
+    def find_runner_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
+                               current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
+        """Find a runner by verifying the API key without knowing the runner_id in advance.
+
+        This method efficiently searches for the runner matching the provided API key
+        by only checking enabled runners with API keys set.
+
+        Args:
+            api_key: The plaintext API key to verify
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
+
+        Returns:
+            runner_id if found and verified, None otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Only fetch enabled runners with API keys set (optimized query)
+            cursor.execute('''
+                SELECT runner_id
+                FROM runners
+                WHERE enabled = 1 AND api_key_hash IS NOT NULL
+            ''')
+
+            for row in cursor.fetchall():
+                runner_id = row['runner_id']
+                # Use existing verify_runner_api_key method for consistent validation
+                if self.verify_runner_api_key(runner_id, api_key, current_ip, current_hostname,
+                                             current_mac, current_machine_id):
+                    return runner_id
+
+            return None
 
     def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
         """Update a runner's bcrypt-hashed API key.
@@ -1087,6 +1153,43 @@ class Database:
             ''')
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_all_users_with_permissions(self) -> List[Dict]:
+        """Get all users with their permissions in a single optimized query.
+
+        Returns:
+            List of user dictionaries with permissions list included
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Get all users first
+            cursor.execute('''
+                SELECT username, enabled, password_change_required, is_temporary, created_at, last_login
+                FROM users
+                ORDER BY username
+            ''')
+            users = [dict(row) for row in cursor.fetchall()]
+
+            # Get all permissions in one query
+            cursor.execute('''
+                SELECT username, permission_name
+                FROM permissions
+                ORDER BY username, permission_name
+            ''')
+
+            # Build a dictionary of permissions by username
+            permissions_by_user = {}
+            for row in cursor.fetchall():
+                username = row['username']
+                if username not in permissions_by_user:
+                    permissions_by_user[username] = []
+                permissions_by_user[username].append(row['permission_name'])
+
+            # Add permissions to each user
+            for user in users:
+                user['permissions'] = permissions_by_user.get(user['username'], [])
+
+            return users
+
     def clear_password_change_required(self, username: str) -> bool:
         """Clear password change requirement flag."""
         with self.get_connection() as conn:
@@ -1537,12 +1640,10 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT key_id, key_hash, enabled FROM provisioning_api_keys')
+            # Filter for enabled keys in SQL to avoid unnecessary bcrypt operations
+            cursor.execute('SELECT key_id, key_hash FROM provisioning_api_keys WHERE enabled = 1')
 
             for row in cursor.fetchall():
-                if not row['enabled']:
-                    continue
-
                 try:
                     if bcrypt.checkpw(api_key.encode('utf-8'), row['key_hash'].encode('utf-8')):
                         # Update last_used_at

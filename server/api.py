@@ -279,17 +279,9 @@ class ChallengeCtlAPI:
             current_mac = request.headers.get('X-Runner-MAC')
             current_machine_id = request.headers.get('X-Runner-Machine-ID')
 
-            # Find runner_id in database with enhanced host validation
-            runner_id = None
-            all_runners = self.db.get_all_runners()
-
-            for runner in all_runners:
-                if runner.get('api_key_hash'):
-                    # Check if this runner's API key matches (includes multi-factor host validation)
-                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname,
-                                                     current_mac, current_machine_id):
-                        runner_id = runner['runner_id']
-                        break
+            # Find runner_id in database with enhanced host validation (optimized query)
+            runner_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
+                                                       current_mac, current_machine_id)
 
             if not runner_id:
                 return jsonify({'error': 'Invalid API key'}), 401
@@ -328,6 +320,107 @@ class ChallengeCtlAPI:
             'secure': is_https,
             'samesite': 'Lax'  # Lax allows cookies on top-level navigation (safer than None, works with redirects)
         }
+
+    def set_auth_cookies(self, response, session_token: str, csrf_token: str):
+        """Set authentication cookies (session and CSRF tokens) with consistent security settings.
+
+        Args:
+            response: Flask response object to set cookies on
+            session_token: Session token value
+            csrf_token: CSRF token value
+
+        This centralizes cookie configuration to ensure consistency across all auth endpoints.
+        """
+        # Get security settings (auto-detects HTTP vs HTTPS)
+        cookie_settings = self.get_cookie_security_settings()
+
+        # Set secure httpOnly cookie for session token
+        response.set_cookie(
+            'session_token',
+            session_token,
+            httponly=True,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=86400
+        )
+
+        # Set CSRF token cookie (not httpOnly, needs to be readable by JS)
+        response.set_cookie(
+            'csrf_token',
+            csrf_token,
+            httponly=False,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=86400
+        )
+
+    def clear_auth_cookies(self, response):
+        """Clear authentication cookies (for logout).
+
+        Args:
+            response: Flask response object to clear cookies on
+
+        Cookie attributes must match exactly how they were set during login,
+        otherwise browsers won't delete them properly.
+        """
+        cookie_settings = self.get_cookie_security_settings()
+
+        # Clear session token cookie
+        response.set_cookie(
+            'session_token',
+            '',
+            httponly=True,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=0
+        )
+
+        # Clear CSRF token cookie
+        response.set_cookie(
+            'csrf_token',
+            '',
+            httponly=False,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=0
+        )
+
+    def log_security_event(self, event_type: str, username: str = None, level: str = 'info', **kwargs):
+        """Log security-related events with consistent formatting.
+
+        Args:
+            event_type: Type of security event (e.g., 'login', 'logout', 'failed_login')
+            username: Username associated with the event (if applicable)
+            level: Log level ('info', 'warning', 'error')
+            **kwargs: Additional context-specific fields to include in log
+
+        This centralizes security logging to ensure consistent format and completeness.
+        """
+        # Always include IP and user agent for security events
+        ip = request.remote_addr
+        user_agent = request.headers.get('User-Agent', 'unknown')
+
+        # Build log message
+        parts = [f"SECURITY: {event_type}"]
+        if username:
+            parts.append(f"username='{username}'")
+        parts.append(f"ip={ip}")
+
+        # Add additional context fields
+        for key, value in kwargs.items():
+            parts.append(f"{key}={value}")
+
+        parts.append(f"user_agent='{user_agent}'")
+
+        message = " - ".join(parts) if len(parts) > 1 else parts[0]
+
+        # Log at appropriate level
+        if level == 'warning':
+            logger.warning(message)
+        elif level == 'error':
+            logger.error(message)
+        else:
+            logger.info(message)
 
     def require_csrf(self, f):
         """Decorator to require CSRF token validation for state-changing operations."""
@@ -389,36 +482,14 @@ class ChallengeCtlAPI:
         """Decorator to require admin session authentication."""
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Get session token from httpOnly cookie (more secure than localStorage)
-            session_token = request.cookies.get('session_token')
+            # Use centralized session validation
+            username, error_response = self.validate_and_renew_session()
 
-            if not session_token:
-                return jsonify({'error': 'Missing or invalid session'}), 401
-
-            # Check session validity (from database)
-            session = self.db.get_session(session_token)
-
-            if not session:
-                return jsonify({'error': 'Invalid or expired session'}), 401
-
-            # Check if session is expired
-            # Note: expires is stored as ISO format string in database
-            # SECURITY: Use UTC for consistent timezone handling
-            expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
-                self.db.delete_session(session_token)
-                return jsonify({'error': 'Session expired'}), 401
-
-            # Check if TOTP was verified
-            if not session.get('totp_verified', False):
-                return jsonify({'error': 'TOTP verification required'}), 401
-
-            # SECURITY: Sliding session - renew expiry on activity
-            # Extends session by 24 hours from now
-            self.renew_session(session_token)
+            if error_response:
+                return error_response
 
             # Add username to request context
-            request.admin_username = session['username']
+            request.admin_username = username
 
             return f(*args, **kwargs)
 
@@ -484,6 +555,46 @@ class ChallengeCtlAPI:
         """
         new_expires = datetime.utcnow() + timedelta(hours=24)
         return self.db.update_session_expires(session_token, new_expires.isoformat())
+
+    def validate_and_renew_session(self):
+        """Validate session from cookies and renew if valid.
+
+        Returns:
+            Tuple of (username, None) if valid, or (None, error_response) if invalid
+
+        This centralizes session validation logic to avoid duplication across endpoints.
+        Performs all necessary checks: token presence, validity, expiration, TOTP verification,
+        and automatic session renewal.
+        """
+        session_token = request.cookies.get('session_token')
+
+        if not session_token:
+            return None, (jsonify({'error': 'Missing or invalid session'}), 401)
+
+        # Check session validity (from database)
+        session = self.db.get_session(session_token)
+
+        if not session:
+            return None, (jsonify({'error': 'Invalid or expired session'}), 401)
+
+        # Check if session is expired
+        # Note: expires is stored as ISO format string in database
+        # SECURITY: Use UTC for consistent timezone handling
+        expires = datetime.fromisoformat(session['expires'])
+        if datetime.utcnow() > expires:
+            self.db.delete_session(session_token)
+            return None, (jsonify({'error': 'Session expired'}), 401)
+
+        # Check if TOTP was verified
+        if not session.get('totp_verified', False):
+            return None, (jsonify({'error': 'TOTP verification required'}), 401)
+
+        # SECURITY: Sliding session - renew expiry on activity
+        # Extends session by 24 hours from now
+        self.renew_session(session_token)
+
+        # Return username for successful validation
+        return session['username'], None
 
     def destroy_session(self, session_token: str) -> bool:
         """Destroy a session (from database)."""
@@ -610,10 +721,7 @@ class ChallengeCtlAPI:
             if not user or not password_valid or not user.get('enabled'):
                 # Log failed login attempt for security monitoring
                 reason = 'user_not_found' if not user else ('wrong_password' if not password_valid else 'account_disabled')
-                logger.warning(
-                    f"SECURITY: Failed login attempt - username='{username}' ip={request.remote_addr} "
-                    f"reason={reason} user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Failed login attempt', username, level='warning', reason=reason)
                 return jsonify({'error': 'Invalid credentials'}), 401
 
             # Check if user is temporary (requires setup)
@@ -638,33 +746,10 @@ class ChallengeCtlAPI:
                     'message': 'Account setup required. Please change your password and set up 2FA.'
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,
-                    secure=cookie_settings['secure'],
-                    samesite=cookie_settings['samesite'],
-                    max_age=86400
-                )
-
-                # Set CSRF token cookie
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,
-                    secure=cookie_settings['secure'],
-                    samesite=cookie_settings['samesite'],
-                    max_age=86400
-                )
-
-                logger.info(
-                    f"SECURITY: Temporary user login - username='{username}' ip={request.remote_addr} "
-                    f"setup_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Temporary user login', username, setup_required='true')
 
                 return response
 
@@ -681,28 +766,8 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
-
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
-                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
-                    max_age=86400   # 24 hours (matches session expiry)
-                )
-
-                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,  # JavaScript can read to send in header
-                    secure=cookie_settings['secure'],  # Match session cookie security
-                    samesite=cookie_settings['samesite'],  # Match session cookie setting
-                    max_age=86400    # 24 hours
-                )
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
                 # Log successful password verification
                 logger.info(
@@ -738,28 +803,8 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
-
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
-                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
-                    max_age=86400   # 24 hours (matches session expiry)
-                )
-
-                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,  # JavaScript can read to send in header
-                    secure=cookie_settings['secure'],  # Match session cookie security
-                    samesite=cookie_settings['samesite'],  # Match session cookie setting
-                    max_age=86400    # 24 hours
-                )
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
                 return response
 
@@ -921,27 +966,9 @@ class ChallengeCtlAPI:
             if session_token:
                 self.destroy_session(session_token)
 
-            # Clear both session and CSRF cookies
-            # NOTE: Cookie attributes must match exactly how they were set during login
-            # Otherwise browsers won't delete them
-            cookie_settings = self.get_cookie_security_settings()
+            # Clear both session and CSRF cookies with consistent settings
             response = make_response(jsonify({'status': 'logged out'}), 200)
-            response.set_cookie(
-                'session_token',
-                '',
-                httponly=True,
-                secure=cookie_settings['secure'],  # Must match login cookie setting
-                samesite=cookie_settings['samesite'],
-                max_age=0        # Use max_age=0 to delete cookie (matches login style)
-            )
-            response.set_cookie(
-                'csrf_token',
-                '',
-                httponly=False,
-                secure=cookie_settings['secure'],  # Must match login cookie setting
-                samesite=cookie_settings['samesite'],
-                max_age=0        # Use max_age=0 to delete cookie (matches login style)
-            )
+            self.clear_auth_cookies(response)
 
             return response
 
@@ -1152,11 +1179,8 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         def get_users():
             """Get all users."""
-            users = self.db.get_all_users()
-
-            # Add permissions for each user
-            for user in users:
-                user['permissions'] = self.db.get_user_permissions(user['username'])
+            # Get all users with permissions in a single optimized query
+            users = self.db.get_all_users_with_permissions()
 
             return jsonify({'users': users}), 200
 
