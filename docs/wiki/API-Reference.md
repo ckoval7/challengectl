@@ -299,11 +299,17 @@ Cookie: session=...
 ```json
 {
   "authenticated": true,
-  "user": {
-    "username": "admin"
-  }
+  "username": "admin",
+  "initial_setup_required": false,
+  "permissions": ["create_users", "create_provisioning_key"]
 }
 ```
+
+**Response Fields:**
+- `authenticated`: Boolean indicating if session is valid
+- `username`: Logged in username
+- `initial_setup_required`: Whether initial admin setup needs completion
+- `permissions`: Array of permissions granted to this user
 
 #### POST /api/auth/logout
 
@@ -410,7 +416,7 @@ X-CSRF-Token: csrf_token_value
 **Parameters:**
 - `username` (required): Username for the new user
 - `password` (optional): Initial password (min 8 characters). If omitted, a secure password is auto-generated.
-- `permissions` (optional): Array of permissions to grant. Valid values: `["create_users"]`
+- `permissions` (optional): Array of permissions to grant. Valid values: `["create_users", "create_provisioning_key"]`
 
 **Response (normal user creation - default):**
 ```json
@@ -514,30 +520,32 @@ Cookie: session=...
 
 #### POST /api/users/\<username\>/reset-password
 
-Reset a user's password (admin function). Forces password change on next login.
+Reset a user's password (admin function). Generates a secure temporary password. Forces password change on next login.
+
+**Permissions required**: `create_users`
 
 **Request:**
 ```http
 POST /api/users/operator/reset-password HTTP/1.1
 Cookie: session=...
-Content-Type: application/json
 X-CSRF-Token: csrf_token_value
-
-{
-  "new_password": "resetpassword123"
-}
 ```
 
 **Response:**
 ```json
 {
-  "status": "password_reset"
+  "status": "password_reset",
+  "username": "operator",
+  "temporary_password": "auto-generated-secure-password"
 }
 ```
 
 **Security Notes:**
+- Password is auto-generated for security (not administrator-specified)
+- Temporary password returned only once in the response
 - Sets `password_change_required` flag
 - Invalidates all user sessions for security
+- Cannot reset your own password through this endpoint
 
 #### GET /api/users/\<username\>/permissions
 
@@ -579,6 +587,7 @@ X-CSRF-Token: csrf_token_value
 
 **Valid permissions:**
 - `create_users`: Allows user to create other users and manage permissions
+- `create_provisioning_key`: Allows user to create and manage provisioning API keys
 
 **Response:**
 ```json
@@ -1148,7 +1157,9 @@ Provisioning API keys provide a secure, stateless method for automated runner de
 
 #### POST /api/provisioning/keys
 
-Create a new provisioning API key (admin only).
+Create a new provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http
@@ -1203,7 +1214,9 @@ Cookie: session=...
 
 #### POST /api/provisioning/keys/\<key_id\>/toggle
 
-Enable or disable a provisioning API key (admin only).
+Enable or disable a provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http
@@ -1225,7 +1238,9 @@ Content-Type: application/json
 
 #### DELETE /api/provisioning/keys/\<key_id\>
 
-Delete a provisioning API key (admin only).
+Delete a provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http

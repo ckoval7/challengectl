@@ -98,8 +98,27 @@ If an administrator created your account, you must complete setup on first login
 
 - **Session duration**: Sessions remain active for 24 hours
 - **Auto-logout**: Sessions expire after 24 hours of inactivity
-- **Manual logout**: Click the "Logout" button in the navigation bar
+- **Manual logout**: Click your username in the header, then select "Logout"
 - **Multiple sessions**: You can be logged in from multiple browsers/devices simultaneously
+
+### User Menu
+
+The user menu in the header provides quick access to your account options:
+
+**Accessing the User Menu**:
+- Click on your username (with avatar icon) in the top-right corner of the header
+- A dropdown menu appears with available options
+
+**Available Options**:
+- **Change Password**: Update your current password
+  - Requires your current password for verification
+  - Enter new password twice to confirm
+  - Session remains active after password change
+  - Use this to regularly rotate your credentials
+- **Logout**: Sign out and invalidate your current session
+  - Ends your session immediately
+  - Returns you to the login page
+  - Other sessions on different devices remain active
 
 ## Dashboard
 
@@ -143,7 +162,10 @@ The lower section shows real-time transmission activity:
 
 ## Runners Management
 
-The Runners page displays all registered runners and their current status.
+The Runners page displays all registered runners and their current status. The page includes two tabs:
+
+1. **Runners**: View and manage runner connections (available to all users)
+2. **Provisioning Keys**: Create and manage provisioning API keys for automated runner deployment (requires `create_provisioning_key` permission)
 
 ### Runner List
 
@@ -609,6 +631,10 @@ The new user will:
 - Cannot delete your own account (prevents lockout)
 - All permissions are automatically removed
 
+**User Actions Menu**:
+
+All user actions (Enable/Disable, Manage Permissions, Reset Password, Reset TOTP, Delete) are available through the "Actions" dropdown button in the user table. This provides a clean, organized interface for user management operations.
+
 **Reset TOTP**:
 - Generates a new TOTP secret
 - Use when a user loses access to their authenticator app
@@ -617,7 +643,8 @@ The new user will:
 - All user sessions are invalidated for security
 
 **Reset Password**:
-- Set a new temporary password for a user
+- Generate a new temporary password for a user (password is auto-generated for security)
+- The temporary password is displayed once for you to share with the user
 - Sets `password_change_required` flag
 - User must change password on next login
 - All user sessions are invalidated for security
@@ -633,6 +660,10 @@ ChallengeCtl uses a scalable permission system to control user capabilities:
   - Manage permissions for other users
   - View all users and their permissions
   - Cannot be used to grant permissions the user doesn't have
+- **`create_provisioning_key`**: Allows user to:
+  - Create provisioning API keys for automated runner deployment
+  - Manage (enable/disable/delete) provisioning keys
+  - Access the Provisioning Keys tab in the Runners page
 
 **Permission Inheritance**:
 - The first user created during initial setup automatically receives all permissions
