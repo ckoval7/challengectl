@@ -513,10 +513,8 @@ class ChallengeCtlAPI:
 
                 # Check if user has the required permission
                 if not self.db.has_permission(username, permission_name):
-                    logger.warning(
-                        f"SECURITY: Permission denied - username='{username}' permission='{permission_name}' "
-                        f"ip={request.remote_addr} path={request.path}"
-                    )
+                    self.log_security_event('Permission denied', username, level='warning',
+                                           permission=permission_name, path=request.path)
                     return jsonify({'error': f'Permission denied: {permission_name} required'}), 403
 
                 return f(*args, **kwargs)
@@ -770,10 +768,7 @@ class ChallengeCtlAPI:
                 self.set_auth_cookies(response, session_token, csrf_token)
 
                 # Log successful password verification
-                logger.info(
-                    f"SECURITY: Password verified - username='{username}' ip={request.remote_addr} "
-                    f"totp_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Password verified', username, totp_required='true')
 
                 return response
             else:
@@ -790,10 +785,7 @@ class ChallengeCtlAPI:
                 initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
 
                 # Log successful login
-                logger.info(
-                    f"SECURITY: Successful login - username='{username}' ip={request.remote_addr} "
-                    f"totp_required=false user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Successful login', username, totp_required='false')
 
                 # Set httpOnly cookie for security (prevents XSS attacks)
                 response = make_response(jsonify({
@@ -852,10 +844,8 @@ class ChallengeCtlAPI:
 
             # Check if TOTP code was already used (replay protection)
             if self.is_totp_code_used(username, totp_code):
-                logger.warning(
-                    f"SECURITY: TOTP replay attempt - username='{username}' ip={request.remote_addr} "
-                    f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('TOTP replay attempt', username, level='warning',
+                                       code=f"{totp_code[:2]}**")
                 return jsonify({'error': 'Invalid TOTP code'}), 401
 
             # Verify TOTP code
@@ -863,19 +853,15 @@ class ChallengeCtlAPI:
                 totp = pyotp.TOTP(totp_secret)
                 if not totp.verify(totp_code, valid_window=1):
                     # Log failed TOTP verification
-                    logger.warning(
-                        f"SECURITY: Failed TOTP verification - username='{username}' ip={request.remote_addr} "
-                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                    )
+                    self.log_security_event('Failed TOTP verification', username, level='warning',
+                                           code=f"{totp_code[:2]}**")
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
                 # Mark code as used (only after successful verification)
                 if not self.mark_totp_code_used(username, totp_code):
                     # This shouldn't happen due to the check above, but handle it anyway
-                    logger.warning(
-                        f"SECURITY: TOTP code reuse detected - username='{username}' ip={request.remote_addr} "
-                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                    )
+                    self.log_security_event('TOTP code reuse detected', username, level='warning',
+                                           code=f"{totp_code[:2]}**")
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
             except Exception as e:
@@ -890,10 +876,7 @@ class ChallengeCtlAPI:
             self.db.update_last_login(username)
 
             # Log successful TOTP verification and login
-            logger.info(
-                f"SECURITY: Successful TOTP verification - username='{username}' ip={request.remote_addr} "
-                f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('Successful TOTP verification', username, code=f"{totp_code[:2]}**")
 
             # Check if password change is required
             password_change_required = user.get('password_change_required', False)
@@ -1091,10 +1074,7 @@ class ChallengeCtlAPI:
                 'timestamp': datetime.utcnow()
             }
 
-            logger.info(
-                f"SECURITY: User setup initiated (step 1) - username='{username}' ip={request.remote_addr} "
-                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('User setup initiated (step 1)', username)
 
             return jsonify({
                 'status': 'awaiting_verification',
@@ -1164,10 +1144,7 @@ class ChallengeCtlAPI:
             # Update last login timestamp
             self.db.update_last_login(username)
 
-            logger.info(
-                f"SECURITY: User setup completed - username='{username}' ip={request.remote_addr} "
-                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('User setup completed', username)
 
             return jsonify({
                 'status': 'setup_complete',
@@ -1215,10 +1192,8 @@ class ChallengeCtlAPI:
             if not initial_setup_required:
                 creator_username = request.admin_username
                 if not self.db.has_permission(creator_username, 'create_users'):
-                    logger.warning(
-                        f"SECURITY: User creation denied - username='{creator_username}' "
-                        f"missing 'create_users' permission ip={request.remote_addr}"
-                    )
+                    self.log_security_event('User creation denied', creator_username, level='warning',
+                                           missing_permission='create_users')
                     return jsonify({'error': 'Permission denied: create_users permission required'}), 403
 
                 # Auto-generate temporary password if not provided
@@ -2224,10 +2199,8 @@ class ChallengeCtlAPI:
             """
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key creation denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key creation denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             data = request.json or {}
@@ -2277,10 +2250,8 @@ class ChallengeCtlAPI:
             """Delete a provisioning API key."""
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key deletion denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key deletion denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             success = self.db.delete_provisioning_api_key(key_id)
@@ -2297,10 +2268,8 @@ class ChallengeCtlAPI:
             """Enable or disable a provisioning API key."""
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key toggle denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key toggle denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             data = request.json or {}
@@ -2900,10 +2869,8 @@ radios:
             # SECURITY: Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
             if file_ext not in self.ALLOWED_EXTENSIONS:
-                logger.warning(
-                    f"SECURITY: File upload rejected - invalid extension '{file_ext}' "
-                    f"from {request.remote_addr} (file: {file.filename})"
-                )
+                self.log_security_event('File upload rejected', request.admin_username, level='warning',
+                                       extension=file_ext, filename=file.filename)
                 return jsonify({
                     'error': f'Invalid file type. Allowed: {", ".join(sorted(self.ALLOWED_EXTENSIONS))}'
                 }), 400
@@ -2918,10 +2885,9 @@ radios:
                 if file_size > self.MAX_FILE_SIZE:
                     max_mb = self.MAX_FILE_SIZE / (1024 * 1024)
                     actual_mb = file_size / (1024 * 1024)
-                    logger.warning(
-                        f"SECURITY: File upload rejected - size {actual_mb:.1f}MB exceeds limit "
-                        f"{max_mb:.0f}MB from {request.remote_addr} (file: {file.filename})"
-                    )
+                    self.log_security_event('File upload rejected', request.admin_username, level='warning',
+                                           reason=f'size {actual_mb:.1f}MB exceeds limit {max_mb:.0f}MB',
+                                           filename=file.filename)
                     return jsonify({
                         'error': f'File too large. Maximum size: {max_mb:.0f}MB'
                     }), 413
