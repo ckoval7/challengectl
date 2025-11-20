@@ -14,6 +14,18 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    assetsDir: 'assets'
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Separate Element Plus into its own chunk (largest dependency)
+          'element-plus': ['element-plus'],
+          // Vue core libraries
+          'vue-vendor': ['vue', 'vue-router'],
+          // Other vendor libraries
+          'vendor-utils': ['axios', 'socket.io-client', 'qrcode']
+        }
+      }
+    }
   }
 })
