@@ -188,9 +188,28 @@ class Database:
                     totp_secret TEXT,
                     enabled BOOLEAN DEFAULT 1,
                     password_change_required BOOLEAN DEFAULT 0,
+                    is_temporary BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP
                 )
+            ''')
+
+            # Permissions table (for scalable role-based access control)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS permissions (
+                    permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    permission_name TEXT NOT NULL,
+                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    granted_by TEXT,
+                    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,
+                    UNIQUE (username, permission_name)
+                )
+            ''')
+
+            # Create index on permissions for faster lookups
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_permissions_username ON permissions(username)
             ''')
 
             # Sessions table (for persistent session storage)
@@ -275,6 +294,13 @@ class Database:
             if 'api_key_hash' not in columns:
                 logger.info("Adding 'api_key_hash' column to runners table")
                 cursor.execute('ALTER TABLE runners ADD COLUMN api_key_hash TEXT')
+
+            # Migration: Add is_temporary column to users table if it doesn't exist
+            cursor.execute("PRAGMA table_info(users)")
+            user_columns = [row[1] for row in cursor.fetchall()]
+            if 'is_temporary' not in user_columns:
+                logger.info("Adding 'is_temporary' column to users table")
+                cursor.execute('ALTER TABLE users ADD COLUMN is_temporary BOOLEAN DEFAULT 0')
 
             # Create indexes
             cursor.execute('''
@@ -945,20 +971,34 @@ class Database:
             return default
 
     # User management
-    def create_user(self, username: str, password_hash: str, totp_secret: str) -> bool:
-        """Create a new admin user."""
+    def create_user(self, username: str, password_hash: str, totp_secret: Optional[str] = None,
+                   is_temporary: bool = False) -> bool:
+        """Create a new admin user.
+
+        Args:
+            username: Username for the new user
+            password_hash: Bcrypt hashed password
+            totp_secret: Optional TOTP secret (if None, user must set up TOTP on first login)
+            is_temporary: If True, user must complete setup within 24 hours or be disabled
+
+        Returns:
+            True if successful, False otherwise
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
-                # Encrypt TOTP secret before storing
-                encrypted_totp_secret = encrypt_totp_secret(totp_secret)
+                # Encrypt TOTP secret before storing (if provided)
+                encrypted_totp_secret = None
+                if totp_secret:
+                    encrypted_totp_secret = encrypt_totp_secret(totp_secret)
 
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, totp_secret)
-                    VALUES (?, ?, ?)
-                ''', (username, password_hash, encrypted_totp_secret))
+                    INSERT INTO users (username, password_hash, totp_secret, is_temporary, password_change_required)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (username, password_hash, encrypted_totp_secret, 1 if is_temporary else 0,
+                     1 if is_temporary else 0))
                 conn.commit()
-                logger.info(f"Created user: {username}")
+                logger.info(f"Created user: {username} (temporary={is_temporary})")
                 return True
             except sqlite3.IntegrityError:
                 logger.warning(f"User {username} already exists")
@@ -1041,7 +1081,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT username, enabled, password_change_required, created_at, last_login
+                SELECT username, enabled, password_change_required, is_temporary, created_at, last_login
                 FROM users
                 ORDER BY username
             ''')
@@ -1069,6 +1109,153 @@ class Database:
             ''', (username,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def complete_user_setup(self, username: str, password_hash: str, totp_secret: str) -> bool:
+        """Complete setup for a temporary user by setting password, TOTP, and clearing temporary flag.
+
+        Args:
+            username: Username of the temporary user
+            password_hash: New bcrypt hashed password
+            totp_secret: TOTP secret to set up
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Encrypt TOTP secret before storing
+                encrypted_totp_secret = encrypt_totp_secret(totp_secret)
+
+                cursor.execute('''
+                    UPDATE users
+                    SET password_hash = ?,
+                        totp_secret = ?,
+                        is_temporary = 0,
+                        password_change_required = 0,
+                        last_login = CURRENT_TIMESTAMP
+                    WHERE username = ?
+                ''', (password_hash, encrypted_totp_secret, username))
+                conn.commit()
+
+                if cursor.rowcount > 0:
+                    logger.info(f"User setup completed for: {username}")
+                    return True
+                return False
+            except Exception as e:
+                logger.error(f"Error completing setup for user {username}: {e}")
+                return False
+
+    def get_stale_temporary_users(self, hours: int = 24) -> List[Dict]:
+        """Get temporary users that haven't completed setup within the specified hours.
+
+        Args:
+            hours: Number of hours after creation to consider a temporary user stale
+
+        Returns:
+            List of stale temporary user dictionaries
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT username, created_at, enabled
+                FROM users
+                WHERE is_temporary = 1
+                  AND created_at < ?
+                  AND enabled = 1
+            ''', (threshold,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # Permission management
+    def grant_permission(self, username: str, permission_name: str, granted_by: str) -> bool:
+        """Grant a permission to a user.
+
+        Args:
+            username: Username to grant permission to
+            permission_name: Name of the permission (e.g., 'create_users')
+            granted_by: Username of the admin granting this permission
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO permissions (username, permission_name, granted_by)
+                    VALUES (?, ?, ?)
+                ''', (username, permission_name, granted_by))
+                conn.commit()
+                logger.info(f"Granted permission '{permission_name}' to user {username} by {granted_by}")
+                return True
+            except sqlite3.IntegrityError:
+                # Permission already exists
+                logger.debug(f"Permission '{permission_name}' already granted to user {username}")
+                return True
+            except Exception as e:
+                logger.error(f"Error granting permission to {username}: {e}")
+                return False
+
+    def revoke_permission(self, username: str, permission_name: str) -> bool:
+        """Revoke a permission from a user.
+
+        Args:
+            username: Username to revoke permission from
+            permission_name: Name of the permission to revoke
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM permissions
+                WHERE username = ? AND permission_name = ?
+            ''', (username, permission_name))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Revoked permission '{permission_name}' from user {username}")
+            return cursor.rowcount > 0
+
+    def has_permission(self, username: str, permission_name: str) -> bool:
+        """Check if a user has a specific permission.
+
+        Args:
+            username: Username to check
+            permission_name: Name of the permission to check
+
+        Returns:
+            True if user has the permission, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) as count
+                FROM permissions
+                WHERE username = ? AND permission_name = ?
+            ''', (username, permission_name))
+            row = cursor.fetchone()
+            return row['count'] > 0
+
+    def get_user_permissions(self, username: str) -> List[str]:
+        """Get all permissions for a user.
+
+        Args:
+            username: Username to get permissions for
+
+        Returns:
+            List of permission names
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT permission_name
+                FROM permissions
+                WHERE username = ?
+                ORDER BY permission_name
+            ''', (username,))
+            return [row['permission_name'] for row in cursor.fetchall()]
 
     # Session management methods
 

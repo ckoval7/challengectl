@@ -66,8 +66,16 @@ Authorization: Bearer ck_provisioning_abc123def456...
 Admin endpoints require session-based authentication with username/password and TOTP:
 
 1. **Login**: POST credentials to `/api/auth/login`
-2. **Verify TOTP**: POST TOTP code to `/api/auth/verify-totp`
-3. **Use session**: Session cookie is automatically included in subsequent requests
+2. **Complete Setup** (new users requiring setup):
+   - Step 1: POST new password to `/api/auth/complete-setup` (returns TOTP provisioning URI)
+   - Step 2: POST TOTP verification code to `/api/auth/verify-setup`
+3. **Verify TOTP** (existing users): POST TOTP code to `/api/auth/verify-totp`
+4. **Use session**: Session cookie is automatically included in subsequent requests
+
+**New User Setup**: Newly created users must complete setup on first login:
+- Change their password (backend generates TOTP secret)
+- Verify TOTP code from authenticator app
+- Complete setup within 24 hours or account is automatically disabled
 
 ```http
 GET /api/dashboard HTTP/1.1
@@ -152,28 +160,81 @@ Content-Type: application/json
 }
 ```
 
-**Response:**
+**Response (new user - setup required):**
 ```json
 {
-  "status": "success",
-  "message": "Password verified, TOTP required",
-  "temp_token": "temp_abc123..."
+  "setup_required": true,
+  "username": "newuser",
+  "message": "Account setup required. Please change your password and set up 2FA."
 }
 ```
 
-#### POST /api/auth/verify-totp
+**Response (existing user - TOTP required):**
+```json
+{
+  "totp_required": true,
+  "username": "admin"
+}
+```
 
-Verify TOTP code and complete authentication.
+**Response (no TOTP configured - legacy/initial setup):**
+```json
+{
+  "status": "authenticated",
+  "totp_required": false,
+  "initial_setup_required": true,
+  "username": "admin"
+}
+```
 
-**Rate limit**: 5 requests per 15 minutes
+Sets session cookie for subsequent requests.
+
+#### POST /api/auth/complete-setup
+
+Step 1 of account setup for new users: change password and receive TOTP provisioning URI.
 
 **Request:**
 ```http
-POST /api/auth/verify-totp HTTP/1.1
+POST /api/auth/complete-setup HTTP/1.1
+Cookie: session=...
 Content-Type: application/json
 
 {
-  "temp_token": "temp_abc123...",
+  "new_password": "newSecurePassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "awaiting_verification",
+  "username": "newuser",
+  "totp_secret": "JBSWY3DPEHPK3PXP",
+  "provisioning_uri": "otpauth://totp/ChallengeCtl:newuser?secret=JBSWY3DPEHPK3PXP&issuer=ChallengeCtl"
+}
+```
+
+The TOTP secret is generated server-side and returned for display. The user should:
+1. Scan the QR code (generated from provisioning_uri) or manually enter the totp_secret
+2. Get a 6-digit code from their authenticator app
+3. Call `/api/auth/verify-setup` with the code
+
+**Security Notes:**
+- TOTP secret generated server-side (consistent with other user creation flows)
+- Pending setup data stored temporarily (expires after 15 minutes)
+- Must complete verification within 15 minutes
+
+#### POST /api/auth/verify-setup
+
+Step 2 of account setup for new users: verify TOTP code and complete setup.
+
+**Request:**
+```http
+POST /api/auth/verify-setup HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
   "totp_code": "123456"
 }
 ```
@@ -181,15 +242,48 @@ Content-Type: application/json
 **Response:**
 ```json
 {
-  "status": "success",
-  "message": "Authentication successful",
-  "user": {
-    "username": "admin"
-  }
+  "status": "setup_complete",
+  "username": "newuser"
 }
 ```
 
-Sets session cookie for subsequent requests.
+After successful verification:
+- User is marked as permanent (no longer temporary)
+- Session is fully authenticated
+- User can access the system
+
+**Error Responses:**
+- `400`: No pending setup found (need to restart from `/api/auth/complete-setup`)
+- `401`: Invalid TOTP code
+- `400`: Setup session expired (15 minutes)
+
+#### POST /api/auth/verify-totp
+
+Verify TOTP code and complete authentication for existing users.
+
+**Rate limit**: 5 requests per 15 minutes
+
+**Request:**
+```http
+POST /api/auth/verify-totp HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+
+{
+  "totp_code": "123456"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "authenticated",
+  "password_change_required": false,
+  "username": "admin"
+}
+```
+
+Sets session as fully authenticated (TOTP verified).
 
 #### GET /api/auth/session
 
@@ -205,11 +299,17 @@ Cookie: session=...
 ```json
 {
   "authenticated": true,
-  "user": {
-    "username": "admin"
-  }
+  "username": "admin",
+  "initial_setup_required": false,
+  "permissions": ["create_users", "create_provisioning_key"]
 }
 ```
+
+**Response Fields:**
+- `authenticated`: Boolean indicating if session is valid
+- `username`: Logged in username
+- `initial_setup_required`: Whether initial admin setup needs completion
+- `permissions`: Array of permissions granted to this user
 
 #### POST /api/auth/logout
 
@@ -257,7 +357,7 @@ Content-Type: application/json
 
 ### User Management
 
-Requires admin authentication for all endpoints.
+Requires admin authentication for all endpoints. User creation requires the `create_users` permission.
 
 #### GET /api/users
 
@@ -275,11 +375,19 @@ Cookie: session=...
   "users": [
     {
       "username": "admin",
-      "created_at": "2024-01-15T10:00:00Z"
+      "enabled": true,
+      "password_change_required": false,
+      "is_temporary": false,
+      "created_at": "2024-01-15T10:00:00Z",
+      "last_login": "2024-01-15T14:30:00Z"
     },
     {
       "username": "operator",
-      "created_at": "2024-01-15T11:00:00Z"
+      "enabled": true,
+      "password_change_required": false,
+      "is_temporary": false,
+      "created_at": "2024-01-15T11:00:00Z",
+      "last_login": null
     }
   ]
 }
@@ -287,52 +395,90 @@ Cookie: session=...
 
 #### POST /api/users
 
-Create a new admin user.
+Create a new admin user. By default, users must complete setup (change password, configure 2FA) on first login.
+
+**Permissions required**: `create_users`
 
 **Request:**
 ```http
 POST /api/users HTTP/1.1
 Cookie: session=...
 Content-Type: application/json
+X-CSRF-Token: csrf_token_value
 
 {
   "username": "newuser",
-  "password": "password123"
+  "password": "initialPassword123",
+  "permissions": ["create_users"]
 }
 ```
 
-**Response:**
+**Parameters:**
+- `username` (required): Username for the new user
+- `password` (optional): Initial password (min 8 characters). If omitted, a secure password is auto-generated.
+- `permissions` (optional): Array of permissions to grant. Valid values: `["create_users", "create_provisioning_key"]`
+
+**Response (normal user creation - default):**
 ```json
 {
-  "status": "success",
-  "message": "User created successfully",
-  "totp_secret": "JBSWY3DPEHPK3PXP",
-  "totp_uri": "otpauth://totp/..."
+  "status": "created",
+  "username": "newuser",
+  "is_temporary": true,
+  "setup_deadline_hours": 24,
+  "temporary_password": "auto-generated-password"
 }
 ```
+
+**Response (initial setup - first admin user):**
+```json
+{
+  "status": "created",
+  "username": "admin",
+  "totp_secret": "JBSWY3DPEHPK3PXP",
+  "provisioning_uri": "otpauth://totp/ChallengeCtl:admin?secret=JBSWY3DPEHPK3PXP&issuer=ChallengeCtl",
+  "is_temporary": false
+}
+```
+
+**New User Flow:**
+1. Admin creates user (password auto-generated if not provided)
+2. Admin shares username and initial password with new user
+3. New user logs in within 24 hours
+4. New user must change password and set up TOTP
+5. If not completed within 24 hours, account is automatically disabled
+
+**Security Notes:**
+- Initial password is returned only once for admin to share
+- User must complete setup within 24 hours or account is disabled
+- TOTP is mandatory - no users can skip 2FA
+- `create_users` permission is automatically granted to first user during initial setup
 
 #### PUT /api/users/\<username\>
 
-Update a user's information.
+Update a user (enable/disable).
 
 **Request:**
 ```http
-PUT /api/users/admin HTTP/1.1
+PUT /api/users/operator HTTP/1.1
 Cookie: session=...
 Content-Type: application/json
+X-CSRF-Token: csrf_token_value
 
 {
-  "password": "newpassword123"
+  "enabled": false
 }
 ```
 
 **Response:**
 ```json
 {
-  "status": "success",
-  "message": "User updated successfully"
+  "status": "updated"
 }
 ```
+
+**Security Notes:**
+- Cannot disable your own account
+- Disabling a user invalidates all their sessions
 
 #### DELETE /api/users/\<username\>
 
@@ -374,26 +520,107 @@ Cookie: session=...
 
 #### POST /api/users/\<username\>/reset-password
 
-Reset a user's password (admin function).
+Reset a user's password (admin function). Generates a secure temporary password. Forces password change on next login.
+
+**Permissions required**: `create_users`
 
 **Request:**
 ```http
 POST /api/users/operator/reset-password HTTP/1.1
 Cookie: session=...
-Content-Type: application/json
-
-{
-  "new_password": "resetpassword123"
-}
+X-CSRF-Token: csrf_token_value
 ```
 
 **Response:**
 ```json
 {
-  "status": "success",
-  "message": "Password reset successfully"
+  "status": "password_reset",
+  "username": "operator",
+  "temporary_password": "auto-generated-secure-password"
 }
 ```
+
+**Security Notes:**
+- Password is auto-generated for security (not administrator-specified)
+- Temporary password returned only once in the response
+- Sets `password_change_required` flag
+- Invalidates all user sessions for security
+- Cannot reset your own password through this endpoint
+
+#### GET /api/users/\<username\>/permissions
+
+List permissions for a specific user.
+
+**Request:**
+```http
+GET /api/users/operator/permissions HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "username": "operator",
+  "permissions": [
+    "create_users"
+  ]
+}
+```
+
+#### POST /api/users/\<username\>/permissions
+
+Grant a permission to a user.
+
+**Permissions required**: `create_users`
+
+**Request:**
+```http
+POST /api/users/operator/permissions HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+X-CSRF-Token: csrf_token_value
+
+{
+  "permission": "create_users"
+}
+```
+
+**Valid permissions:**
+- `create_users`: Allows user to create other users and manage permissions
+- `create_provisioning_key`: Allows user to create and manage provisioning API keys
+
+**Response:**
+```json
+{
+  "status": "permission_granted",
+  "permission": "create_users"
+}
+```
+
+#### DELETE /api/users/\<username\>/permissions/\<permission\>
+
+Revoke a permission from a user.
+
+**Permissions required**: `create_users`
+
+**Request:**
+```http
+DELETE /api/users/operator/permissions/create_users HTTP/1.1
+Cookie: session=...
+X-CSRF-Token: csrf_token_value
+```
+
+**Response:**
+```json
+{
+  "status": "permission_revoked",
+  "permission": "create_users"
+}
+```
+
+**Security Notes:**
+- Cannot revoke your own permissions
+- Permission system is designed to be extended with additional permissions in the future
 
 ---
 
@@ -930,7 +1157,9 @@ Provisioning API keys provide a secure, stateless method for automated runner de
 
 #### POST /api/provisioning/keys
 
-Create a new provisioning API key (admin only).
+Create a new provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http
@@ -985,7 +1214,9 @@ Cookie: session=...
 
 #### POST /api/provisioning/keys/\<key_id\>/toggle
 
-Enable or disable a provisioning API key (admin only).
+Enable or disable a provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http
@@ -1007,7 +1238,9 @@ Content-Type: application/json
 
 #### DELETE /api/provisioning/keys/\<key_id\>
 
-Delete a provisioning API key (admin only).
+Delete a provisioning API key.
+
+**Permissions required**: `create_provisioning_key`
 
 **Request:**
 ```http

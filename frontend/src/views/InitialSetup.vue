@@ -259,7 +259,7 @@ export default {
 
         // Verify TOTP (should be required for new account)
         if (loginResponse.data.totp_required) {
-          const verifyResponse = await api.post('/auth/verify-totp', {
+          await api.post('/auth/verify-totp', {
             totp_code: totpVerifyCode.value
           })
 
@@ -324,7 +324,7 @@ export default {
 
 .setup-card {
   width: 100%;
-  max-width: 500px;
+  max-width: 400px;
 }
 
 .card-header h2 {

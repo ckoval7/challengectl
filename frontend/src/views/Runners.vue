@@ -499,6 +499,7 @@
 
       <!-- Provisioning Keys Tab -->
       <el-tab-pane
+        v-if="userPermissions.includes('create_provisioning_key')"
         label="Provisioning Keys"
         name="provisioning"
       >
@@ -711,6 +712,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
+import { userPermissions } from '../auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 
@@ -1333,6 +1335,7 @@ curl -k \\
       toggleProvKey,
       deleteProvKey,
       provisioningKeyUsageExample,
+      userPermissions,
       formatTimestamp: formatDateTime
     }
   }

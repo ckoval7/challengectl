@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired } from './auth'
+import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired, hasPermission } from './auth'
+import { ElMessage } from 'element-plus'
 import Dashboard from './views/Dashboard.vue'
 import Runners from './views/Runners.vue'
 import ChallengeConfig from './views/ChallengeConfig.vue'
@@ -9,6 +10,7 @@ import PublicDashboard from './views/PublicDashboard.vue'
 import Login from './views/Login.vue'
 import ChangePassword from './views/ChangePassword.vue'
 import InitialSetup from './views/InitialSetup.vue'
+import UserSetup from './views/UserSetup.vue'
 
 const routes = [
   {
@@ -29,13 +31,19 @@ const routes = [
     path: '/initial-setup',
     name: 'InitialSetup',
     component: InitialSetup,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, hideLayout: true }
+  },
+  {
+    path: '/user-setup',
+    name: 'UserSetup',
+    component: UserSetup,
+    meta: { requiresAuth: true, hideLayout: true }
   },
   {
     path: '/change-password',
     name: 'ChangePassword',
     component: ChangePassword,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, hideLayout: true }
   },
   {
     path: '/admin',
@@ -69,7 +77,7 @@ const routes = [
     path: '/users',
     name: 'Users',
     component: Users,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiresPermission: 'create_users' }
   }
 ]
 
@@ -92,6 +100,14 @@ router.beforeEach(async (to, from, next) => {
         next('/initial-setup')
         return
       }
+    }
+
+    // Check if route requires specific permission
+    const requiredPermission = to.meta.requiresPermission
+    if (requiredPermission && !hasPermission(requiredPermission)) {
+      ElMessage.error('You do not have permission to access this page.')
+      next('/admin')
+      return
     }
 
     if (to.path === '/login') {
@@ -120,6 +136,14 @@ router.beforeEach(async (to, from, next) => {
           next('/initial-setup')
           return
         }
+      }
+
+      // Check if route requires specific permission
+      const requiredPermission = to.meta.requiresPermission
+      if (requiredPermission && !hasPermission(requiredPermission)) {
+        ElMessage.error('You do not have permission to access this page.')
+        next('/admin')
+        return
       }
 
       // Allow navigation

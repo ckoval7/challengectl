@@ -40,11 +40,33 @@
         >
           Pause
         </el-button>
-        <el-button
-          @click="handleLogout"
-        >
-          Logout
-        </el-button>
+        <el-dropdown @command="handleUserMenuCommand">
+          <span class="user-menu-trigger">
+            <el-avatar
+              :size="32"
+              style="background-color: #409EFF; margin-right: 8px;"
+            >
+              <el-icon><UserFilled /></el-icon>
+            </el-avatar>
+            {{ username }}
+            <el-icon style="margin-left: 8px;"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="change-password">
+                <el-icon><EditPen /></el-icon>
+                Change Password
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="logout"
+                divided
+              >
+                <el-icon><SwitchButton /></el-icon>
+                Logout
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </el-header>
 
       <el-container>
@@ -73,7 +95,10 @@
               <el-icon><Notebook /></el-icon>
               <span>Logs</span>
             </el-menu-item>
-            <el-menu-item index="/users">
+            <el-menu-item
+              v-if="userPermissions.includes('create_users')"
+              index="/users"
+            >
               <el-icon><User /></el-icon>
               <span>Users</span>
             </el-menu-item>
@@ -94,9 +119,9 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting } from '@element-plus/icons-vue'
+import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, isInitialSetupRequired } from './auth'
+import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
@@ -118,10 +143,13 @@ export default {
     const isDark = ref(true) // Default to dark theme
     const conferenceName = ref('')
 
-    // Show admin layout for authenticated routes (but not during initial setup)
+    // Show admin layout for authenticated routes (but not during initial setup or user setup)
     const showAdminLayout = computed(() => {
-      return checkAuth() && route.meta.requiresAuth && !isInitialSetupRequired()
+      return checkAuth() && route.meta.requiresAuth && !route.meta.hideLayout
     })
+
+    // Get current username
+    const username = computed(() => currentUsername.value || 'User')
 
     // Load conference name
     const loadConferenceName = async () => {
@@ -209,6 +237,14 @@ export default {
       }
     }
 
+    const handleUserMenuCommand = (command) => {
+      if (command === 'logout') {
+        handleLogout()
+      } else if (command === 'change-password') {
+        router.push('/change-password')
+      }
+    }
+
     const pauseSystem = async () => {
       try {
         await api.post('/control/pause')
@@ -234,12 +270,19 @@ export default {
       systemPaused,
       isDark,
       conferenceName,
+      username,
       Moon,
       Sunny,
+      UserFilled,
+      ArrowDown,
+      EditPen,
+      SwitchButton,
       toggleTheme,
       handleLogout,
+      handleUserMenuCommand,
       pauseSystem,
-      resumeSystem
+      resumeSystem,
+      userPermissions
     }
   }
 }
@@ -275,5 +318,21 @@ html.dark {
 html.dark body {
   background-color: var(--el-bg-color);
   color: var(--el-text-color-primary);
+}
+
+/* User menu styling */
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+  color: white;
+  font-size: 14px;
+}
+
+.user-menu-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 </style>
