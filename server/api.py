@@ -279,17 +279,9 @@ class ChallengeCtlAPI:
             current_mac = request.headers.get('X-Runner-MAC')
             current_machine_id = request.headers.get('X-Runner-Machine-ID')
 
-            # Find runner_id in database with enhanced host validation
-            runner_id = None
-            all_runners = self.db.get_all_runners()
-
-            for runner in all_runners:
-                if runner.get('api_key_hash'):
-                    # Check if this runner's API key matches (includes multi-factor host validation)
-                    if self.db.verify_runner_api_key(runner['runner_id'], api_key, current_ip, current_hostname,
-                                                     current_mac, current_machine_id):
-                        runner_id = runner['runner_id']
-                        break
+            # Find runner_id in database with enhanced host validation (optimized query)
+            runner_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
+                                                       current_mac, current_machine_id)
 
             if not runner_id:
                 return jsonify({'error': 'Invalid API key'}), 401
@@ -328,6 +320,107 @@ class ChallengeCtlAPI:
             'secure': is_https,
             'samesite': 'Lax'  # Lax allows cookies on top-level navigation (safer than None, works with redirects)
         }
+
+    def set_auth_cookies(self, response, session_token: str, csrf_token: str):
+        """Set authentication cookies (session and CSRF tokens) with consistent security settings.
+
+        Args:
+            response: Flask response object to set cookies on
+            session_token: Session token value
+            csrf_token: CSRF token value
+
+        This centralizes cookie configuration to ensure consistency across all auth endpoints.
+        """
+        # Get security settings (auto-detects HTTP vs HTTPS)
+        cookie_settings = self.get_cookie_security_settings()
+
+        # Set secure httpOnly cookie for session token
+        response.set_cookie(
+            'session_token',
+            session_token,
+            httponly=True,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=86400
+        )
+
+        # Set CSRF token cookie (not httpOnly, needs to be readable by JS)
+        response.set_cookie(
+            'csrf_token',
+            csrf_token,
+            httponly=False,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=86400
+        )
+
+    def clear_auth_cookies(self, response):
+        """Clear authentication cookies (for logout).
+
+        Args:
+            response: Flask response object to clear cookies on
+
+        Cookie attributes must match exactly how they were set during login,
+        otherwise browsers won't delete them properly.
+        """
+        cookie_settings = self.get_cookie_security_settings()
+
+        # Clear session token cookie
+        response.set_cookie(
+            'session_token',
+            '',
+            httponly=True,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=0
+        )
+
+        # Clear CSRF token cookie
+        response.set_cookie(
+            'csrf_token',
+            '',
+            httponly=False,
+            secure=cookie_settings['secure'],
+            samesite=cookie_settings['samesite'],
+            max_age=0
+        )
+
+    def log_security_event(self, event_type: str, username: str = None, level: str = 'info', **kwargs):
+        """Log security-related events with consistent formatting.
+
+        Args:
+            event_type: Type of security event (e.g., 'login', 'logout', 'failed_login')
+            username: Username associated with the event (if applicable)
+            level: Log level ('info', 'warning', 'error')
+            **kwargs: Additional context-specific fields to include in log
+
+        This centralizes security logging to ensure consistent format and completeness.
+        """
+        # Always include IP and user agent for security events
+        ip = request.remote_addr
+        user_agent = request.headers.get('User-Agent', 'unknown')
+
+        # Build log message
+        parts = [f"SECURITY: {event_type}"]
+        if username:
+            parts.append(f"username='{username}'")
+        parts.append(f"ip={ip}")
+
+        # Add additional context fields
+        for key, value in kwargs.items():
+            parts.append(f"{key}={value}")
+
+        parts.append(f"user_agent='{user_agent}'")
+
+        message = " - ".join(parts) if len(parts) > 1 else parts[0]
+
+        # Log at appropriate level
+        if level == 'warning':
+            logger.warning(message)
+        elif level == 'error':
+            logger.error(message)
+        else:
+            logger.info(message)
 
     def require_csrf(self, f):
         """Decorator to require CSRF token validation for state-changing operations."""
@@ -389,36 +482,14 @@ class ChallengeCtlAPI:
         """Decorator to require admin session authentication."""
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Get session token from httpOnly cookie (more secure than localStorage)
-            session_token = request.cookies.get('session_token')
+            # Use centralized session validation
+            username, error_response = self.validate_and_renew_session()
 
-            if not session_token:
-                return jsonify({'error': 'Missing or invalid session'}), 401
-
-            # Check session validity (from database)
-            session = self.db.get_session(session_token)
-
-            if not session:
-                return jsonify({'error': 'Invalid or expired session'}), 401
-
-            # Check if session is expired
-            # Note: expires is stored as ISO format string in database
-            # SECURITY: Use UTC for consistent timezone handling
-            expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
-                self.db.delete_session(session_token)
-                return jsonify({'error': 'Session expired'}), 401
-
-            # Check if TOTP was verified
-            if not session.get('totp_verified', False):
-                return jsonify({'error': 'TOTP verification required'}), 401
-
-            # SECURITY: Sliding session - renew expiry on activity
-            # Extends session by 24 hours from now
-            self.renew_session(session_token)
+            if error_response:
+                return error_response
 
             # Add username to request context
-            request.admin_username = session['username']
+            request.admin_username = username
 
             return f(*args, **kwargs)
 
@@ -442,10 +513,8 @@ class ChallengeCtlAPI:
 
                 # Check if user has the required permission
                 if not self.db.has_permission(username, permission_name):
-                    logger.warning(
-                        f"SECURITY: Permission denied - username='{username}' permission='{permission_name}' "
-                        f"ip={request.remote_addr} path={request.path}"
-                    )
+                    self.log_security_event('Permission denied', username, level='warning',
+                                           permission=permission_name, path=request.path)
                     return jsonify({'error': f'Permission denied: {permission_name} required'}), 403
 
                 return f(*args, **kwargs)
@@ -484,6 +553,46 @@ class ChallengeCtlAPI:
         """
         new_expires = datetime.utcnow() + timedelta(hours=24)
         return self.db.update_session_expires(session_token, new_expires.isoformat())
+
+    def validate_and_renew_session(self):
+        """Validate session from cookies and renew if valid.
+
+        Returns:
+            Tuple of (username, None) if valid, or (None, error_response) if invalid
+
+        This centralizes session validation logic to avoid duplication across endpoints.
+        Performs all necessary checks: token presence, validity, expiration, TOTP verification,
+        and automatic session renewal.
+        """
+        session_token = request.cookies.get('session_token')
+
+        if not session_token:
+            return None, (jsonify({'error': 'Missing or invalid session'}), 401)
+
+        # Check session validity (from database)
+        session = self.db.get_session(session_token)
+
+        if not session:
+            return None, (jsonify({'error': 'Invalid or expired session'}), 401)
+
+        # Check if session is expired
+        # Note: expires is stored as ISO format string in database
+        # SECURITY: Use UTC for consistent timezone handling
+        expires = datetime.fromisoformat(session['expires'])
+        if datetime.utcnow() > expires:
+            self.db.delete_session(session_token)
+            return None, (jsonify({'error': 'Session expired'}), 401)
+
+        # Check if TOTP was verified
+        if not session.get('totp_verified', False):
+            return None, (jsonify({'error': 'TOTP verification required'}), 401)
+
+        # SECURITY: Sliding session - renew expiry on activity
+        # Extends session by 24 hours from now
+        self.renew_session(session_token)
+
+        # Return username for successful validation
+        return session['username'], None
 
     def destroy_session(self, session_token: str) -> bool:
         """Destroy a session (from database)."""
@@ -610,10 +719,7 @@ class ChallengeCtlAPI:
             if not user or not password_valid or not user.get('enabled'):
                 # Log failed login attempt for security monitoring
                 reason = 'user_not_found' if not user else ('wrong_password' if not password_valid else 'account_disabled')
-                logger.warning(
-                    f"SECURITY: Failed login attempt - username='{username}' ip={request.remote_addr} "
-                    f"reason={reason} user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Failed login attempt', username, level='warning', reason=reason)
                 return jsonify({'error': 'Invalid credentials'}), 401
 
             # Check if user is temporary (requires setup)
@@ -638,33 +744,10 @@ class ChallengeCtlAPI:
                     'message': 'Account setup required. Please change your password and set up 2FA.'
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,
-                    secure=cookie_settings['secure'],
-                    samesite=cookie_settings['samesite'],
-                    max_age=86400
-                )
-
-                # Set CSRF token cookie
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,
-                    secure=cookie_settings['secure'],
-                    samesite=cookie_settings['samesite'],
-                    max_age=86400
-                )
-
-                logger.info(
-                    f"SECURITY: Temporary user login - username='{username}' ip={request.remote_addr} "
-                    f"setup_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Temporary user login', username, setup_required='true')
 
                 return response
 
@@ -681,34 +764,11 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
-
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
-                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
-                    max_age=86400   # 24 hours (matches session expiry)
-                )
-
-                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,  # JavaScript can read to send in header
-                    secure=cookie_settings['secure'],  # Match session cookie security
-                    samesite=cookie_settings['samesite'],  # Match session cookie setting
-                    max_age=86400    # 24 hours
-                )
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
                 # Log successful password verification
-                logger.info(
-                    f"SECURITY: Password verified - username='{username}' ip={request.remote_addr} "
-                    f"totp_required=true user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Password verified', username, totp_required='true')
 
                 return response
             else:
@@ -725,10 +785,7 @@ class ChallengeCtlAPI:
                 initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
 
                 # Log successful login
-                logger.info(
-                    f"SECURITY: Successful login - username='{username}' ip={request.remote_addr} "
-                    f"totp_required=false user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('Successful login', username, totp_required='false')
 
                 # Set httpOnly cookie for security (prevents XSS attacks)
                 response = make_response(jsonify({
@@ -738,28 +795,8 @@ class ChallengeCtlAPI:
                     'username': username
                 }), 200)
 
-                # Get security settings (auto-detects HTTP vs HTTPS)
-                cookie_settings = self.get_cookie_security_settings()
-
-                # Set secure httpOnly cookie for session token
-                response.set_cookie(
-                    'session_token',
-                    session_token,
-                    httponly=True,  # Prevents JavaScript access (XSS protection)
-                    secure=cookie_settings['secure'],  # True in production/HTTPS, False in dev/HTTP
-                    samesite=cookie_settings['samesite'],  # 'Lax' prevents CSRF while allowing redirects
-                    max_age=86400   # 24 hours (matches session expiry)
-                )
-
-                # Set CSRF token cookie (NOT httpOnly - JavaScript needs to read it)
-                response.set_cookie(
-                    'csrf_token',
-                    csrf_token,
-                    httponly=False,  # JavaScript can read to send in header
-                    secure=cookie_settings['secure'],  # Match session cookie security
-                    samesite=cookie_settings['samesite'],  # Match session cookie setting
-                    max_age=86400    # 24 hours
-                )
+                # Set authentication cookies with consistent security settings
+                self.set_auth_cookies(response, session_token, csrf_token)
 
                 return response
 
@@ -807,10 +844,8 @@ class ChallengeCtlAPI:
 
             # Check if TOTP code was already used (replay protection)
             if self.is_totp_code_used(username, totp_code):
-                logger.warning(
-                    f"SECURITY: TOTP replay attempt - username='{username}' ip={request.remote_addr} "
-                    f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                )
+                self.log_security_event('TOTP replay attempt', username, level='warning',
+                                       code=f"{totp_code[:2]}**")
                 return jsonify({'error': 'Invalid TOTP code'}), 401
 
             # Verify TOTP code
@@ -818,19 +853,15 @@ class ChallengeCtlAPI:
                 totp = pyotp.TOTP(totp_secret)
                 if not totp.verify(totp_code, valid_window=1):
                     # Log failed TOTP verification
-                    logger.warning(
-                        f"SECURITY: Failed TOTP verification - username='{username}' ip={request.remote_addr} "
-                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                    )
+                    self.log_security_event('Failed TOTP verification', username, level='warning',
+                                           code=f"{totp_code[:2]}**")
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
                 # Mark code as used (only after successful verification)
                 if not self.mark_totp_code_used(username, totp_code):
                     # This shouldn't happen due to the check above, but handle it anyway
-                    logger.warning(
-                        f"SECURITY: TOTP code reuse detected - username='{username}' ip={request.remote_addr} "
-                        f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-                    )
+                    self.log_security_event('TOTP code reuse detected', username, level='warning',
+                                           code=f"{totp_code[:2]}**")
                     return jsonify({'error': 'Invalid TOTP code'}), 401
 
             except Exception as e:
@@ -845,10 +876,7 @@ class ChallengeCtlAPI:
             self.db.update_last_login(username)
 
             # Log successful TOTP verification and login
-            logger.info(
-                f"SECURITY: Successful TOTP verification - username='{username}' ip={request.remote_addr} "
-                f"code={totp_code[:2]}** user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('Successful TOTP verification', username, code=f"{totp_code[:2]}**")
 
             # Check if password change is required
             password_change_required = user.get('password_change_required', False)
@@ -921,27 +949,9 @@ class ChallengeCtlAPI:
             if session_token:
                 self.destroy_session(session_token)
 
-            # Clear both session and CSRF cookies
-            # NOTE: Cookie attributes must match exactly how they were set during login
-            # Otherwise browsers won't delete them
-            cookie_settings = self.get_cookie_security_settings()
+            # Clear both session and CSRF cookies with consistent settings
             response = make_response(jsonify({'status': 'logged out'}), 200)
-            response.set_cookie(
-                'session_token',
-                '',
-                httponly=True,
-                secure=cookie_settings['secure'],  # Must match login cookie setting
-                samesite=cookie_settings['samesite'],
-                max_age=0        # Use max_age=0 to delete cookie (matches login style)
-            )
-            response.set_cookie(
-                'csrf_token',
-                '',
-                httponly=False,
-                secure=cookie_settings['secure'],  # Must match login cookie setting
-                samesite=cookie_settings['samesite'],
-                max_age=0        # Use max_age=0 to delete cookie (matches login style)
-            )
+            self.clear_auth_cookies(response)
 
             return response
 
@@ -1064,10 +1074,7 @@ class ChallengeCtlAPI:
                 'timestamp': datetime.utcnow()
             }
 
-            logger.info(
-                f"SECURITY: User setup initiated (step 1) - username='{username}' ip={request.remote_addr} "
-                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('User setup initiated (step 1)', username)
 
             return jsonify({
                 'status': 'awaiting_verification',
@@ -1137,10 +1144,7 @@ class ChallengeCtlAPI:
             # Update last login timestamp
             self.db.update_last_login(username)
 
-            logger.info(
-                f"SECURITY: User setup completed - username='{username}' ip={request.remote_addr} "
-                f"user_agent='{request.headers.get('User-Agent', 'unknown')}'"
-            )
+            self.log_security_event('User setup completed', username)
 
             return jsonify({
                 'status': 'setup_complete',
@@ -1152,11 +1156,8 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         def get_users():
             """Get all users."""
-            users = self.db.get_all_users()
-
-            # Add permissions for each user
-            for user in users:
-                user['permissions'] = self.db.get_user_permissions(user['username'])
+            # Get all users with permissions in a single optimized query
+            users = self.db.get_all_users_with_permissions()
 
             return jsonify({'users': users}), 200
 
@@ -1191,10 +1192,8 @@ class ChallengeCtlAPI:
             if not initial_setup_required:
                 creator_username = request.admin_username
                 if not self.db.has_permission(creator_username, 'create_users'):
-                    logger.warning(
-                        f"SECURITY: User creation denied - username='{creator_username}' "
-                        f"missing 'create_users' permission ip={request.remote_addr}"
-                    )
+                    self.log_security_event('User creation denied', creator_username, level='warning',
+                                           missing_permission='create_users')
                     return jsonify({'error': 'Permission denied: create_users permission required'}), 403
 
                 # Auto-generate temporary password if not provided
@@ -2200,10 +2199,8 @@ class ChallengeCtlAPI:
             """
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key creation denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key creation denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             data = request.json or {}
@@ -2253,10 +2250,8 @@ class ChallengeCtlAPI:
             """Delete a provisioning API key."""
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key deletion denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key deletion denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             success = self.db.delete_provisioning_api_key(key_id)
@@ -2273,10 +2268,8 @@ class ChallengeCtlAPI:
             """Enable or disable a provisioning API key."""
             # Check create_provisioning_key permission
             if not self.db.has_permission(request.admin_username, 'create_provisioning_key'):
-                logger.warning(
-                    f"SECURITY: Provisioning key toggle denied - username='{request.admin_username}' "
-                    f"missing 'create_provisioning_key' permission ip={request.remote_addr}"
-                )
+                self.log_security_event('Provisioning key toggle denied', request.admin_username,
+                                       level='warning', missing_permission='create_provisioning_key')
                 return jsonify({'error': 'Permission denied: create_provisioning_key permission required'}), 403
 
             data = request.json or {}
@@ -2876,10 +2869,8 @@ radios:
             # SECURITY: Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
             if file_ext not in self.ALLOWED_EXTENSIONS:
-                logger.warning(
-                    f"SECURITY: File upload rejected - invalid extension '{file_ext}' "
-                    f"from {request.remote_addr} (file: {file.filename})"
-                )
+                self.log_security_event('File upload rejected', request.admin_username, level='warning',
+                                       extension=file_ext, filename=file.filename)
                 return jsonify({
                     'error': f'Invalid file type. Allowed: {", ".join(sorted(self.ALLOWED_EXTENSIONS))}'
                 }), 400
@@ -2894,10 +2885,9 @@ radios:
                 if file_size > self.MAX_FILE_SIZE:
                     max_mb = self.MAX_FILE_SIZE / (1024 * 1024)
                     actual_mb = file_size / (1024 * 1024)
-                    logger.warning(
-                        f"SECURITY: File upload rejected - size {actual_mb:.1f}MB exceeds limit "
-                        f"{max_mb:.0f}MB from {request.remote_addr} (file: {file.filename})"
-                    )
+                    self.log_security_event('File upload rejected', request.admin_username, level='warning',
+                                           reason=f'size {actual_mb:.1f}MB exceeds limit {max_mb:.0f}MB',
+                                           filename=file.filename)
                     return jsonify({
                         'error': f'File too large. Maximum size: {max_mb:.0f}MB'
                     }), 413
