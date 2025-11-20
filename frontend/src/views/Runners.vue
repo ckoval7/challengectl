@@ -24,7 +24,7 @@
 
         <el-table
           :data="runners"
-          style="width: 100%"
+          class="w-full"
         >
           <el-table-column
             prop="runner_id"
@@ -120,11 +120,11 @@
           </el-table-column>
           <el-table-column type="expand">
             <template #default="scope">
-              <div style="padding: 20px">
+              <div class="p-xl">
                 <h4>Devices:</h4>
                 <el-table
                   :data="scope.row.devices || []"
-                  style="width: 100%"
+                  class="w-full"
                 >
                   <el-table-column
                     prop="device_id"
@@ -200,7 +200,7 @@
                   active-text="Enabled"
                   inactive-text="Disabled"
                 />
-                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                <div class="hint-text">
                   Disable only for development with self-signed certificates
                 </div>
               </el-form-item>
@@ -231,7 +231,7 @@
                     v-model="device.name"
                     placeholder="e.g., 0, 1, or serial number"
                   />
-                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                  <div class="hint-text">
                     Device index (0, 1, 2) or serial number
                   </div>
                 </el-form-item>
@@ -286,7 +286,7 @@
                     :rows="2"
                     placeholder="e.g., 144000000-148000000, 420000000-450000000"
                   />
-                  <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                  <div class="hint-text">
                     Comma-separated ranges (optional). Leave blank for full range.
                   </div>
                 </el-form-item>
@@ -297,7 +297,7 @@
               <el-button
                 type="primary"
                 plain
-                style="margin-top: 10px; width: 100%;"
+                class="mt-10 w-full"
                 @click="addDevice"
               >
                 Add Another Device
@@ -316,10 +316,10 @@
               description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
               :closable="false"
               show-icon
-              style="margin-bottom: 20px"
+              class="mb-xl"
             />
 
-            <div style="margin-bottom: 15px;">
+            <div class="mb-15">
               <el-space>
                 <el-button
                   type="primary"
@@ -405,7 +405,7 @@
               description="Generate fresh credentials to migrate this runner to a different host or update compromised credentials."
               :closable="false"
               show-icon
-              style="margin-bottom: 20px"
+              class="mb-xl"
             />
             <p><strong>Runner ID:</strong> {{ reEnrollRunnerId }}</p>
             <p>This will generate new enrollment credentials. The old API key will remain valid until the runner re-enrolls with the new credentials.</p>
@@ -421,10 +421,10 @@
               description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
               :closable="false"
               show-icon
-              style="margin-bottom: 20px"
+              class="mb-xl"
             />
 
-            <div style="margin-bottom: 15px;">
+            <div class="mb-15">
               <el-space>
                 <el-button
                   type="primary"
@@ -514,7 +514,7 @@
 
         <el-table
           :data="provisioningKeys"
-          style="width: 100%"
+          class="w-full"
         >
           <el-table-column
             prop="key_id"
@@ -614,7 +614,7 @@
                   placeholder="e.g., ci-cd-pipeline"
                   @keyup.enter="createProvKey"
                 />
-                <div style="font-size: 12px; color: #909399; margin-top: 5px;">
+                <div class="hint-text">
                   A unique identifier for this key (e.g., "prod-terraform", "staging-ci")
                 </div>
               </el-form-item>
@@ -639,7 +639,7 @@
               description="This key will only be shown once. Copy it to a secure location."
               :closable="false"
               show-icon
-              style="margin-bottom: 20px"
+              class="mb-xl"
             />
 
             <div class="key-info">

@@ -5,7 +5,7 @@
     <!-- Statistics Cards -->
     <el-row
       :gutter="20"
-      style="margin-bottom: 20px"
+      class="mb-xl"
     >
       <el-col :span="6">
         <el-card>
@@ -75,7 +75,7 @@
     <!-- Runners and Activity -->
     <el-row :gutter="20">
       <el-col :span="12">
-        <el-card style="margin-bottom: 20px">
+        <el-card class="mb-xl">
           <template #header>
             <div class="card-header">
               <span>Runners</span>
@@ -84,7 +84,7 @@
 
           <el-table
             :data="runners"
-            style="width: 100%"
+            class="w-full"
             max-height="400"
           >
             <el-table-column
@@ -145,7 +145,7 @@
                 format="HH:mm"
                 style="width: 150px"
               />
-              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div class="info-box">
                 Daily start time for countdown cycle
               </div>
             </el-form-item>
@@ -160,7 +160,7 @@
                 format="HH:mm"
                 style="width: 150px"
               />
-              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div class="info-box">
                 Daily end time for countdown cycle
               </div>
             </el-form-item>
@@ -185,7 +185,7 @@
                 @change="toggleAutoPause"
                 :loading="savingAutoPause"
               />
-              <div style="padding: 8px 12px; background: var(--el-fill-color-lighter); border-radius: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+              <div class="info-box">
                 Automatically pause transmissions outside daily hours
               </div>
             </el-form-item>
@@ -203,7 +203,7 @@
 
           <el-table
             :data="recentTransmissions"
-            style="width: 100%"
+            class="w-full"
             max-height="400"
           >
             <el-table-column
@@ -430,31 +430,6 @@ export default {
   padding: 20px;
 }
 
-.stat-card {
-  text-align: center;
-  padding: 20px 0;
-}
-
-.stat-value {
-  font-size: 36px;
-  font-weight: bold;
-  color: #409EFF;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #606266;
-  margin-top: 8px;
-}
-
-.stat-sublabel {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
-}
-
-.card-header {
-  font-weight: bold;
-  font-size: 16px;
-}
+/* All other styles (.stat-card, .stat-value, .stat-label, .stat-sublabel, .card-header)
+   are now defined globally in /src/styles/utilities.css */
 </style>

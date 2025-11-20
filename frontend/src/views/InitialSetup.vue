@@ -10,14 +10,14 @@
       <el-alert
         type="info"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           Create your admin account with TOTP 2FA
         </template>
       </el-alert>
 
-      <p style="margin-bottom: 20px">
+      <p class="mb-xl">
         You've logged in with the default admin account. Create your personal admin account
         with TOTP two-factor authentication for secure access.
       </p>
@@ -82,7 +82,7 @@
           <el-button
             type="primary"
             size="large"
-            style="width: 100%"
+            class="w-full"
             :loading="loading"
             @click="handleCreate"
           >
@@ -104,7 +104,7 @@
       <el-alert
         type="success"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           Account created! Set up TOTP to complete setup.
@@ -128,7 +128,7 @@
         <el-input
           :model-value="totpInfo.totp_secret"
           readonly
-          style="margin-bottom: 20px"
+          class="mb-xl"
         >
           <template #append>
             <el-button @click="copyToClipboard(totpInfo.totp_secret)">
@@ -143,14 +143,14 @@
           placeholder="000000"
           maxlength="6"
           size="large"
-          style="margin-bottom: 20px"
+          class="mb-xl"
           @keyup.enter="handleVerifyAndLogin"
         />
 
         <el-button
           type="primary"
           size="large"
-          style="width: 100%"
+          class="w-full"
           :loading="verifying"
           @click="handleVerifyAndLogin"
         >

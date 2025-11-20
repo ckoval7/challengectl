@@ -51,7 +51,7 @@
           <el-button
             type="primary"
             size="large"
-            style="width: 100%"
+            class="w-full"
             :loading="loading"
             @click="handleLogin"
           >
@@ -71,7 +71,7 @@
         <el-alert
           type="info"
           :closable="false"
-          style="margin-bottom: 20px"
+          class="mb-xl"
         >
           <template #title>
             Enter the 6-digit code from your authenticator app
@@ -99,7 +99,7 @@
           <el-button
             type="primary"
             size="large"
-            style="width: 100%"
+            class="w-full"
             :loading="loading"
             @click="handleVerifyTotp"
           >
@@ -110,7 +110,7 @@
         <el-form-item>
           <el-button
             size="large"
-            style="width: 100%"
+            class="w-full"
             @click="goBackToLogin"
           >
             Back
@@ -288,8 +288,9 @@ export default {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
+  /* Gradient background shared across auth pages (Login, InitialSetup, UserSetup, ChangePassword) */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .login-card {

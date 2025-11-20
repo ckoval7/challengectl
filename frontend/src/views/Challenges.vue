@@ -2,7 +2,7 @@
   <div class="challenges">
     <h1>Challenges</h1>
 
-    <div style="margin-bottom: 20px">
+    <div class="mb-xl">
       <el-button
         type="primary"
         @click="reloadChallenges"
@@ -13,7 +13,7 @@
 
     <el-table
       :data="challenges"
-      style="width: 100%"
+      class="w-full"
     >
       <el-table-column
         prop="name"

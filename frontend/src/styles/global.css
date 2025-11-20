@@ -1,0 +1,74 @@
+/**
+ * Global Styles
+ *
+ * This is the main entry point for all global styles.
+ * Import this file in main.js to make styles available throughout the app.
+ */
+
+/* Import CSS Variables */
+@import './variables.css';
+
+/* Import Utility Classes */
+@import './utilities.css';
+
+/* Base Styles */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+#app {
+  height: 100vh;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  background: var(--el-bg-color-page);
+  padding: var(--spacing-xl);
+  border-right: 1px solid var(--el-border-color);
+}
+
+.sidebar-menu {
+  border: none;
+  background: transparent;
+}
+
+/* Dark Mode Adjustments */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+}
+
+/* User Menu Styling */
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius-md);
+  transition: background-color var(--transition-base);
+  color: white;
+  font-size: 14px;
+}
+
+.user-menu-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Common Element Overrides */
+.el-header {
+  display: flex;
+  align-items: center;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100% !important;
+  }
+}

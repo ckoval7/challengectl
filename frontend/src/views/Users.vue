@@ -14,7 +14,7 @@
     <el-table
       v-loading="loading"
       :data="users"
-      style="width: 100%"
+      class="w-full"
     >
       <el-table-column
         prop="username"
@@ -72,7 +72,7 @@
             v-for="perm in (scope.row.permissions || [])"
             :key="perm"
             size="small"
-            style="margin: 2px"
+            class="m-2"
           >
             {{ perm }}
           </el-tag>
@@ -94,7 +94,7 @@
           <el-dropdown @command="(command) => handleUserAction(command, scope.row)">
             <el-button size="small" type="primary">
               Actions
-              <el-icon style="margin-left: 5px;"><ArrowDown /></el-icon>
+              <el-icon class="ml-5"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -152,7 +152,7 @@
           type="info"
           :closable="false"
           show-icon
-          style="margin-bottom: 20px"
+          class="mb-xl"
         >
           An initial password will be automatically generated. The new user will be required to change their password and set up two-factor authentication on first login.
         </el-alert>
@@ -181,7 +181,7 @@
       <el-alert
         type="success"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           User created successfully! Share these credentials:
@@ -221,7 +221,7 @@
           type="warning"
           :closable="false"
           show-icon
-          style="margin-top: 20px"
+          class="mt-xl"
         >
           <template #title>
             {{ tempUserInfo.username }} must set up their account within 24 hours.
@@ -254,7 +254,7 @@
       <el-alert
         type="success"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           Password reset successfully! Share these credentials:
@@ -294,7 +294,7 @@
           type="warning"
           :closable="false"
           show-icon
-          style="margin-top: 20px"
+          class="mt-xl"
         >
           <template #title>
             {{ resetPasswordInfo.username }} must change their password on next login.
@@ -322,7 +322,7 @@
       <el-alert
         type="success"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           TOTP reset successfully! Save these details:
@@ -335,7 +335,7 @@
         <el-input
           :model-value="totpInfo.totp_secret"
           readonly
-          style="margin-bottom: 10px"
+          class="mb-10"
         >
           <template #append>
             <el-button @click="copyToClipboard(totpInfo.totp_secret)">
@@ -381,19 +381,19 @@
       <div v-if="selectedUser">
         <h3>User: {{ selectedUser.username }}</h3>
 
-        <h4 style="margin-top: 20px">Current Permissions:</h4>
-        <div v-if="userPermissions.length > 0" style="margin-bottom: 20px">
+        <h4 class="mt-xl">Current Permissions:</h4>
+        <div v-if="userPermissions.length > 0" class="mb-xl">
           <el-tag
             v-for="perm in userPermissions"
             :key="perm"
             closable
             @close="revokePermission(perm)"
-            style="margin: 5px"
+            class="m-5"
           >
             {{ perm }}
           </el-tag>
         </div>
-        <el-tag v-else type="info" style="margin-bottom: 20px">
+        <el-tag v-else type="info" class="mb-xl">
           No permissions granted
         </el-tag>
 
@@ -401,7 +401,7 @@
         <el-select
           v-model="permissionToGrant"
           placeholder="Select permission"
-          style="width: 100%; margin-bottom: 10px"
+          class="w-full mb-10"
         >
           <el-option
             label="create_users - Can create and manage users"
@@ -416,7 +416,7 @@
           type="primary"
           :disabled="!permissionToGrant"
           @click="grantPermission"
-          style="width: 100%"
+          class="w-full"
         >
           Grant Permission
         </el-button>

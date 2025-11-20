@@ -10,7 +10,7 @@
       <el-alert
         type="warning"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           You must change your password before continuing
@@ -78,7 +78,7 @@
           <el-button
             type="primary"
             size="large"
-            style="width: 100%"
+            class="w-full"
             :loading="loading"
             @click="handleChangePassword"
           >

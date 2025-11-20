@@ -2,7 +2,7 @@
   <div class="logs">
     <h1>Live Logs</h1>
 
-    <div style="margin-bottom: 20px">
+    <div class="mb-xl">
       <el-space wrap>
         <el-select
           v-model="levelFilter"
@@ -96,8 +96,8 @@
       </div>
     </el-card>
 
-    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center">
-      <div style="color: #909399; font-size: 12px">
+    <div class="mt-10 flex-between">
+      <div class="text-xs text-secondary">
         Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
       </div>
       <el-button
@@ -264,21 +264,21 @@ export default {
   font-size: 13px;
   padding: 10px;
   border-radius: 4px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
 }
 
 .log-entry {
   padding: 4px 0;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .log-timestamp {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-right: 10px;
 }
 
 .log-source {
-  color: #606266;
+  color: var(--el-text-color-regular);
   margin-right: 10px;
   font-weight: bold;
 }
@@ -295,23 +295,23 @@ export default {
 }
 
 .log-level-debug {
-  background: #e4e7ed;
-  color: #606266;
+  background: var(--el-border-color-light);
+  color: var(--el-text-color-regular);
 }
 
 .log-level-info {
-  background: #d9ecff;
-  color: #409eff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 
 .log-level-warning {
-  background: #fdf6ec;
-  color: #e6a23c;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
 
 .log-level-error {
-  background: #fef0f0;
-  color: #f56c6c;
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 
 .log-level-critical {
@@ -320,19 +320,20 @@ export default {
 }
 
 .log-message {
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .log-empty {
   text-align: center;
   padding: 40px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 </style>
 
 <style>
 /* Dark theme overrides - unscoped to access html.dark class */
+/* Most colors now use CSS variables that adapt automatically to dark mode */
 html.dark .log-container {
   background: #1a1a1a;
 }
@@ -341,25 +342,9 @@ html.dark .log-entry {
   border-bottom-color: #333;
 }
 
-html.dark .log-timestamp {
-  color: #8a8a8a;
-}
-
-html.dark .log-source {
-  color: #b0b0b0;
-}
-
-html.dark .log-message {
-  color: #d0d0d0;
-}
-
-html.dark .log-empty {
-  color: #8a8a8a;
-}
-
 html.dark .log-level-debug {
   background: #2a2a2a;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 html.dark .log-level-info {
