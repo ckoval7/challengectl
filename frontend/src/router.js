@@ -11,6 +11,7 @@ import Login from './views/Login.vue'
 import ChangePassword from './views/ChangePassword.vue'
 import InitialSetup from './views/InitialSetup.vue'
 import UserSetup from './views/UserSetup.vue'
+import NotFound from './views/NotFound.vue'
 
 const routes = [
   {
@@ -78,6 +79,11 @@ const routes = [
     name: 'Users',
     component: Users,
     meta: { requiresAuth: true, requiresPermission: 'create_users' }
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: NotFound
   }
 ]
 
