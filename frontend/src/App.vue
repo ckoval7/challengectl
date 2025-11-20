@@ -57,7 +57,10 @@
                 <el-icon><EditPen /></el-icon>
                 Change Password
               </el-dropdown-item>
-              <el-dropdown-item command="logout" divided>
+              <el-dropdown-item
+                command="logout"
+                divided
+              >
                 <el-icon><SwitchButton /></el-icon>
                 Logout
               </el-dropdown-item>
@@ -118,7 +121,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, isInitialSetupRequired, currentUsername, userPermissions } from './auth'
+import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'

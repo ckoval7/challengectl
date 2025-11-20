@@ -259,7 +259,7 @@ export default {
 
         // Verify TOTP (should be required for new account)
         if (loginResponse.data.totp_required) {
-          const verifyResponse = await api.post('/auth/verify-totp', {
+          await api.post('/auth/verify-totp', {
             totp_code: totpVerifyCode.value
           })
 

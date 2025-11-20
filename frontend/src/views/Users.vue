@@ -441,7 +441,13 @@ import QRCode from 'qrcode'
 export default {
   name: 'Users',
   components: {
-    Plus
+    Plus,
+    ArrowDown,
+    Switch,
+    Key,
+    Lock,
+    Unlock,
+    Delete
   },
   setup() {
     const users = ref([])
