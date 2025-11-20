@@ -11,7 +11,7 @@
         label="Live Status"
         name="status"
       >
-        <div style="margin-bottom: 20px">
+        <div class="mb-xl">
           <el-button
             type="primary"
             @click="reloadChallenges"
@@ -22,7 +22,7 @@
 
         <el-table
           :data="challenges"
-          style="width: 100%"
+          class="w-full"
         >
           <el-table-column
             prop="name"
@@ -111,7 +111,7 @@
           ref="formRef"
           :model="challengeForm"
           label-width="180px"
-          style="max-width: 800px"
+          class="form-container"
         >
           <h3>Basic Information</h3>
 
@@ -178,7 +178,7 @@
               :min="1000000"
               :max="6000000000"
               :step="1000"
-              style="width: 100%"
+              class="w-full"
             />
           </el-form-item>
 
@@ -205,7 +205,7 @@
             >
               <el-button
                 size="small"
-                style="margin-top: 10px"
+                class="mt-10"
               >
                 Choose File
               </el-button>
@@ -241,7 +241,7 @@
             >
               <el-button
                 size="small"
-                style="margin-top: 10px"
+                class="mt-10"
               >
                 Choose File
               </el-button>
@@ -255,11 +255,12 @@
               v-model="challengeForm.min_delay"
               :min="1"
               :max="challengeForm.max_delay"
-              style="width: 100%"
+              class="w-full"
             />
             <div
               v-if="challengeForm.min_delay > challengeForm.max_delay"
-              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+              class="text-xs mt-5"
+              style="color: var(--el-color-danger)"
             >
               Min delay must be less than or equal to max delay
             </div>
@@ -270,11 +271,12 @@
               v-model="challengeForm.max_delay"
               :min="challengeForm.min_delay"
               :max="3600"
-              style="width: 100%"
+              class="w-full"
             />
             <div
               v-if="challengeForm.max_delay < challengeForm.min_delay"
-              style="font-size: 12px; color: var(--el-color-danger); margin-top: 5px"
+              class="text-xs mt-5"
+              style="color: var(--el-color-danger)"
             >
               Max delay must be greater than or equal to min delay
             </div>
@@ -285,9 +287,9 @@
               v-model="challengeForm.priority"
               :min="0"
               :max="100"
-              style="width: 100%"
+              class="w-full"
             />
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 5px">
+            <div class="hint-text">
               Higher priority challenges are transmitted first (higher number = higher priority)
             </div>
           </el-form-item>
@@ -312,7 +314,7 @@
                 Last TX Time
               </el-checkbox>
             </el-checkbox-group>
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 5px">
+            <div class="hint-text">
               Select which fields are visible on the public dashboard
             </div>
           </el-form-item>
@@ -331,7 +333,7 @@
               :min="8000"
               :max="192000"
               :step="1000"
-              style="width: 100%"
+              class="w-full"
             />
           </el-form-item>
 
@@ -344,7 +346,7 @@
               v-model="challengeForm.speed"
               :min="5"
               :max="60"
-              style="width: 100%"
+              class="w-full"
             />
           </el-form-item>
 
@@ -356,7 +358,7 @@
                 :min="1000"
                 :max="1000000"
                 :step="1000"
-                style="width: 100%"
+                class="w-full"
               />
             </el-form-item>
 
@@ -365,7 +367,7 @@
                 v-model="challengeForm.hop_rate"
                 :min="1"
                 :max="1000"
-                style="width: 100%"
+                class="w-full"
               />
             </el-form-item>
 
@@ -374,7 +376,7 @@
                 v-model="challengeForm.hop_time"
                 :min="1"
                 :max="300"
-                style="width: 100%"
+                class="w-full"
               />
             </el-form-item>
 
@@ -393,7 +395,7 @@
                 v-model="challengeForm.spreading_factor"
                 :min="6"
                 :max="12"
-                style="width: 100%"
+                class="w-full"
               />
             </el-form-item>
 
@@ -461,12 +463,12 @@
         label="Import from YAML"
         name="import"
       >
-        <div style="max-width: 800px">
+        <div class="form-container">
           <el-alert
             title="Import Challenges"
             type="info"
             :closable="false"
-            style="margin-bottom: 20px"
+            class="mb-xl"
           >
             Upload a YAML file containing challenge definitions along with any associated files
             (audio files, binary files, etc.). This can also be used for automation via API.
@@ -485,10 +487,10 @@
             </el-button>
           </el-upload>
 
-          <h3 style="margin-top: 30px">
+          <h3 class="mt-30">
             Challenge Files (Optional)
           </h3>
-          <p style="color: #666; font-size: 14px">
+          <p class="text-sm text-secondary">
             Upload audio files, binary files, or other resources referenced in your YAML.
             File paths in the YAML will be automatically updated.
           </p>
@@ -504,7 +506,7 @@
             <el-button>Add Files</el-button>
           </el-upload>
 
-          <div style="margin-top: 30px">
+          <div class="mt-30">
             <el-button
               type="primary"
               :disabled="!yamlFile"
@@ -524,12 +526,12 @@
           <el-alert
             type="success"
             :closable="false"
-            style="margin-bottom: 10px"
+            class="mb-10"
           >
             <div>
               <strong>POST /api/challenges/import</strong>
             </div>
-            <div style="margin-top: 10px; font-family: monospace; font-size: 12px">
+            <div class="mt-10 text-xs" style="font-family: monospace">
               Content-Type: multipart/form-data<br>
               Required: yaml_file (YAML file)<br>
               Optional: Additional files referenced in YAML
@@ -575,7 +577,7 @@ print(response.json())</code></pre>
         label="Manage Challenges"
         name="manage"
       >
-        <div style="margin-bottom: 20px">
+        <div class="mb-xl">
           <el-button
             type="success"
             @click="loadChallenges"
@@ -586,7 +588,7 @@ print(response.json())</code></pre>
 
         <el-table
           :data="challenges"
-          style="width: 100%"
+          class="w-full"
         >
           <el-table-column
             prop="name"
@@ -1156,17 +1158,17 @@ h3 {
 }
 
 .code-example {
-  background: #f5f5f5;
+  background: var(--el-fill-color-light);
   padding: 15px;
   border-radius: 4px;
   overflow-x: auto;
-  color: #333;
+  color: var(--el-text-color-primary);
 }
 
 /* Dark mode adjustments */
 html.dark .code-example {
   background: #2d2d2d;
-  color: #e0e0e0;
-  border: 1px solid #444;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
 }
 </style>

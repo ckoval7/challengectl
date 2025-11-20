@@ -10,7 +10,7 @@
       <el-alert
         type="warning"
         :closable="false"
-        style="margin-bottom: 20px"
+        class="mb-xl"
       >
         <template #title>
           You must set up your account within 24 hours.
@@ -64,7 +64,7 @@
           <el-button
             type="primary"
             size="large"
-            style="width: 100%"
+            class="w-full"
             :loading="loading"
             @click="handleCompleteSetup"
           >
@@ -78,7 +78,7 @@
         <el-alert
           type="success"
           :closable="false"
-          style="margin-bottom: 20px"
+          class="mb-xl"
         >
           <template #title>
             Set up two-factor authentication.
@@ -101,7 +101,7 @@
         <el-input
           :model-value="totpInfo.totp_secret"
           readonly
-          style="margin-bottom: 20px"
+          class="mb-xl"
         >
           <template #append>
             <el-button @click="copyToClipboard(totpInfo.totp_secret)">
@@ -116,14 +116,14 @@
           placeholder="000000"
           maxlength="6"
           size="large"
-          style="margin-bottom: 20px"
+          class="mb-xl"
           @keyup.enter="handleFinishSetup"
         />
 
         <el-button
           type="primary"
           size="large"
-          style="width: 100%"
+          class="w-full"
           :loading="loading"
           @click="handleFinishSetup"
         >

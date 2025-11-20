@@ -63,7 +63,7 @@
 
         <el-table
           :data="challenges"
-          style="width: 100%"
+          class="w-full"
           stripe
         >
           <el-table-column

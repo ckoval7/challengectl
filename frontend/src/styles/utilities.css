@@ -6,6 +6,7 @@
  */
 
 /* Spacing Utilities */
+/* Margin utilities using spacing scale */
 .mb-xs { margin-bottom: var(--spacing-xs); }
 .mb-sm { margin-bottom: var(--spacing-sm); }
 .mb-md { margin-bottom: var(--spacing-md); }
@@ -31,6 +32,17 @@
 .ml-lg { margin-left: var(--spacing-lg); }
 .ml-xl { margin-left: var(--spacing-xl); }
 
+/* Specific pixel margins for precise spacing */
+.m-2 { margin: 2px; }
+.m-5 { margin: 5px; }
+.ml-5 { margin-left: 5px; }
+.mt-5 { margin-top: 5px; }
+.mt-10 { margin-top: 10px; }
+.mt-30 { margin-top: 30px; }
+.mb-10 { margin-bottom: 10px; }
+.mb-15 { margin-bottom: 15px; }
+
+/* Padding utilities */
 .p-xs { padding: var(--spacing-xs); }
 .p-sm { padding: var(--spacing-sm); }
 .p-md { padding: var(--spacing-md); }
@@ -152,4 +164,21 @@
 .card-header {
   font-weight: bold;
   font-size: 16px;
+}
+
+/* Helper/hint text styling */
+.hint-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 5px;
+}
+
+/* Authentication page gradient background */
+.auth-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Form max-width container */
+.form-container {
+  max-width: 800px;
 }
