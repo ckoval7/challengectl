@@ -912,130 +912,249 @@ export default {
 
 #### 4.3 Updated View: Agents.vue (Replaces Runners.vue)
 
-Unified view for managing all agents (runners + listeners):
+Unified view with tabs for runners, listeners, and provisioning keys:
 
 ```vue
 <template>
   <div class="agents">
     <h1>Agents</h1>
 
-    <!-- Filter controls -->
-    <div class="mb-xl">
-      <el-radio-group v-model="filterType" @change="loadAgents">
-        <el-radio-button label="all">All Agents</el-radio-button>
-        <el-radio-button label="runner">Runners</el-radio-button>
-        <el-radio-button label="listener">Listeners</el-radio-button>
-      </el-radio-group>
-    </div>
+    <!-- Tab navigation -->
+    <el-tabs v-model="activeTab">
+      <!-- Runners Tab -->
+      <el-tab-pane label="Runners" name="runners">
+        <el-table :data="runners" class="w-full">
+          <el-table-column prop="agent_id" label="Runner ID" width="150" />
 
-    <el-table :data="filteredAgents" class="w-full">
-      <el-table-column prop="agent_id" label="Agent ID" width="150" />
+          <el-table-column label="Status" width="100">
+            <template #default="scope">
+              <el-tag :type="scope.row.status === 'online' ? 'success' : 'danger'">
+                {{ scope.row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
 
-      <el-table-column label="Type" width="100">
-        <template #default="scope">
-          <el-tag :type="scope.row.agent_type === 'runner' ? 'primary' : 'success'">
-            {{ scope.row.agent_type }}
-          </el-tag>
-        </template>
-      </el-table-column>
+          <el-table-column prop="hostname" label="Hostname" width="150" />
 
-      <el-table-column label="Status" width="100">
-        <template #default="scope">
-          <el-tag :type="scope.row.status === 'online' ? 'success' : 'danger'">
-            {{ scope.row.status }}
-          </el-tag>
-        </template>
-      </el-table-column>
+          <el-table-column label="Devices" width="150">
+            <template #default="scope">
+              <span v-if="scope.row.devices && scope.row.devices.length">
+                {{ scope.row.devices[0]?.model || 'Unknown' }}
+                <el-tag v-if="scope.row.devices.length > 1" size="small">
+                  +{{ scope.row.devices.length - 1 }}
+                </el-tag>
+              </span>
+              <span v-else>No devices</span>
+            </template>
+          </el-table-column>
 
-      <el-table-column prop="hostname" label="Hostname" width="150" />
+          <el-table-column label="Current Task" width="200">
+            <template #default="scope">
+              <span v-if="scope.row.current_assignment">
+                {{ scope.row.current_assignment.challenge_name }}
+              </span>
+              <span v-else class="text-muted">Idle</span>
+            </template>
+          </el-table-column>
 
-      <el-table-column label="Devices" width="120">
-        <template #default="scope">
-          <span v-if="scope.row.devices && scope.row.devices.length">
-            {{ scope.row.devices[0]?.model || 'Unknown' }}
-            <el-tag v-if="scope.row.devices.length > 1" size="small">
-              +{{ scope.row.devices.length - 1 }}
-            </el-tag>
-          </span>
-          <span v-else>No devices</span>
-        </template>
-      </el-table-column>
+          <el-table-column label="Transmissions" width="120">
+            <template #default="scope">
+              {{ scope.row.transmission_count || 0 }}
+            </template>
+          </el-table-column>
 
-      <el-table-column label="Current Assignment" width="200">
-        <template #default="scope">
-          <span v-if="scope.row.current_assignment">
-            {{ scope.row.current_assignment.challenge_name }}
-          </span>
-          <span v-else class="text-muted">Idle</span>
-        </template>
-      </el-table-column>
+          <el-table-column label="Last Heartbeat" width="180">
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
 
-      <el-table-column label="Stats" width="150">
-        <template #default="scope">
-          <!-- For runners: transmission count -->
-          <span v-if="scope.row.agent_type === 'runner'">
-            TX: {{ scope.row.transmission_count || 0 }}
-          </span>
-          <!-- For listeners: recording count -->
-          <span v-else>
-            Rec: {{ scope.row.recording_count || 0 }}
-          </span>
-        </template>
-      </el-table-column>
+          <el-table-column label="Enabled" width="100" align="center">
+            <template #default="scope">
+              <el-switch
+                v-model="scope.row.enabled"
+                @change="toggleAgent(scope.row)"
+              />
+            </template>
+          </el-table-column>
 
-      <el-table-column label="Last Heartbeat" width="180">
-        <template #default="scope">
-          {{ formatTimestamp(scope.row.last_heartbeat) }}
-        </template>
-      </el-table-column>
+          <el-table-column label="Actions" width="120">
+            <template #default="scope">
+              <el-button
+                size="small"
+                type="danger"
+                @click="kickAgent(scope.row.agent_id)"
+              >
+                Kick
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
 
-      <el-table-column label="Enabled" width="100" align="center">
-        <template #default="scope">
-          <el-switch
-            v-model="scope.row.enabled"
-            @change="toggleAgent(scope.row)"
-          />
-        </template>
-      </el-table-column>
+      <!-- Listeners Tab -->
+      <el-tab-pane label="Listeners" name="listeners">
+        <el-table :data="listeners" class="w-full">
+          <el-table-column prop="agent_id" label="Listener ID" width="150" />
 
-      <el-table-column label="Actions" width="150">
-        <template #default="scope">
-          <el-button
-            size="small"
-            type="danger"
-            @click="kickAgent(scope.row.agent_id)"
-          >
-            Kick
+          <el-table-column label="Status" width="100">
+            <template #default="scope">
+              <el-tag :type="scope.row.status === 'online' ? 'success' : 'danger'">
+                {{ scope.row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="WebSocket" width="120">
+            <template #default="scope">
+              <el-tag :type="scope.row.websocket_connected ? 'success' : 'warning'" size="small">
+                {{ scope.row.websocket_connected ? 'Connected' : 'Disconnected' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="hostname" label="Hostname" width="150" />
+
+          <el-table-column label="Device" width="120">
+            <template #default="scope">
+              {{ scope.row.devices?.[0]?.model || 'N/A' }}
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Current Recording" width="200">
+            <template #default="scope">
+              <span v-if="scope.row.current_assignment">
+                {{ scope.row.current_assignment.challenge_name }}
+              </span>
+              <span v-else class="text-muted">Idle</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Recordings" width="120">
+            <template #default="scope">
+              {{ scope.row.recording_count || 0 }}
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Last Heartbeat" width="180">
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Enabled" width="100" align="center">
+            <template #default="scope">
+              <el-switch
+                v-model="scope.row.enabled"
+                @change="toggleAgent(scope.row)"
+              />
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Actions" width="120">
+            <template #default="scope">
+              <el-button
+                size="small"
+                type="danger"
+                @click="kickAgent(scope.row.agent_id)"
+              >
+                Kick
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- Provisioning Keys Tab -->
+      <el-tab-pane label="Provisioning" name="provisioning">
+        <div class="mb-lg">
+          <el-button type="primary" @click="createEnrollmentToken">
+            Create Enrollment Token
           </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        </div>
+
+        <el-table :data="enrollmentTokens" class="w-full">
+          <el-table-column prop="token" label="Token" width="300">
+            <template #default="scope">
+              <code>{{ scope.row.token }}</code>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="runner_name" label="Agent Name" width="150" />
+
+          <el-table-column label="Status" width="120">
+            <template #default="scope">
+              <el-tag :type="scope.row.used ? 'success' : 'warning'" size="small">
+                {{ scope.row.used ? 'Used' : 'Unused' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Used By" width="150">
+            <template #default="scope">
+              <span v-if="scope.row.used_by_runner_id">
+                {{ scope.row.used_by_runner_id }}
+              </span>
+              <span v-else class="text-muted">—</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Created" width="180">
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.created_at) }}
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Expires" width="180">
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.expires_at) }}
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Actions" width="120">
+            <template #default="scope">
+              <el-button
+                v-if="!scope.row.used"
+                size="small"
+                type="danger"
+                @click="revokeToken(scope.row.token)"
+              >
+                Revoke
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 
 export default {
   name: 'Agents',
   setup() {
+    const activeTab = ref('runners')
     const agents = ref([])
-    const filterType = ref('all')
+    const enrollmentTokens = ref([])
 
-    const filteredAgents = computed(() => {
-      if (filterType.value === 'all') {
-        return agents.value
-      }
-      return agents.value.filter(a => a.agent_type === filterType.value)
-    })
+    // Computed properties for filtered lists
+    const runners = computed(() =>
+      agents.value.filter(a => a.agent_type === 'runner')
+    )
 
+    const listeners = computed(() =>
+      agents.value.filter(a => a.agent_type === 'listener')
+    )
+
+    // Load agents
     const loadAgents = async () => {
       try {
-        const params = filterType.value !== 'all' ? { type: filterType.value } : {}
-        const response = await api.get('/agents', { params })
+        const response = await api.get('/agents')
         agents.value = response.data.agents || []
       } catch (error) {
         console.error('Error loading agents:', error)
@@ -1043,6 +1162,18 @@ export default {
       }
     }
 
+    // Load enrollment tokens
+    const loadEnrollmentTokens = async () => {
+      try {
+        const response = await api.get('/enrollment/tokens')
+        enrollmentTokens.value = response.data.tokens || []
+      } catch (error) {
+        console.error('Error loading tokens:', error)
+        ElMessage.error('Failed to load enrollment tokens')
+      }
+    }
+
+    // Agent actions
     const toggleAgent = async (agent) => {
       try {
         const endpoint = agent.enabled ? 'enable' : 'disable'
@@ -1057,29 +1188,84 @@ export default {
 
     const kickAgent = async (agentId) => {
       try {
+        await ElMessageBox.confirm(
+          'This will disconnect the agent. Continue?',
+          'Kick Agent',
+          { type: 'warning' }
+        )
         await api.delete(`/agents/${agentId}`)
         ElMessage.success('Agent kicked')
         loadAgents()
       } catch (error) {
-        console.error('Error kicking agent:', error)
-        ElMessage.error('Failed to kick agent')
+        if (error !== 'cancel') {
+          console.error('Error kicking agent:', error)
+          ElMessage.error('Failed to kick agent')
+        }
+      }
+    }
+
+    // Provisioning actions
+    const createEnrollmentToken = async () => {
+      try {
+        const { value: agentName } = await ElMessageBox.prompt(
+          'Enter agent name',
+          'Create Enrollment Token',
+          { inputPlaceholder: 'e.g., runner-3 or listener-1' }
+        )
+
+        await api.post('/enrollment/tokens', { agent_name: agentName })
+        ElMessage.success('Enrollment token created')
+        loadEnrollmentTokens()
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('Error creating token:', error)
+          ElMessage.error('Failed to create token')
+        }
+      }
+    }
+
+    const revokeToken = async (token) => {
+      try {
+        await ElMessageBox.confirm(
+          'This will invalidate the token. Continue?',
+          'Revoke Token',
+          { type: 'warning' }
+        )
+        await api.delete(`/enrollment/tokens/${token}`)
+        ElMessage.success('Token revoked')
+        loadEnrollmentTokens()
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('Error revoking token:', error)
+          ElMessage.error('Failed to revoke token')
+        }
       }
     }
 
     onMounted(() => {
       loadAgents()
+      loadEnrollmentTokens()
+
       // Refresh periodically
-      const interval = setInterval(loadAgents, 15000)
+      const interval = setInterval(() => {
+        loadAgents()
+        if (activeTab.value === 'provisioning') {
+          loadEnrollmentTokens()
+        }
+      }, 15000)
+
       onUnmounted(() => clearInterval(interval))
     })
 
     return {
-      agents,
-      filterType,
-      filteredAgents,
-      loadAgents,
+      activeTab,
+      runners,
+      listeners,
+      enrollmentTokens,
       toggleAgent,
       kickAgent,
+      createEnrollmentToken,
+      revokeToken,
       formatTimestamp: formatDateTime
     }
   }
@@ -1095,15 +1281,28 @@ export default {
   color: #909399;
   font-style: italic;
 }
+
+.mb-lg {
+  margin-bottom: 20px;
+}
+
+code {
+  background: #f5f7fa;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
 </style>
 ```
 
 **Key Features:**
-- **Type filtering**: Toggle between all/runners/listeners
-- **Unified table**: Single view for all agent types
-- **Type-specific stats**: Shows TX count for runners, recording count for listeners
-- **Visual differentiation**: Color-coded tags for agent type
-- **Shared actions**: Enable/disable and kick work for both types
+- **Tab-based navigation**: Three separate tabs for Runners, Listeners, and Provisioning
+- **Runner-specific table**: Shows transmissions, current task, optimized columns
+- **Listener-specific table**: Shows recordings, WebSocket status, current recording
+- **Provisioning tab**: Manage enrollment tokens with create/revoke actions
+- **Optimized layouts**: Each tab shows only relevant information
+- **Shared functionality**: Enable/disable and kick work across both agent types
 
 ### 5. Waterfall Image Generation
 
