@@ -96,11 +96,34 @@
           <el-table-column
             v-if="hasAnyFrequencyVisible"
             label="Frequency"
-            width="140"
+            width="180"
           >
             <template #default="scope">
               <span v-if="scope.row.frequency_display">
-                {{ scope.row.frequency_display }}
+                <template v-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length > 1">
+                  <el-tooltip
+                    :content="scope.row.frequency_display"
+                    placement="top"
+                  >
+                    <el-tag
+                      type="info"
+                      size="small"
+                    >
+                      {{ scope.row.frequency_ranges.length }} ranges
+                    </el-tag>
+                  </el-tooltip>
+                </template>
+                <template v-else-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length === 1">
+                  <el-tag
+                    type="info"
+                    size="small"
+                  >
+                    {{ scope.row.frequency_display.replace('Random (', '').replace(')', '') }}
+                  </el-tag>
+                </template>
+                <template v-else>
+                  {{ scope.row.frequency_display }}
+                </template>
               </span>
               <span
                 v-else
