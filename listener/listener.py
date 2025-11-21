@@ -722,22 +722,15 @@ class ListenerAgent:
         """Main run loop for the listener agent."""
         self.running = True
 
-        # Try enrollment first if enrollment_token exists
-        enrollment_token = self.config['agent'].get('enrollment_token')
-        if enrollment_token:
-            logger.info("Enrollment token found, attempting enrollment...")
-            if not self.enroll():
-                logger.error("Failed to enroll with server. Exiting.")
-                return 1
-            logger.info("Enrollment successful!")
-            logger.info("")
-            logger.info("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
-            logger.info("It will be ignored on subsequent runs once enrolled.")
-            logger.info("")
+        logger.info(f"Listener agent {self.agent_id} starting")
+        logger.info(f"Server: {self.server_url}")
 
-        # Register with server (or re-register if already enrolled)
-        if not self.register_with_server():
-            # If registration fails and we have an enrollment token, try enrolling
+        # Try to register first (works if already enrolled with valid API key)
+        logger.info("Registering with server...")
+        registered = self.register_with_server()
+
+        if not registered:
+            # Registration failed - check if we have an enrollment token to try
             enrollment_token = self.config['agent'].get('enrollment_token')
             if enrollment_token:
                 logger.info("Registration failed. Attempting enrollment with token...")
@@ -752,6 +745,8 @@ class ListenerAgent:
             else:
                 logger.error("Failed to register with server and no enrollment token found. Exiting.")
                 return 1
+        else:
+            logger.info("Registration successful")
 
         # Connect WebSocket
         if not self.connect_websocket():
