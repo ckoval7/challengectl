@@ -140,8 +140,10 @@ ChallengeCtl provides three frequency modes for flexible challenge configuration
 
 **Frequency Display in Tables:**
 - Single frequency: Shows frequency in MHz (e.g., "146.550 MHz")
-- Named ranges: Shows range names with tooltips (e.g., "2 Meter Ham Band, 70 Centimeter Ham Band")
-- Manual range: Shows range in MHz (e.g., "146.000-146.100 MHz")
+- Named ranges:
+  - Single range: Shows the display name in a blue tag (e.g., "2 Meter Ham Band")
+  - Multiple ranges: Shows "N ranges" in a blue tag with tooltip showing all names (e.g., "2 ranges" with tooltip "2 Meter Ham Band, 70 Centimeter Ham Band")
+- Manual range: Shows range in MHz with "Custom:" prefix in an orange tag (e.g., "Custom: 146.000-148.000 MHz")
 
 **Public Dashboard Display:**
 - Single frequency: Displays the exact frequency

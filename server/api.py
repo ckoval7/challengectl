@@ -2572,12 +2572,73 @@ radios:
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
 
+            # Validate required fields in config
+            modulation = config.get('modulation')
+            if not modulation:
+                return jsonify({'error': 'Missing required field: modulation'}), 400
+
             # Validate timing configuration
             min_delay = config.get('min_delay')
             max_delay = config.get('max_delay')
-            if min_delay is not None and max_delay is not None:
-                if min_delay > max_delay:
-                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
+            if min_delay is None:
+                return jsonify({'error': 'Missing required field: min_delay'}), 400
+            if max_delay is None:
+                return jsonify({'error': 'Missing required field: max_delay'}), 400
+
+            if min_delay > max_delay:
+                return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
+            # Validate frequency specification - exactly one required
+            frequency = config.get('frequency')
+            frequency_ranges = config.get('frequency_ranges')
+            manual_frequency_range = config.get('manual_frequency_range')
+
+            freq_specs_present = sum([
+                frequency is not None,
+                frequency_ranges is not None,
+                manual_frequency_range is not None
+            ])
+
+            if freq_specs_present == 0:
+                return jsonify({
+                    'error': 'Missing frequency specification. Must provide one of: frequency, frequency_ranges, or manual_frequency_range'
+                }), 400
+
+            if freq_specs_present > 1:
+                return jsonify({
+                    'error': 'Multiple frequency specifications provided. Must provide exactly one of: frequency, frequency_ranges, or manual_frequency_range'
+                }), 400
+
+            # Validate frequency_ranges if provided
+            if frequency_ranges is not None:
+                if not isinstance(frequency_ranges, list) or len(frequency_ranges) == 0:
+                    return jsonify({'error': 'frequency_ranges must be a non-empty array'}), 400
+
+                # Validate that all ranges exist in configuration
+                available_ranges = self.get_frequency_ranges()
+                available_names = {r.get('name') for r in available_ranges}
+                for range_name in frequency_ranges:
+                    if range_name not in available_names:
+                        return jsonify({
+                            'error': f'Unknown frequency range: {range_name}. Available ranges: {", ".join(sorted(available_names))}'
+                        }), 400
+
+            # Validate manual_frequency_range if provided
+            if manual_frequency_range is not None:
+                if not isinstance(manual_frequency_range, dict):
+                    return jsonify({'error': 'manual_frequency_range must be an object with min_hz and max_hz'}), 400
+
+                min_hz = manual_frequency_range.get('min_hz')
+                max_hz = manual_frequency_range.get('max_hz')
+
+                if min_hz is None:
+                    return jsonify({'error': 'manual_frequency_range.min_hz is required'}), 400
+                if max_hz is None:
+                    return jsonify({'error': 'manual_frequency_range.max_hz is required'}), 400
+
+                if min_hz >= max_hz:
+                    return jsonify({'error': 'manual_frequency_range.min_hz must be less than max_hz'}), 400
 
             # Ensure name is in config
             config['name'] = name
