@@ -216,13 +216,21 @@
               <el-select
                 v-model="challengeForm.frequency_ranges"
                 multiple
-                placeholder="Select one or more ranges..."
+                :placeholder="availableFrequencyRanges.length === 0 ? 'No ranges available - click Reload' : 'Select one or more ranges...'"
                 style="flex: 1;"
                 collapse-tags
                 collapse-tags-tooltip
               >
+                <template v-if="availableFrequencyRanges.length === 0">
+                  <el-option
+                    disabled
+                    value=""
+                    label="No frequency ranges configured"
+                  />
+                </template>
                 <el-option
                   v-for="range in availableFrequencyRanges"
+                  v-else
                   :key="range.name"
                   :label="range.display_name || range.name"
                   :value="range.name"
