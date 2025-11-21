@@ -1986,6 +1986,62 @@ class Database:
                 return dict(row)
             return None
 
+    def find_agent_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
+                               current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
+        """Find an agent by verifying the API key without knowing the agent_id in advance.
+
+        This method efficiently searches for the agent matching the provided API key
+        by only checking enabled agents with API keys set.
+
+        Args:
+            api_key: The plaintext API key to verify
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
+
+        Returns:
+            agent_id if found and verified, None otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Only fetch enabled agents with API keys set (optimized query)
+            cursor.execute('''
+                SELECT agent_id, api_key_hash, mac_address, machine_id
+                FROM agents
+                WHERE enabled = 1 AND api_key_hash IS NOT NULL
+            ''')
+
+            for row in cursor.fetchall():
+                agent_id = row['agent_id']
+                api_key_hash = row['api_key_hash']
+                stored_mac = row['mac_address']
+                stored_machine_id = row['machine_id']
+
+                # Verify API key hash
+                try:
+                    if not bcrypt.checkpw(api_key.encode('utf-8'), api_key_hash.encode('utf-8')):
+                        continue
+                except Exception:
+                    continue
+
+                # Verify MAC address if both are available
+                if stored_mac and current_mac:
+                    if stored_mac.lower() != current_mac.lower():
+                        continue
+
+                # Verify machine ID if both are available
+                if stored_machine_id and current_machine_id:
+                    if stored_machine_id != current_machine_id:
+                        continue
+
+                # All validations passed
+                return agent_id
+
+            return None
+
     def get_all_agents(self, agent_type: Optional[str] = None) -> List[Dict]:
         """Get all registered agents, optionally filtered by type.
 

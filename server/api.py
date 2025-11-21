@@ -357,10 +357,10 @@ class ChallengeCtlAPI:
         return priority >= threshold
 
     def require_api_key(self, f):
-        """Decorator to require API key authentication (for runners only).
+        """Decorator to require API key authentication (for runners and listeners).
 
-        Checks database for runner API key with enhanced multi-factor host validation.
-        All runners must be enrolled via the secure enrollment process.
+        Checks database for agent API key with enhanced multi-factor host validation.
+        All agents must be enrolled via the secure enrollment process.
         """
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -378,19 +378,32 @@ class ChallengeCtlAPI:
             if request.is_json and request.json:
                 current_hostname = request.json.get('hostname', '')
 
-            # Get host identifiers from custom headers (sent by runner)
-            current_mac = request.headers.get('X-Runner-MAC')
-            current_machine_id = request.headers.get('X-Runner-Machine-ID')
+            # Get host identifiers from custom headers (support both X-Runner-* and X-Agent-* for compatibility)
+            current_mac = request.headers.get('X-Agent-MAC') or request.headers.get('X-Runner-MAC')
+            current_machine_id = request.headers.get('X-Agent-Machine-ID') or request.headers.get('X-Runner-Machine-ID')
 
-            # Find runner_id in database with enhanced host validation (optimized query)
-            runner_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
-                                                       current_mac, current_machine_id)
+            # Try to find agent (runner or listener) with enhanced host validation
+            # First try runners for backward compatibility
+            agent_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
+                                                      current_mac, current_machine_id)
+            agent_type = 'runner' if agent_id else None
 
-            if not runner_id:
+            # If not found as runner, try as agent (listener)
+            if not agent_id:
+                agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
+                                                         current_mac, current_machine_id)
+                if agent_id:
+                    # Get agent type from database
+                    agent_info = self.db.get_agent(agent_id)
+                    agent_type = agent_info.get('agent_type', 'listener') if agent_info else 'listener'
+
+            if not agent_id:
                 return jsonify({'error': 'Invalid API key'}), 401
 
-            # Add runner_id to request context
-            request.runner_id = runner_id
+            # Add agent_id and runner_id to request context (for backward compatibility)
+            request.agent_id = agent_id
+            request.runner_id = agent_id  # For backward compatibility with runner-only code
+            request.agent_type = agent_type
 
             return f(*args, **kwargs)
 
