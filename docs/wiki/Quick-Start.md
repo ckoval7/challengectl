@@ -171,7 +171,23 @@ python -m challengectl.runner.runner
 
 The runner will register with the server and begin polling for tasks.
 
-## Step 4: Configure Challenges
+## Step 4: Set Up a Listener (Optional)
+
+Listeners capture RF transmissions and generate waterfall images for spectrum visualization. This is optional but provides valuable visual confirmation of your transmissions.
+
+**Note**: Listeners require SDR receiver hardware (RTL-SDR, HackRF, USRP, etc.) and GNU Radio. See the [Listener Setup Guide](Listener-Setup) for complete instructions.
+
+### Quick Listener Setup
+
+1. **Enroll the listener** via the Web UI (Agents → Provisioning tab)
+2. **Configure `listener-config.yml`** with the enrollment credentials
+3. **Start the listener**: `./listener/listener.py --config listener-config.yml`
+
+Listeners connect via WebSocket and receive recording assignments automatically based on transmission priority. Waterfall images are uploaded to the server and viewable in the web interface.
+
+For detailed listener setup including GNU Radio installation and configuration, see the [Listener Setup Guide](Listener-Setup).
+
+## Step 5: Configure Challenges
 
 Now that the server and runner are connected, you can configure challenges through the Web UI:
 
@@ -208,15 +224,15 @@ Now that the server and runner are connected, you can configure challenges throu
 
 For detailed information on challenge configuration, see the [Challenge Management Guide](Challenge-Management).
 
-## Step 5: Verify Operation
+## Step 6: Verify Operation
 
 1. **Log in to the Web Interface**: Navigate to `http://localhost:8443` and log in with your admin credentials.
 
-2. **Check Runner Status**: Go to the Runners page to verify that your runner is connected and showing a green status.
+2. **Check Agent Status**: Go to the Agents page to verify that your runner (and listener, if configured) is connected and showing a green status.
 
 3. **Monitor Transmissions**: Visit the Dashboard to see live statistics and the transmission feed.
 
-4. **View Logs**: Check the Logs page for real-time output from the server and runners.
+4. **View Logs**: Check the Logs page for real-time output from the server and agents.
 
 ## Next Steps
 

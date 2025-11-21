@@ -1,11 +1,12 @@
 # Configuration Reference
 
-This comprehensive reference documents all configuration options for the ChallengeCtl server and runner. Both components use YAML configuration files that define system behavior, challenge parameters, and device settings.
+This comprehensive reference documents all configuration options for ChallengeCtl components: server, runners, and listeners. All components use YAML configuration files that define system behavior, agent parameters, challenge settings, and device configurations.
 
 ## Table of Contents
 
 - [Server Configuration](#server-configuration)
 - [Runner Configuration](#runner-configuration)
+- [Listener Configuration](#listener-configuration)
 - [Challenge Configuration](#challenge-configuration)
 - [Modulation-Specific Parameters](#modulation-specific-parameters)
 - [Environment Variables](#environment-variables)
@@ -373,6 +374,211 @@ If not specified, the device can handle any frequency within its hardware capabi
 - Legal to transmit on in your jurisdiction
 - Covered by your license (if required)
 - Within your antenna's specifications
+
+## Listener Configuration
+
+Listeners are configured separately from runners. They capture RF transmissions and generate waterfall images for spectrum visualization.
+
+### Listener Section
+
+```yaml
+agent:
+  agent_id: "listener-1"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "your-api-key-here"
+  heartbeat_interval: 30
+  websocket_enabled: true
+  websocket_reconnect_delay: 5
+
+  recording:
+    output_dir: "recordings"
+    sample_rate: 2000000
+    fft_size: 1024
+    frame_rate: 20
+    gain: 40
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+
+    device:
+      id: "rtlsdr=0"
+      type: "rtlsdr"
+      serial: "00000001"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+```
+
+#### Parameters
+
+**agent_id** (string, required):
+- Unique identifier for this listener
+- Must match the agent_id enrolled via the server's enrollment system
+- Example: `"listener-1"`, `"sdr-rx-1"`
+
+**server_url** (string, required):
+- URL of the ChallengeCtl server
+- Must be accessible from the listener machine
+- Example: `"http://192.168.1.100:8443"`, `"https://challengectl.example.com"`
+
+**api_key** (string, required):
+- API key obtained during enrollment
+- Keep secure - treat it like a password
+- Never commit to version control
+
+**heartbeat_interval** (integer, optional):
+- How often to send heartbeat to server (in seconds)
+- Default: `30`
+- Server marks listener offline after 3 missed heartbeats (90 seconds)
+
+**websocket_enabled** (boolean, optional):
+- Enable WebSocket connection for real-time recording assignments
+- Default: `true`
+- Must be `true` for listener to receive assignments
+
+**websocket_reconnect_delay** (integer, optional):
+- Seconds to wait between WebSocket reconnection attempts
+- Default: `5`
+- Adjust based on network stability
+
+### Recording Section
+
+**output_dir** (string, required):
+- Directory where waterfall images are saved
+- Created automatically if it doesn't exist
+- Example: `"recordings"`, `"/var/lib/challengectl/waterfalls"`
+
+**sample_rate** (integer, required):
+- SDR sample rate in Hz
+- Higher = more bandwidth captured, more CPU usage
+- Common values: `1000000` (1 MHz), `2000000` (2 MHz), `3200000` (3.2 MHz)
+- Must be within your SDR's capabilities
+
+**fft_size** (integer, required):
+- FFT size for spectrum analysis
+- Common values: `512`, `1024`, `2048`, `4096`
+- Larger = better frequency resolution, more CPU usage
+- Default: `1024`
+
+**frame_rate** (integer, required):
+- Waterfall frames per second
+- Higher = smoother waterfall, larger images
+- Typical: `10-20` fps
+- Default: `20`
+
+**gain** (integer/float, required):
+- RF gain in dB
+- Adjust based on signal strength and SDR model
+- RTL-SDR: 0-50 dB (typical: 30-40)
+- HackRF: 0-62 dB (typical: 40)
+- Start with 40 and adjust based on signal quality
+
+**pre_roll_seconds** (integer, optional):
+- Seconds to record before expected transmission start
+- Ensures entire transmission is captured despite timing variations
+- Default: `5`
+- Recommended: 3-10 seconds
+
+**post_roll_seconds** (integer, optional):
+- Seconds to record after expected transmission end
+- Default: `5`
+- Recommended: 3-10 seconds
+
+### Device Section
+
+**id** (string, required):
+- osmosdr device identifier string
+- Examples:
+  - RTL-SDR: `"rtlsdr=0"` or `"rtlsdr=<serial_number>"`
+  - HackRF: `"hackrf=0"`
+  - USRP: `"uhd=0"`
+  - BladeRF: `"bladerf=0"`
+- Use `osmocom_fft` to list available devices
+
+**type** (string, required):
+- Device type for identification
+- Valid values: `"rtlsdr"`, `"hackrf"`, `"usrp"`, `"bladerf"`
+- Used for logging and device-specific handling
+
+**serial** (string, optional):
+- Device serial number
+- Useful for identifying specific hardware in multi-device setups
+- Not required for operation
+
+### Logging Section
+
+**level** (string, optional):
+- Logging verbosity level
+- Values: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`
+- Default: `"INFO"`
+- Use `"DEBUG"` for troubleshooting
+
+**format** (string, optional):
+- Log message format string
+- Default: `"%(asctime)s - %(name)s - %(levelname)s - %(message)s"`
+- Python logging format syntax
+
+### Example: Multiple Listeners
+
+For deployments with multiple SDRs on one machine:
+
+```yaml
+# listener-1-config.yml (VHF)
+agent:
+  agent_id: "listener-vhf"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "key-for-vhf-listener"
+
+  recording:
+    output_dir: "recordings-vhf"
+    sample_rate: 2000000
+    gain: 40
+    device:
+      id: "rtlsdr=00000001"
+      type: "rtlsdr"
+```
+
+```yaml
+# listener-2-config.yml (UHF)
+agent:
+  agent_id: "listener-uhf"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "key-for-uhf-listener"
+
+  recording:
+    output_dir: "recordings-uhf"
+    sample_rate: 2000000
+    gain: 45
+    device:
+      id: "rtlsdr=00000002"
+      type: "rtlsdr"
+```
+
+Run both with:
+```bash
+./listener.py --config listener-1-config.yml &
+./listener.py --config listener-2-config.yml &
+```
+
+### Configuration Tips
+
+**Sample Rate Selection**:
+- Match or exceed the bandwidth of signals you're monitoring
+- NBFM: 1-2 MHz is sufficient
+- Wideband signals: 2-4 MHz
+- Limited by SDR hardware and CPU
+
+**Gain Tuning**:
+- Start with 40 dB
+- Increase if signals are weak in waterfall
+- Decrease if seeing saturation/distortion
+- Use `osmocom_fft` to tune live while monitoring
+
+**Performance Optimization**:
+- Reduce `sample_rate` if CPU usage is high
+- Reduce `frame_rate` to lower image size and CPU usage
+- Reduce `fft_size` for faster processing
+- Use dedicated hardware for best performance
 
 ## Challenge Configuration
 
