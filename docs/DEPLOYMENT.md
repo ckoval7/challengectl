@@ -418,7 +418,9 @@ challenges:
     default_max_delay: 90
 
   - name: EXAMPLE_CHALLENGE
-    frequency: 146550000
+    frequency: 146550000  # Single frequency (Hz)
+    # Alternatives: frequency_ranges: [ham_144, ham_440]  # Named ranges
+    #               manual_frequency_range: {min_hz: 146000000, max_hz: 148000000}  # Custom range
     modulation: nbfm
     flag: challenges/example.wav
     enabled: true
