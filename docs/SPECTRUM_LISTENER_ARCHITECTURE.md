@@ -54,7 +54,9 @@ The Spectrum Listener system adds passive RF monitoring capabilities to challeng
     └──────────────────────────────────────────┘
 ```
 
-**Key Architectural Change:** Runners and listeners are unified as "agents" with a `type` field. This simplifies provisioning, management, and UI display while maintaining their distinct roles.
+**Key Architectural Changes:**
+1. **Unified agents**: Runners and listeners are unified as "agents" with a `type` field. This simplifies provisioning, management, and UI display while maintaining their distinct roles.
+2. **Hybrid communication**: Polling for task discovery (maintains NAT-friendly architecture), WebSockets for real-time coordination (enables precise timing for recordings).
 
 ## Component Design
 
@@ -64,17 +66,19 @@ A new Python client similar to `runner.py` but specialized for receiving:
 
 **Responsibilities:**
 - Register with server as a listener (not a runner)
-- Poll for recording assignments
+- Maintain WebSocket connection for real-time coordination
+- Receive recording assignments via WebSocket push notifications
 - Capture IQ samples using osmocom source block
 - Generate waterfall images from captured data
 - Upload completed waterfalls to server
 - Report recording status (started, completed, failed)
 
 **Key Differences from Runner:**
+- **WebSocket-based coordination**: Listeners receive assignments pushed in real-time (no polling delay)
 - No GNU Radio transmit flowgraphs
 - Single receive flowgraph with configurable parameters
 - Generates PNG waterfall images
-- Monitors for assignment start/stop signals
+- Responds to start/stop signals immediately
 
 **Configuration (`listener-config.yml`):**
 ```yaml
@@ -85,7 +89,8 @@ agent:
   api_key: "agent-key-1"          # Shared provisioning with runners
 
   heartbeat_interval: 30
-  poll_interval: 5                # Check more frequently than runners
+  websocket_enabled: true         # Use WebSocket for real-time coordination
+  websocket_reconnect_delay: 5    # Seconds between reconnection attempts
 
   recording:
     output_dir: "recordings"      # Where to store waterfall images
@@ -93,6 +98,8 @@ agent:
     fft_size: 1024                # FFT bins for waterfall
     frame_rate: 20                # Waterfall frames per second
     gain: 40                      # RF gain
+    pre_roll_seconds: 5           # Start recording before transmission
+    post_roll_seconds: 5          # Continue after transmission ends
 
 radio:
   model: rtlsdr                   # RTL-SDR is cheap, ideal for listeners
@@ -107,6 +114,17 @@ radio:
 - API keys work for both agent types
 - Agent type is specified during registration
 - Simplifies credential management
+
+**Communication Architecture:**
+- **Runners**: Continue using HTTP polling (10s interval) for task discovery
+  - Maintains NAT-friendly, firewall-friendly architecture
+  - No persistent connections required
+  - Works reliably across network boundaries
+- **Listeners**: Use WebSocket connections for real-time coordination
+  - Pushed assignments with precise timing
+  - Immediate notification when recordings should start
+  - Bidirectional communication for status updates
+  - Reconnect automatically on disconnection
 
 ### 2. GNU Radio Flowgraph (`spectrum_listener.py`)
 
@@ -275,20 +293,7 @@ POST /api/agents/{id}/complete
   - Request body: {success, device_id, frequency, error_message}
   - Response: {status: "success"}
   - Existing endpoint, unchanged behavior
-
-GET /api/agents/{id}/assignment
-  - Poll for recording assignments (listener agents only)
-  - Response: {
-      assignment_id,
-      challenge_id,
-      challenge_name,
-      frequency,
-      expected_start,  # ISO timestamp
-      expected_duration,
-      modulation_type
-    }
-  - Returns empty if no assignment
-  - New endpoint for listeners
+  - Server broadcasts to listeners via WebSocket when transmission starts
 
 POST /api/agents/{id}/recording_started
   - Report recording has begun (listener agents only)
@@ -372,18 +377,141 @@ GET /api/challenges/{id}/recordings
   - Response: {recordings: [...]}
 ```
 
+**WebSocket Events (Listener Agent Coordination):**
+
+Listener agents maintain a WebSocket connection for real-time coordination. The server pushes these events:
+
+```
+# Connection establishment
+WS /api/agents/{id}/ws
+  - Authenticate via query param: ?api_key=xxx
+  - Or via Authorization header during upgrade
+  - Listeners maintain persistent connection
+  - Auto-reconnect on disconnection
+
+# Server → Listener events:
+
+'recording_assignment' - New recording assignment
+  {
+    event: 'recording_assignment',
+    assignment_id: 123,
+    challenge_id: 'CHALLENGE_1',
+    challenge_name: 'NBFM_FLAG_1',
+    frequency: 146550000,
+    expected_start: '2025-11-21T12:00:05Z',  # When to start pre-roll
+    expected_duration: 180,                   # Estimated seconds
+    modulation_type: 'nbfm',
+    transmission_id: 456                      # Links to transmission record
+  }
+
+  - Sent when runner agent starts executing challenge
+  - expected_start accounts for runner prep time
+  - Listener should start recording at expected_start (includes pre-roll)
+
+'transmission_started' - Runner has begun transmission
+  {
+    event: 'transmission_started',
+    assignment_id: 123,
+    actual_start: '2025-11-21T12:00:10Z',
+    frequency: 146550000
+  }
+
+  - Sent when runner agent reports it has started transmitting
+  - Provides precise timing for recording synchronization
+  - Optional: listeners can adjust if they started early
+
+'transmission_complete' - Runner finished transmission
+  {
+    event: 'transmission_complete',
+    assignment_id: 123,
+    completed_at: '2025-11-21T12:03:10Z',
+    status: 'success'
+  }
+
+  - Sent when runner agent reports completion
+  - Listener should continue post-roll, then stop recording
+
+'assignment_cancelled' - Recording no longer needed
+  {
+    event: 'assignment_cancelled',
+    assignment_id: 123,
+    reason: 'transmission_failed' | 'challenge_disabled' | 'system_paused'
+  }
+
+  - Sent if transmission fails before starting
+  - Listener should abort recording and clean up
+
+# Listener → Server events (sent via WebSocket):
+
+'recording_status' - Status update from listener
+  {
+    event: 'recording_status',
+    assignment_id: 123,
+    status: 'ready' | 'recording' | 'completed' | 'failed',
+    timestamp: '2025-11-21T12:00:05Z',
+    message: 'Optional status message'
+  }
+
+  - Sent at key lifecycle points
+  - Server updates database and broadcasts to admin UI
+```
+
+**WebSocket Connection Management:**
+
+```python
+# Listener client (Python)
+import socketio
+
+sio = socketio.Client()
+
+@sio.on('recording_assignment')
+def on_assignment(data):
+    # Start recording at expected_start time
+    schedule_recording(
+        frequency=data['frequency'],
+        start_time=parse_iso(data['expected_start']),
+        duration=data['expected_duration']
+    )
+
+@sio.on('transmission_started')
+def on_tx_start(data):
+    # Optional: verify recording is active
+    log.info(f"Transmission started at {data['actual_start']}")
+
+@sio.on('transmission_complete')
+def on_tx_complete(data):
+    # Schedule stop after post-roll period
+    schedule_stop(assignment_id=data['assignment_id'])
+
+# Connect with authentication
+sio.connect(
+    f"{server_url}/api/agents/{agent_id}/ws",
+    auth={'api_key': api_key},
+    transports=['websocket']
+)
+```
+
+**Benefits of WebSocket Approach:**
+- **Precise timing**: Listeners start recording exactly when needed (no polling delay)
+- **Efficient**: No wasted bandwidth polling for assignments
+- **Scalable**: Server pushes to multiple listeners simultaneously
+- **Reliable**: Bidirectional communication allows status updates
+- **Coordinated**: Listeners can react to transmission start/stop in real-time
+
 #### 3.3 Coordination Logic
 
 **Recording Priority Algorithm:**
 
-When a listener polls for an assignment, the server:
+When a runner agent is assigned a challenge, the server determines which listener (if any) should record:
 
-1. **Find eligible challenges:**
-   - Status = 'queued' or 'assigned'
+1. **Find eligible listener agents:**
+   - Connected via WebSocket
+   - Status = 'online'
    - Enabled = true
-   - Frequency within listener's capabilities
+   - Frequency within listener's device capabilities
+   - Not currently recording (or has capacity for concurrent recordings)
 
-2. **Calculate priority score for each:**
+2. **Calculate priority score for this challenge:**
    ```python
    def calculate_recording_priority(challenge):
        # Get most recent recording and transmission count
@@ -442,47 +570,111 @@ When a listener polls for an assignment, the server:
    - **Configurable weighting**: Challenge priority setting allows admins to boost specific challenges.
    - **Result**: Listeners naturally sample challenges periodically rather than recording every single transmission, while ensuring all challenges get recorded regularly.
 
-3. **Select challenge with highest priority score**
+3. **Decide whether to record:**
+   - Calculate priority score for the challenge
+   - If priority > threshold (e.g., > 10), assign a listener
+   - If priority low (recently recorded), skip recording for this transmission
 
-4. **Check if challenge is currently assigned to a runner:**
-   - If assigned: Create listener assignment synchronized with transmission
-   - If queued: Wait for runner assignment (or assign both atomically)
+4. **Select listener agent:**
+   - If multiple listeners available, distribute load round-robin or by least-busy
+   - Could use listener-specific priority if needed in future
 
-5. **Create listener assignment:**
+5. **Create assignment and notify via WebSocket:**
    - Record assignment in database
-   - Return assignment details to listener
-   - Set expected_start based on runner's assignment time
+   - Calculate expected_start (now + runner_prep_time)
+   - Push 'recording_assignment' event to selected listener via WebSocket
+   - Listener receives notification immediately and prepares to record
 
-**Coordinated Assignment:**
+**Coordinated Assignment Workflow:**
 
 When a runner agent is assigned a challenge:
 ```python
 def assign_task_to_runner_agent(agent_id):
     with db.begin_immediate():
-        # Assign challenge to runner agent (existing logic)
+        # 1. Assign challenge to runner agent (existing logic)
         challenge = assign_challenge(agent_id)
+        transmission_id = create_transmission_record(challenge, agent_id)
 
         if challenge:
-            # Check if listener agents are available
-            listener_agents = get_available_agents_for_frequency(
-                challenge.frequency,
-                agent_type='listener'
-            )
+            # 2. Calculate recording priority
+            priority = calculate_recording_priority(challenge)
 
-            if listener_agents:
-                # Calculate priority for each listener agent
-                # Select listener with highest recording priority
-                listener = select_listener_by_priority(listener_agents, challenge)
-
-                create_listener_assignment(
-                    listener.agent_id,
-                    challenge.challenge_id,
-                    transmission_id,
-                    expected_start=now() + timedelta(seconds=10),  # Runner prep time
-                    expected_duration=estimate_duration(challenge)
+            # 3. Decide if this transmission should be recorded
+            if priority > RECORDING_PRIORITY_THRESHOLD:  # e.g., 10
+                # 4. Find available listener agents
+                listener_agents = get_available_agents_for_frequency(
+                    challenge.frequency,
+                    agent_type='listener',
+                    websocket_connected=True  # Must be online via WS
                 )
 
+                if listener_agents:
+                    # 5. Select listener (round-robin or least-busy)
+                    listener = select_listener(listener_agents)
+
+                    # 6. Create database assignment record
+                    expected_start = now() + timedelta(seconds=10)  # Runner prep
+                    expected_duration = estimate_duration(challenge)
+
+                    assignment = create_listener_assignment(
+                        listener.agent_id,
+                        challenge.challenge_id,
+                        transmission_id,
+                        expected_start,
+                        expected_duration
+                    )
+
+                    # 7. Push assignment to listener via WebSocket
+                    socketio.emit(
+                        'recording_assignment',
+                        {
+                            'assignment_id': assignment.assignment_id,
+                            'challenge_id': challenge.challenge_id,
+                            'challenge_name': challenge.name,
+                            'frequency': challenge.frequency,
+                            'expected_start': expected_start.isoformat(),
+                            'expected_duration': expected_duration,
+                            'modulation_type': challenge.config['modulation'],
+                            'transmission_id': transmission_id
+                        },
+                        room=f'agent_{listener.agent_id}'  # Send to specific listener
+                    )
+
+                    log.info(f"Assigned recording to {listener.agent_id} for {challenge.name}")
+
     return challenge
+```
+
+**Runner Reports Transmission Start:**
+
+When the runner actually begins transmitting, notify the listener:
+```python
+@app.route('/api/agents/<agent_id>/transmission_started', methods=['POST'])
+@require_api_key
+def transmission_started(agent_id):
+    data = request.json
+    transmission_id = data['transmission_id']
+
+    # Find any active listener assignments for this transmission
+    assignments = db.query(
+        "SELECT * FROM listener_assignments "
+        "WHERE transmission_id = ? AND status = 'assigned'",
+        (transmission_id,)
+    )
+
+    for assignment in assignments:
+        # Notify listener that transmission has actually started
+        socketio.emit(
+            'transmission_started',
+            {
+                'assignment_id': assignment.assignment_id,
+                'actual_start': datetime.utcnow().isoformat(),
+                'frequency': assignment.frequency
+            },
+            room=f'agent_{assignment.agent_id}'
+        )
+
+    return jsonify({'status': 'success'})
 ```
 
 **Duration Estimation:**
@@ -1064,60 +1256,83 @@ class SpectrumListener(gr.top_block):
 
 ### 6. Operational Workflow
 
-#### 6.1 Typical Recording Scenario
+#### 6.1 Typical Recording Scenario (WebSocket-Based)
+
+**Timeline with precise timing:**
 
 ```
-1. Challenge "NBFM_FLAG_1" is queued
+T+0s: Challenge "NBFM_FLAG_1" is queued
    ↓
-2. Server assigns to Runner-1
+T+0s: Runner-1 polls and receives assignment
    - Challenge status: queued → assigned
-   - Runner-1 downloads files, prepares transmission
+   - transmission_id created
    ↓
-3. Server checks for available listeners
-   - Finds Listener-1 online and capable
-   - Calculates priority: NBFM_FLAG_1 last recorded 3 days ago → High priority
+T+0s: Server calculates recording priority
+   - NBFM_FLAG_1 last recorded 3 days ago → High priority (score: 500)
+   - Priority > threshold (10) → Should record
    ↓
-4. Server assigns to Listener-1
+T+0s: Server finds available listeners
+   - Listener-1: online, WebSocket connected, frequency capable ✓
    - Creates listener_assignment record
-   - expected_start: now + 10 seconds (runner prep time)
-   - expected_duration: 180 seconds (estimated)
    ↓
-5. Listener-1 receives assignment
-   - Configures GNU Radio flowgraph
-   - Sets frequency to match challenge
-   - Starts recording 5 seconds early (pre-roll)
-   - Reports: POST /recording_started
+T+0s: Server pushes assignment via WebSocket
+   - Event: 'recording_assignment'
+   - expected_start: T+10s (runner prep time)
+   - expected_duration: 180s
+   - Listener-1 receives notification IMMEDIATELY (no polling delay)
    ↓
-6. Runner-1 begins transmission
+T+0s-10s: Both agents prepare simultaneously
+   - Runner-1: Downloads files (if needed), configures GNU Radio
+   - Listener-1: Configures receive flowgraph, tunes to frequency
+   ↓
+T+5s: Listener-1 starts pre-roll recording
+   - GNU Radio receive chain activated
+   - Recording waterfall data (5s before transmission expected)
+   ↓
+T+10s: Runner-1 begins actual transmission
+   - Reports via POST /transmission_started (optional)
+   - Server pushes 'transmission_started' to Listener-1 via WebSocket
    - Transmits challenge signal
    ↓
-7. Listener-1 captures signal
+T+10s-190s: Listener-1 captures signal
    - GNU Radio receives and processes IQ samples
    - FFT frames accumulated in memory
    - Waterfall data building in real-time
    ↓
-8. Transmission completes (3 minutes later)
-   - Runner-1 reports completion
-   - Listener-1 continues recording 5 seconds (post-roll)
+T+190s: Transmission completes
+   - Runner-1 reports: POST /complete
+   - Server pushes 'transmission_complete' to Listener-1 via WebSocket
    ↓
-9. Listener-1 generates waterfall
+T+190s-195s: Listener-1 continues post-roll
+   - Records 5 more seconds
+   - Total recording: 190s (5s pre + 180s actual + 5s post)
+   ↓
+T+195s: Listener-1 stops recording and generates waterfall
    - Calls waterfall_gen.generate_image()
-   - PNG file saved locally
-   - Reports: POST /recording_complete
+   - PNG file saved locally (e.g., 1000x3800 pixels, ~400KB)
+   - Reports: WebSocket 'recording_status' with status='completed'
    ↓
-10. Listener-1 uploads image
-    - POST /recordings/{id}/upload (multipart form)
-    - Server stores in files/waterfalls/{recording_id}.png
-    ↓
-11. Server updates database
-    - recording status: recording → completed
-    - image_path, dimensions, duration saved
-    ↓
-12. Admin views in WebUI
-    - Challenges table shows recording_count badge
-    - Click "View Recordings" opens modal
-    - Waterfall displayed with zoom/scroll
+T+196s: Listener-1 uploads image
+   - POST /recordings/{id}/upload (multipart form)
+   - Server stores in files/waterfalls/{recording_id}.png
+   ↓
+T+197s: Server updates database
+   - recording status: recording → completed
+   - image_path, dimensions, duration saved
+   ↓
+T+197s: Admin views in WebUI (real-time)
+   - Dashboard shows new recording badge
+   - Challenges table shows recording_count badge
+   - Click "View Recordings" opens modal
+   - Waterfall displayed with zoom/scroll
 ```
+
+**Key Timing Benefits of WebSocket Approach:**
+- **T+0s**: Listener notified immediately when runner assigned (vs T+0-5s with polling)
+- **T+5s**: Pre-roll starts precisely 5s before expected transmission
+- **T+10s**: Transmission starts exactly when expected
+- **Perfect synchronization**: No missed starts due to polling delays
+- **Minimal waste**: Listener only records when needed (priority-driven)
 
 #### 6.2 Priority Scheduling Example
 
@@ -1145,22 +1360,30 @@ Priority Calculation (using updated algorithm):
 6. NBFM_2: ~4 (5 transmissions × (30 min / 60 min) = 5 × 0.5)
 7. CW_1: ~0.3 (2 transmissions × (10 min / 60 min) = 2 × 0.17)
 
-When listener agent polls:
-- Server calculates priorities for all eligible challenges
-- Selects NBFM_3 (highest priority, never recorded)
-- If NBFM_3 not currently assigned to runner agent:
-  - Wait for next assignment (or queue for next transmission)
-- If NBFM_3 currently assigned to runner agent:
-  - Create listener assignment immediately
-  - Listener agent begins recording
-- After recording NBFM_3:
-  - NBFM_3 priority drops to 0 (just recorded)
-  - Next poll will select CW_2 (next highest priority)
+When runner agents are assigned challenges:
+- Server calculates priority for each challenge at assignment time
+- Priority > 10: Assign listener and push via WebSocket
+- Priority ≤ 10: Skip recording (recently recorded)
 
-Result: Listener naturally rotates through all challenges, prioritizing:
+Example sequence over 1 hour:
+1. NBFM_3 assigned to runner → Priority 1000 → Listener records
+2. CW_2 assigned to runner → Priority 1000 → Listener records
+3. SSB_1 assigned to runner → Priority 267 → Listener records
+4. NBFM_1 assigned to runner → Priority 67 → Listener records
+5. FHSS_1 assigned to runner → Priority 17 → Listener records
+6. NBFM_2 assigned to runner → Priority 4 → Skip (recently recorded)
+7. CW_1 assigned to runner → Priority 0.3 → Skip (just recorded)
+
+After 1 hour:
+- 5 challenges recorded (never-recorded + high priority)
+- 2 challenges skipped (low priority, recently recorded)
+- Listener utilized efficiently (~50% duty cycle)
+
+Result: Listener naturally samples challenges, prioritizing:
 - Challenges never recorded (immediate attention)
 - Challenges with many transmissions since last recording
 - Challenges not recorded in a long time (even if few transmissions)
+- Skips challenges recently recorded (avoids waste)
 ```
 
 ### 7. Storage and Retention
