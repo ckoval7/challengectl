@@ -50,7 +50,7 @@
                   type="info"
                   size="small"
                 >
-                  Random: {{ scope.row.config.frequency_ranges.join(', ') }}
+                  Random: {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
                 </el-tag>
               </template>
               <template v-else>
@@ -221,9 +221,14 @@
               <el-option
                 v-for="range in availableFrequencyRanges"
                 :key="range.name"
-                :label="`${range.name} - ${range.description} (${formatFrequency(range.min_hz)} - ${formatFrequency(range.max_hz)})`"
+                :label="range.display_name || range.name"
                 :value="range.name"
-              />
+              >
+                <span style="font-weight: 500">{{ range.display_name || range.name }}</span>
+                <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px">
+                  {{ range.description }}
+                </span>
+              </el-option>
             </el-select>
             <div class="text-sm text-gray-500 mt-5">
               A random frequency will be selected from the chosen range(s) for each transmission
@@ -664,7 +669,7 @@ print(response.json())</code></pre>
                   type="info"
                   size="small"
                 >
-                  Random: {{ scope.row.config.frequency_ranges.join(', ') }}
+                  Random: {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
                 </el-tag>
               </template>
               <template v-else>
@@ -1183,6 +1188,16 @@ export default {
       return `${freq} Hz`
     }
 
+    const getDisplayNameForRange = (rangeName) => {
+      const range = availableFrequencyRanges.value.find(r => r.name === rangeName)
+      return range?.display_name || rangeName
+    }
+
+    const formatFrequencyRanges = (ranges) => {
+      if (!ranges || ranges.length === 0) return 'N/A'
+      return ranges.map(r => getDisplayNameForRange(r)).join(', ')
+    }
+
     onMounted(() => {
       loadChallenges()
       loadFrequencyRanges()
@@ -1228,6 +1243,7 @@ export default {
       saveEditedChallenge,
       deleteChallenge,
       formatFrequency,
+      formatFrequencyRanges,
     }
   }
 }

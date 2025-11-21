@@ -3120,9 +3120,21 @@ radios:
                     public_challenge['frequency'] = frequency
                     public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
                 elif frequency_ranges:
-                    # Show named frequency ranges
+                    # Show named frequency ranges with display names
                     public_challenge['frequency_ranges'] = frequency_ranges
-                    public_challenge['frequency_display'] = f"Random ({', '.join(frequency_ranges)})"
+                    # Get display names for the ranges
+                    display_names = []
+                    for range_name in frequency_ranges:
+                        # Look up the display name from config
+                        freq_range_config = next(
+                            (r for r in self.get_frequency_ranges() if r.get('name') == range_name),
+                            None
+                        )
+                        if freq_range_config and 'display_name' in freq_range_config:
+                            display_names.append(freq_range_config['display_name'])
+                        else:
+                            display_names.append(range_name)
+                    public_challenge['frequency_display'] = f"Random ({', '.join(display_names)})"
 
             # Show last transmission time if enabled (default: True)
             if public_view.get('show_last_tx_time', True):
