@@ -2578,6 +2578,44 @@ class ChallengeCtlAPI:
             recordings = self.db.get_recordings_for_challenge(challenge_id, limit=min(limit, 200))
             return jsonify({'recordings': recordings}), 200
 
+        # Unified agents query endpoint (admin)
+        @self.app.route('/api/agents', methods=['GET'])
+        @self.require_admin_auth
+        def get_agents():
+            """Get all agents (runners and listeners)."""
+            agent_type = request.args.get('type')  # Optional filter: 'runner' or 'listener'
+            agents = self.db.get_all_agents(agent_type=agent_type)
+
+            # Parse devices JSON for each agent
+            for agent in agents:
+                if agent.get('devices'):
+                    try:
+                        agent['devices'] = json.loads(agent['devices'])
+                    except (json.JSONDecodeError, TypeError):
+                        agent['devices'] = []
+
+            return jsonify({'agents': agents}), 200
+
+        @self.app.route('/api/agents/<agent_id>/enable', methods=['POST'])
+        @self.require_admin_auth
+        def enable_agent(agent_id):
+            """Enable an agent (runner or listener)."""
+            success = self.db.enable_agent(agent_id)
+            if success:
+                return jsonify({'status': 'enabled'}), 200
+            else:
+                return jsonify({'error': 'Agent not found'}), 404
+
+        @self.app.route('/api/agents/<agent_id>/disable', methods=['POST'])
+        @self.require_admin_auth
+        def disable_agent(agent_id):
+            """Disable an agent (runner or listener)."""
+            success = self.db.disable_agent(agent_id)
+            if success:
+                return jsonify({'status': 'disabled'}), 200
+            else:
+                return jsonify({'error': 'Agent not found'}), 404
+
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
         @self.require_admin_auth

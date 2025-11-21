@@ -497,6 +497,125 @@
         </el-dialog>
       </el-tab-pane>
 
+      <!-- Listeners Tab -->
+      <el-tab-pane
+        label="Listeners"
+        name="listeners"
+      >
+        <div class="tab-header">
+          <p class="info-text">
+            Listener agents capture RF spectrum and generate waterfall images when transmissions occur.
+            They connect via WebSocket for real-time coordination.
+          </p>
+        </div>
+
+        <el-table
+          :data="listeners"
+          class="w-full"
+        >
+          <el-table-column
+            prop="agent_id"
+            label="Listener ID"
+            width="180"
+          />
+          <el-table-column
+            prop="hostname"
+            label="Hostname"
+            width="200"
+          />
+          <el-table-column
+            prop="ip_address"
+            label="IP Address"
+            width="150"
+          />
+          <el-table-column
+            label="Status"
+            width="150"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-tag
+                  :type="scope.row.status === 'online' ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ scope.row.status }}
+                </el-tag>
+                <el-tag
+                  v-if="!scope.row.enabled"
+                  type="warning"
+                  size="small"
+                >
+                  disabled
+                </el-tag>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="WebSocket"
+            width="150"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="scope.row.websocket_connected ? 'success' : 'warning'"
+                size="small"
+              >
+                {{ scope.row.websocket_connected ? 'Connected' : 'Disconnected' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Devices"
+            width="100"
+          >
+            <template #default="scope">
+              {{ scope.row.devices?.length || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Last Heartbeat"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            width="200"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-button
+                  v-if="scope.row.enabled"
+                  size="small"
+                  type="warning"
+                  @click="disableListener(scope.row.agent_id)"
+                >
+                  Disable
+                </el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  type="success"
+                  @click="enableListener(scope.row.agent_id)"
+                >
+                  Enable
+                </el-button>
+              </el-space>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div
+          v-if="listeners.length === 0"
+          class="empty-state"
+        >
+          <p>No listener agents registered.</p>
+          <p>Deploy listener agents with SDR hardware to capture spectrum recordings.</p>
+          <p>See <code>listener/README.md</code> for setup instructions.</p>
+        </div>
+      </el-tab-pane>
+
       <!-- Provisioning Keys Tab -->
       <el-tab-pane
         v-if="userPermissions.includes('create_provisioning_key')"
@@ -720,6 +839,7 @@ export default {
   name: 'Runners',
   setup() {
     const runners = ref([])
+    const listeners = ref([])
     const addRunnerDialogVisible = ref(false)
     const addRunnerForm = ref({
       runnerName: '',
@@ -750,6 +870,36 @@ export default {
       } catch (error) {
         console.error('Error loading runners:', error)
         ElMessage.error('Failed to load runners')
+      }
+    }
+
+    const loadAgents = async () => {
+      try {
+        // Try to load from unified /agents endpoint first
+        // Fallback to /runners if not available (backward compatibility)
+        let agentsData = []
+
+        try {
+          const response = await api.get('/agents')
+          agentsData = response.data.agents || []
+        } catch (err) {
+          // Fallback to old endpoint
+          const response = await api.get('/runners')
+          agentsData = (response.data.runners || []).map(r => ({
+            ...r,
+            agent_id: r.runner_id,
+            agent_type: 'runner',
+            websocket_connected: false
+          }))
+        }
+
+        // Filter by agent type
+        runners.value = agentsData.filter(a => a.agent_type === 'runner')
+        listeners.value = agentsData.filter(a => a.agent_type === 'listener')
+
+      } catch (error) {
+        console.error('Error loading agents:', error)
+        ElMessage.error('Failed to load agents')
       }
     }
 
@@ -1119,6 +1269,28 @@ radios:
       }
     }
 
+    const enableListener = async (listenerId) => {
+      try {
+        await api.post(`/agents/${listenerId}/enable`)
+        ElMessage.success('Listener enabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error enabling listener:', error)
+        ElMessage.error('Failed to enable listener')
+      }
+    }
+
+    const disableListener = async (listenerId) => {
+      try {
+        await api.post(`/agents/${listenerId}/disable`)
+        ElMessage.success('Listener disabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error disabling listener:', error)
+        ElMessage.error('Failed to disable listener')
+      }
+    }
+
     const kickRunner = async (runnerId) => {
       try {
         await ElMessageBox.confirm(
@@ -1178,13 +1350,45 @@ radios:
       }
     }
 
+    const handleListenerStatusEvent = (event) => {
+      console.log('Agents page received listener_status event:', event)
+
+      const listener = listeners.value.find(l => l.agent_id === event.agent_id || l.agent_id === event.listener_id)
+
+      if (event.status === 'online') {
+        if (!listener) {
+          // New listener registered, reload full list
+          console.log('New listener detected, reloading agents')
+          loadAgents()
+        } else {
+          // Update existing listener status
+          console.log('Updating listener to online:', event.agent_id)
+          listener.status = 'online'
+          if (event.last_heartbeat) {
+            listener.last_heartbeat = event.last_heartbeat
+          }
+          if (event.websocket_connected !== undefined) {
+            listener.websocket_connected = event.websocket_connected
+          }
+        }
+      } else if (event.status === 'offline') {
+        if (listener) {
+          // Mark listener as offline
+          console.log('Updating listener to offline:', event.agent_id)
+          listener.status = 'offline'
+          listener.websocket_connected = false
+        }
+      }
+    }
+
     onMounted(() => {
-      loadRunners()
+      loadAgents()  // Load both runners and listeners
       loadProvisioningKeys()
 
       // Connect WebSocket for real-time updates
       websocket.connect()
       websocket.on('runner_status', handleRunnerStatusEvent)
+      websocket.on('listener_status', handleListenerStatusEvent)
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
     })
 
@@ -1302,6 +1506,7 @@ curl -k \\
     return {
       activeTab,
       runners,
+      listeners,
       addRunnerDialogVisible,
       addRunnerForm,
       enrollmentData,
@@ -1324,6 +1529,8 @@ curl -k \\
       downloadReEnrollConfig,
       enableRunner,
       disableRunner,
+      enableListener,
+      disableListener,
       kickRunner,
       provisioningKeys,
       createProvKeyDialogVisible,
