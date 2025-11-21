@@ -18,6 +18,7 @@ This document provides a comprehensive reference for the ChallengeCtl REST API. 
   - [Runner Enrollment](#runner-enrollment)
   - [Provisioning API Keys](#provisioning-api-keys)
   - [Challenge Management](#challenge-management)
+  - [Frequency Range Management](#frequency-range-management)
   - [Transmissions](#transmissions)
   - [System Control](#system-control)
   - [File Management](#file-management)
@@ -1477,6 +1478,90 @@ Cookie: session=...
   "status": "success",
   "message": "Configuration reloaded successfully",
   "challenges_loaded": 10
+}
+```
+
+---
+
+### Frequency Range Management
+
+Requires admin authentication.
+
+#### GET /api/frequency-ranges
+
+Get all configured frequency ranges.
+
+**Request:**
+```http
+GET /api/frequency-ranges HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "frequency_ranges": [
+    {
+      "name": "ham_144",
+      "display_name": "2 Meter Ham Band",
+      "description": "2m Amateur Radio Band (144-148 MHz)",
+      "min_hz": 144000000,
+      "max_hz": 148000000
+    },
+    {
+      "name": "ham_440",
+      "display_name": "70 Centimeter Ham Band",
+      "description": "70cm Amateur Radio Band (420-450 MHz)",
+      "min_hz": 420000000,
+      "max_hz": 450000000
+    },
+    {
+      "name": "ism_433",
+      "display_name": "433 MHz ISM Band",
+      "description": "433 MHz ISM Band (433.05-434.79 MHz)",
+      "min_hz": 433050000,
+      "max_hz": 434790000
+    }
+  ]
+}
+```
+
+**Usage:**
+- Called by the web UI to populate the frequency range dropdown
+- Used during challenge creation to validate range names
+- Returns all ranges defined in `server-config.yml`
+
+#### POST /api/frequency-ranges/reload
+
+Reload frequency range configuration from `server-config.yml` without restarting the server.
+
+**Request:**
+```http
+POST /api/frequency-ranges/reload HTTP/1.1
+Cookie: session=...
+X-CSRF-Token: csrf_token_value
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Frequency ranges reloaded successfully",
+  "count": 8
+}
+```
+
+**Usage:**
+- Called when frequency ranges are added or modified in the config file
+- Accessible via "Reload" button in the web UI frequency range selector
+- Does not require server restart
+- Immediately makes new ranges available for challenge creation
+
+**Error Response:**
+```json
+{
+  "error": "Failed to reload configuration",
+  "details": "YAML parse error on line 52"
 }
 ```
 

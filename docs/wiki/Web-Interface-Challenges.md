@@ -102,12 +102,51 @@ For comprehensive documentation on challenge configuration, see the [Challenge M
 
 ### Workflow
 
-1. Enter basic information (name, modulation, frequency)
-2. Configure challenge content (flag text or file upload)
-3. Set timing parameters (min/max delay, priority)
-4. Configure public dashboard visibility (select which fields are visible on public dashboard)
-5. Configure modulation-specific settings (if applicable)
-6. Click "Create Challenge"
+1. Enter basic information (name, modulation)
+2. Select frequency mode and configure frequency
+3. Configure challenge content (flag text or file upload)
+4. Set timing parameters (min/max delay, priority)
+5. Configure public dashboard visibility (select which fields are visible on public dashboard)
+6. Configure modulation-specific settings (if applicable)
+7. Click "Create Challenge"
+
+### Frequency Mode Selection
+
+ChallengeCtl provides three frequency modes for flexible challenge configuration:
+
+**1. Single Frequency Mode**
+- Specify an exact transmission frequency in MHz
+- Frequency input accepts 0.001 MHz (1 kHz) precision
+- Range: 1-6000 MHz
+- Use when you want consistent, predictable frequency allocation
+- Example: `146.550` MHz for 2m calling frequency
+
+**2. Named Ranges Mode**
+- Select one or more predefined frequency ranges from a dropdown
+- Ranges are defined in `server-config.yml` under `frequency_ranges`
+- System randomly selects a frequency from the chosen ranges on each transmission
+- Multiple ranges can be selected for wider frequency distribution
+- Dropdown shows human-friendly names (e.g., "2 Meter Ham Band")
+- Click "Reload" button to refresh the list if ranges are added to config
+- Use for dynamic frequency allocation within specific bands
+
+**3. Manual Range Mode**
+- Specify custom minimum and maximum frequencies in MHz
+- Both fields accept 0.001 MHz (1 kHz) precision
+- Range for each field: 1-6000 MHz
+- System randomly selects a frequency within your specified range on each transmission
+- Use for custom frequency bands not in the predefined ranges
+- Example: `146.000` MHz to `146.100` MHz for a narrow custom range
+
+**Frequency Display in Tables:**
+- Single frequency: Shows frequency in MHz (e.g., "146.550 MHz")
+- Named ranges: Shows range names with tooltips (e.g., "2 Meter Ham Band, 70 Centimeter Ham Band")
+- Manual range: Shows range in MHz (e.g., "146.000-146.100 MHz")
+
+**Public Dashboard Display:**
+- Single frequency: Displays the exact frequency
+- Named ranges: Shows human-friendly range names in blue, text-wrapped for projector visibility
+- Manual range: Shows the frequency range in MHz
 
 ### Priority Field
 

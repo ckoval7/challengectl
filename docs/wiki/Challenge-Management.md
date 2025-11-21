@@ -92,11 +92,29 @@ The Create Challenge form provides a guided interface for configuring new challe
   - **LoRa** - Long-range low-power digital
 - The form dynamically shows relevant fields based on modulation type
 
-**Frequency** (required):
-- Transmission frequency in Hz
-- Must be within your country's amateur radio or ISM bands
-- Must match the frequency limits of at least one runner
-- Examples: `146550000` (146.55 MHz in 2m band)
+**Frequency Mode** (required):
+ChallengeCtl supports three ways to specify frequencies for challenges:
+
+1. **Single Frequency**: Specify an exact frequency in MHz
+   - Use when you want a challenge to always transmit on the same frequency
+   - Example: `146.550` MHz for 2m simplex calling frequency
+
+2. **Named Ranges**: Select one or more predefined frequency ranges
+   - System randomly selects a frequency from the configured ranges
+   - Ranges are defined in `server-config.yml` under `frequency_ranges`
+   - When multiple ranges are selected, one is chosen randomly, then a frequency within that range
+   - Example ranges: "2 Meter Ham Band", "70 Centimeter Ham Band"
+   - See [Configuration Reference](Configuration-Reference#frequency-ranges) for range definitions
+
+3. **Manual Range**: Specify a custom minimum and maximum frequency in MHz
+   - System randomly selects a frequency within your specified range
+   - Use for custom frequency bands not in the predefined ranges
+   - Example: `146.000` MHz to `146.100` MHz
+
+All frequency inputs accept MHz with 0.001 MHz (1 kHz) precision. Frequencies must:
+- Be within your country's amateur radio or ISM bands
+- Match the frequency limits of at least one runner
+- Be within your equipment's capabilities
 
 **Enabled**:
 - Toggle to enable/disable the challenge immediately
@@ -233,8 +251,9 @@ Your YAML file can use either format:
 
 **Format 1: List of challenges**
 ```yaml
+# Single frequency example
 - name: NBFM_FLAG_1
-  frequency: 146550000
+  frequency: 146550000  # Hz (146.550 MHz)
   modulation: nbfm
   flag: example_voice.wav
   wav_samplerate: 48000
@@ -242,8 +261,23 @@ Your YAML file can use either format:
   max_delay: 90
   enabled: true
 
+# Named frequency ranges example
+- name: NBFM_FLAG_2
+  frequency_ranges:  # Use one or more named ranges
+    - ham_144
+    - ham_220
+  modulation: nbfm
+  flag: example_voice.wav
+  wav_samplerate: 48000
+  min_delay: 60
+  max_delay: 90
+  enabled: true
+
+# Manual frequency range example
 - name: MORSE_FLAG_1
-  frequency: 146550000
+  manual_frequency_range:
+    min_hz: 146000000  # 146.000 MHz
+    max_hz: 146100000  # 146.100 MHz
   modulation: cw
   flag: 'SECRET MESSAGE'
   speed: 35
@@ -255,8 +289,9 @@ Your YAML file can use either format:
 **Format 2: Dict with challenges key**
 ```yaml
 challenges:
+  # Single frequency example
   - name: NBFM_FLAG_1
-    frequency: 146550000
+    frequency: 146550000  # Hz (146.550 MHz)
     modulation: nbfm
     flag: example_voice.wav
     wav_samplerate: 48000
@@ -264,8 +299,11 @@ challenges:
     max_delay: 90
     enabled: true
 
+  # Named frequency ranges example
   - name: FHSS_FLAG_1
-    frequency: 146550000
+    frequency_ranges:  # Random frequency from these ranges
+      - ham_440
+      - ham_900
     modulation: fhss
     flag: hopping_voice.wav
     wav_samplerate: 48000
@@ -273,6 +311,18 @@ challenges:
     hop_rate: 10
     hop_time: 60
     seed: RFHS
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # Manual frequency range example
+  - name: CW_FLAG_1
+    manual_frequency_range:
+      min_hz: 420000000  # 420.000 MHz
+      max_hz: 450000000  # 450.000 MHz
+    modulation: cw
+    flag: 'CQ CQ CQ DE RFCTF K'
+    speed: 35
     min_delay: 60
     max_delay: 90
     enabled: true
@@ -370,7 +420,9 @@ Each challenge shows:
 - Make changes directly to the JSON
 - Click "Save" to apply changes
 
-**JSON Editing Example**:
+**JSON Editing Examples**:
+
+Single Frequency:
 ```json
 {
   "name": "NBFM_FLAG_1",
@@ -378,6 +430,39 @@ Each challenge shows:
   "modulation": "nbfm",
   "flag": "challenges/example.wav",
   "wav_samplerate": 48000,
+  "min_delay": 60,
+  "max_delay": 90,
+  "enabled": true,
+  "priority": 0
+}
+```
+
+Named Frequency Ranges:
+```json
+{
+  "name": "NBFM_FLAG_2",
+  "frequency_ranges": ["ham_144", "ham_220"],
+  "modulation": "nbfm",
+  "flag": "challenges/example.wav",
+  "wav_samplerate": 48000,
+  "min_delay": 60,
+  "max_delay": 90,
+  "enabled": true,
+  "priority": 0
+}
+```
+
+Manual Frequency Range:
+```json
+{
+  "name": "CW_FLAG_1",
+  "manual_frequency_range": {
+    "min_hz": 146000000,
+    "max_hz": 146100000
+  },
+  "modulation": "cw",
+  "flag": "CQ CQ CQ DE RFCTF K",
+  "speed": 35,
   "min_delay": 60,
   "max_delay": 90,
   "enabled": true,
@@ -906,10 +991,15 @@ Now that you understand challenge management, you can:
 
 **Required for all challenges**:
 - `name` - Unique challenge identifier
-- `frequency` - Transmission frequency in Hz
+- `frequency` OR `frequency_ranges` OR `manual_frequency_range` - See frequency options below
 - `modulation` - Modulation type
 - `min_delay` - Minimum seconds between transmissions
 - `max_delay` - Maximum seconds between transmissions
+
+**Frequency Options** (choose one):
+- `frequency` - Single transmission frequency in Hz (e.g., `146550000` for 146.550 MHz)
+- `frequency_ranges` - Array of named range identifiers (e.g., `["ham_144", "ham_440"]`)
+- `manual_frequency_range` - Custom frequency range with `min_hz` and `max_hz` fields
 
 **Optional for all challenges**:
 - `enabled` - Enable/disable (default: true)
