@@ -100,9 +100,9 @@
           >
             <template #default="scope">
               <span v-if="scope.row.frequency_display">
-                <template v-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length > 0">
+                <template v-if="scope.row.frequency_ranges || scope.row.manual_frequency_range">
                   <div class="frequency-ranges-display">
-                    {{ scope.row.frequency_display.replace('Random (', '').replace(')', '') }}
+                    {{ scope.row.frequency_display }}
                   </div>
                 </template>
                 <template v-else>

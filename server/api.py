@@ -3224,7 +3224,7 @@ radios:
                             display_names.append(freq_range_config['display_name'])
                         else:
                             display_names.append(range_name)
-                    public_challenge['frequency_display'] = f"Random ({', '.join(display_names)})"
+                    public_challenge['frequency_display'] = ', '.join(display_names)
                 elif manual_frequency_range:
                     # Show manual frequency range
                     min_hz = manual_frequency_range.get('min_hz')
@@ -3233,7 +3233,7 @@ radios:
                         min_mhz = min_hz / 1_000_000
                         max_mhz = max_hz / 1_000_000
                         public_challenge['manual_frequency_range'] = manual_frequency_range
-                        public_challenge['frequency_display'] = f"Random ({min_mhz:.3f}-{max_mhz:.3f} MHz)"
+                        public_challenge['frequency_display'] = f"{min_mhz:.3f}-{max_mhz:.3f} MHz"
 
             # Show last transmission time if enabled (default: True)
             if public_view.get('show_last_tx_time', True):
