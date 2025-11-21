@@ -96,33 +96,19 @@
           <el-table-column
             v-if="hasAnyFrequencyVisible"
             label="Frequency"
-            width="180"
+            width="240"
           >
             <template #default="scope">
               <span v-if="scope.row.frequency_display">
-                <template v-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length > 1">
-                  <el-tooltip
-                    :content="scope.row.frequency_display"
-                    placement="top"
-                  >
-                    <el-tag
-                      type="info"
-                      size="small"
-                    >
-                      {{ scope.row.frequency_ranges.length }} ranges
-                    </el-tag>
-                  </el-tooltip>
-                </template>
-                <template v-else-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length === 1">
-                  <el-tag
-                    type="info"
-                    size="small"
-                  >
+                <template v-if="scope.row.frequency_ranges && scope.row.frequency_ranges.length > 0">
+                  <div class="frequency-ranges-display">
                     {{ scope.row.frequency_display.replace('Random (', '').replace(')', '') }}
-                  </el-tag>
+                  </div>
                 </template>
                 <template v-else>
-                  {{ scope.row.frequency_display }}
+                  <div class="frequency-display">
+                    {{ scope.row.frequency_display }}
+                  </div>
                 </template>
               </span>
               <span
@@ -468,6 +454,37 @@ export default {
 
 .ws-status.disconnected .ws-dot {
   background-color: #909399;
+}
+
+/* Frequency display - optimized for projectors */
+.frequency-display {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.frequency-ranges-display {
+  font-size: 1.05em;
+  font-weight: 500;
+  color: #409eff;
+  line-height: 1.5;
+  word-wrap: break-word;
+  white-space: normal;
+  padding: 4px 0;
+}
+
+/* Dark mode frequency colors */
+html.dark .frequency-ranges-display {
+  color: #79bbff;
+}
+
+/* Make frequency column cells wrap text */
+:deep(.el-table__body-wrapper .el-table__cell) {
+  overflow: visible !important;
+}
+
+:deep(.el-table__body-wrapper .el-table__row) {
+  height: auto !important;
 }
 
 /* Mobile responsiveness */
