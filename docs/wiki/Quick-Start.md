@@ -179,8 +179,12 @@ Listeners capture RF transmissions and generate waterfall images for spectrum vi
 
 ### Quick Listener Setup
 
-1. **Enroll the listener** via the Web UI (Agents → Provisioning tab)
-2. **Configure `listener-config.yml`** with the enrollment credentials
+1. **Enroll the listener** via the Web UI:
+   - Navigate to **Agents → Listeners** tab
+   - Click **"Add Listener"** button
+   - Enter listener name and click **"Generate Token"**
+   - Copy or download the generated `listener-config.yml`
+2. **Install dependencies**: GNU Radio, gr-osmosdr, and Python packages (see [Listener Setup](Listener-Setup))
 3. **Start the listener**: `./listener/listener.py --config listener-config.yml`
 
 Listeners connect via WebSocket and receive recording assignments automatically based on transmission priority. Waterfall images are uploaded to the server and viewable in the web interface.

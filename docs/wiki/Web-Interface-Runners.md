@@ -29,6 +29,47 @@ Each runner shows:
 - Shows "None" when idle
 - Shows challenge name when busy
 
+## Adding a New Runner
+
+The **Add Runner** button allows you to enroll new runner agents through the web interface.
+
+### Enrollment Steps
+
+1. **Click "Add Runner"** button in the Runners tab
+2. **Configure Runner Details**:
+   - **Runner Name**: Unique identifier (e.g., `sdr-station-1`)
+   - **Token Expiry**: Choose expiration time (1 hour, 6 hours, 24 hours, or 7 days)
+   - **Verify SSL**: Enable/disable SSL verification (disable only for development)
+3. **Configure SDR Devices** (optional):
+   - Add one or more SDR devices
+   - Select device model (HackRF, BladeRF, USRP, LimeSDR)
+   - Configure RF gain, IF gain (HackRF only)
+   - Set frequency limits
+4. **Click "Generate Token"**
+
+### Enrollment Credentials
+
+After generation, you'll receive:
+- **Enrollment Token**: Single-use token for initial registration
+- **API Key**: Permanent credential for the runner
+- **Complete YAML Configuration**: Ready-to-use `runner-config.yml`
+
+**Important**: Copy or download these credentials immediately - they're only shown once!
+
+### Using the Credentials
+
+**Option 1 - Copy Configuration**:
+- Click "Copy Configuration" to copy the complete YAML
+- Save to `runner-config.yml` on your runner machine
+- Start the runner: `python -m challengectl.runner.runner`
+
+**Option 2 - Download File**:
+- Click "Download as File" to save `runner-config.yml`
+- Transfer to your runner machine
+- Start the runner
+
+The runner will automatically enroll on first connection using the enrollment token.
+
 ## Runner Actions
 
 **Enable Runner**: Allow the runner to receive task assignments
@@ -85,6 +126,54 @@ Each listener shows:
 - Shows "Never" if listener registered but never sent a heartbeat
 
 **Recordings**: Total number of recordings captured by this listener
+
+## Adding a New Listener
+
+The **Add Listener** button allows you to enroll new listener agents through the web interface.
+
+### Enrollment Steps
+
+1. **Click "Add Listener"** button in the Listeners tab
+2. **Configure Listener Details**:
+   - **Listener Name**: Unique identifier (e.g., `listener-1`)
+   - **Token Expiry**: Choose expiration time (1 hour, 6 hours, 24 hours, or 7 days)
+3. **Configure SDR Device** (optional):
+   - **Device Type**: Select SDR model (RTL-SDR, HackRF, USRP, BladeRF)
+   - **Device ID**: osmosdr device string (e.g., `rtlsdr=0`, `hackrf=0`)
+4. **Click "Generate Token"**
+
+### Enrollment Credentials
+
+After generation, you'll receive:
+- **Enrollment Token**: Single-use token for initial registration
+- **API Key**: Permanent credential for the listener
+- **Complete YAML Configuration**: Ready-to-use `listener-config.yml`
+
+The generated configuration includes all required settings:
+- Agent configuration (agent_id, server_url, api_key, WebSocket settings)
+- Recording parameters (sample_rate: 2 MHz, fft_size: 1024, frame_rate: 20)
+- SDR device configuration (device id and type)
+- Default gain settings (40 dB - adjust as needed)
+- Pre/post roll buffers (5 seconds each)
+- Logging configuration
+
+**Important**: Copy or download these credentials immediately - they're only shown once!
+
+### Using the Credentials
+
+**Option 1 - Copy Configuration**:
+- Click "Copy Configuration" to copy the complete YAML
+- Save to `listener-config.yml` on your listener machine
+- Install GNU Radio and dependencies (see [Listener Setup](Listener-Setup))
+- Start the listener: `./listener/listener.py --config listener-config.yml`
+
+**Option 2 - Download File**:
+- Click "Download as File" to save `listener-config.yml`
+- Transfer to your listener machine
+- Install GNU Radio and dependencies
+- Start the listener
+
+The listener will automatically enroll on first connection using the enrollment token and connect via WebSocket for real-time recording assignments.
 
 ### Listener Actions
 
