@@ -992,7 +992,7 @@ def main(options=None):
                 freq_range = select_freq(selected_range_name, config)
                 if freq_range:
                     txfreq_khz = freq_range[0]
-                    txfreq = txfreq_khz * 1000
+                    txfreq = float(txfreq_khz * 1000)  # Convert to Hz as float
                     freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
                 else:
                     logging.error(f"Could not find frequency range: {selected_range_name}")
@@ -1001,16 +1001,16 @@ def main(options=None):
                 # Legacy format: single frequency or band name
                 try:
                     # Frequency in Hz from YAML
-                    txfreq = int(cc_freq1)
+                    txfreq = float(cc_freq1)  # Ensure float type
                     # Convert to kHz for display/legacy compatibility
                     txfreq_khz = txfreq // 1000
-                    freq_or_range = str(txfreq_khz)
+                    freq_or_range = str(int(txfreq_khz))
                 except (ValueError, TypeError):
                     # Named frequency range (e.g., "ham_144")
                     freq_range = select_freq(cc_freq1, config)
                     if freq_range:
                         txfreq_khz = freq_range[0]
-                        txfreq = txfreq_khz * 1000
+                        txfreq = float(txfreq_khz * 1000)  # Convert to Hz as float
                         freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
                     else:
                         logging.error(f"Could not find frequency range: {cc_freq1}")
