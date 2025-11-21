@@ -200,7 +200,10 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="Frequency Mode">
+          <el-form-item
+            label="Frequency Mode"
+            required
+          >
             <el-radio-group v-model="frequencyMode">
               <el-radio label="direct">
                 Single Frequency
@@ -381,7 +384,10 @@
 
           <h3>Timing Configuration</h3>
 
-          <el-form-item label="Min Delay (seconds)">
+          <el-form-item
+            label="Min Delay (seconds)"
+            required
+          >
             <el-input-number
               v-model="challengeForm.min_delay"
               :min="1"
@@ -397,7 +403,10 @@
             </div>
           </el-form-item>
 
-          <el-form-item label="Max Delay (seconds)">
+          <el-form-item
+            label="Max Delay (seconds)"
+            required
+          >
             <el-input-number
               v-model="challengeForm.max_delay"
               :min="challengeForm.min_delay"
