@@ -216,8 +216,10 @@
               <el-select
                 v-model="challengeForm.frequency_ranges"
                 multiple
-                placeholder="Select one or more frequency ranges"
+                placeholder="Select one or more ranges..."
                 style="flex: 1;"
+                collapse-tags
+                collapse-tags-tooltip
               >
                 <el-option
                   v-for="range in availableFrequencyRanges"
