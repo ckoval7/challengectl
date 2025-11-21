@@ -2800,42 +2800,53 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/enrollment/enroll', methods=['POST'])
         @self.limiter.limit("10 per hour")  # Limit enrollment attempts
-        def enroll_runner():
-            """Enroll a new runner using an enrollment token.
+        def enroll_agent():
+            """Enroll a new agent (runner or listener) using an enrollment token.
 
             Request body:
                 enrollment_token: The enrollment token
                 api_key: The API key provided with the token
-                runner_id: Unique identifier for this runner
-                hostname: Hostname of the runner
-                mac_address: Optional MAC address of the runner
-                machine_id: Optional machine ID of the runner
+                agent_id or runner_id: Unique identifier for this agent
+                agent_type: Type of agent ('runner' or 'listener'), defaults to 'runner'
+                hostname: Hostname of the agent
+                mac_address: Optional MAC address of the agent
+                machine_id: Optional machine ID of the agent
                 devices: List of SDR devices
 
             Returns:
                 success: Boolean indicating enrollment success
-                runner_id: The enrolled runner ID
+                agent_id: The enrolled agent ID
             """
             data = request.json
 
             if not data:
                 return jsonify({'error': 'Missing request body'}), 400
 
-            required_fields = ['enrollment_token', 'api_key', 'runner_id', 'hostname', 'devices']
+            # Support both agent_id and runner_id for backward compatibility
+            agent_id = data.get('agent_id') or data.get('runner_id')
+            if not agent_id:
+                return jsonify({'error': 'Missing required field: agent_id or runner_id'}), 400
+
+            # Validate other required fields
+            required_fields = ['enrollment_token', 'api_key', 'hostname', 'devices']
             for field in required_fields:
                 if field not in data:
                     return jsonify({'error': f'Missing required field: {field}'}), 400
 
             enrollment_token = data['enrollment_token']
             api_key = data['api_key']
-            runner_id = data['runner_id']
             hostname = data['hostname']
             mac_address = data.get('mac_address')
             machine_id = data.get('machine_id')
             devices = data['devices']
+            agent_type = data.get('agent_type', 'runner')  # Default to runner for backward compatibility
+
+            # Validate agent_type
+            if agent_type not in ['runner', 'listener']:
+                return jsonify({'error': 'Invalid agent_type. Must be "runner" or "listener"'}), 400
 
             # Verify the enrollment token
-            is_valid, runner_name = self.db.verify_enrollment_token(enrollment_token)
+            is_valid, agent_name = self.db.verify_enrollment_token(enrollment_token)
 
             if not is_valid:
                 logger.warning(f"Invalid or expired enrollment token used from {request.remote_addr}")
@@ -2845,50 +2856,80 @@ class ChallengeCtlAPI:
             token_details = self.db.get_enrollment_token(enrollment_token)
             is_re_enrollment = token_details and token_details.get('re_enrollment_for')
 
-            # Check if runner_id already exists
-            existing_runner = self.db.get_runner(runner_id)
-            if existing_runner and existing_runner.get('api_key_hash') and not is_re_enrollment:
-                return jsonify({'error': 'Runner ID already enrolled'}), 409
+            # Check if agent already exists
+            if agent_type == 'runner':
+                existing_agent = self.db.get_runner(agent_id)
+            else:
+                existing_agent = self.db.get_agent(agent_id)
 
-            # For re-enrollment, verify the runner_id matches
-            if is_re_enrollment and is_re_enrollment != runner_id:
-                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong runner_id {runner_id}")
-                return jsonify({'error': 'Re-enrollment token does not match runner ID'}), 400
+            if existing_agent and existing_agent.get('api_key_hash') and not is_re_enrollment:
+                return jsonify({'error': f'{agent_type.capitalize()} ID already enrolled'}), 409
 
-            # Register or update the runner with the API key and host identifiers
-            success = self.db.register_runner(
-                runner_id=runner_id,
-                hostname=hostname,
-                ip_address=request.remote_addr,
-                mac_address=mac_address,
-                machine_id=machine_id,
-                devices=devices,
-                api_key=api_key
-            )
+            # For re-enrollment, verify the agent_id matches
+            if is_re_enrollment and is_re_enrollment != agent_id:
+                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong agent_id {agent_id}")
+                return jsonify({'error': 'Re-enrollment token does not match agent ID'}), 400
+
+            # Register or update the agent with the API key and host identifiers
+            if agent_type == 'runner':
+                # Use register_runner for backward compatibility
+                success = self.db.register_runner(
+                    runner_id=agent_id,
+                    hostname=hostname,
+                    ip_address=request.remote_addr,
+                    mac_address=mac_address,
+                    machine_id=machine_id,
+                    devices=devices,
+                    api_key=api_key
+                )
+            else:
+                # Use register_agent for listeners
+                success = self.db.register_agent(
+                    agent_id=agent_id,
+                    agent_type=agent_type,
+                    hostname=hostname,
+                    ip_address=request.remote_addr,
+                    devices=devices,
+                    mac_address=mac_address,
+                    machine_id=machine_id,
+                    api_key=api_key
+                )
 
             if not success:
-                return jsonify({'error': 'Failed to register runner'}), 500
+                return jsonify({'error': f'Failed to register {agent_type}'}), 500
 
             # Mark the token as used
-            self.db.mark_token_used(enrollment_token, runner_id)
+            self.db.mark_token_used(enrollment_token, agent_id)
 
-            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr} "
+            logger.info(f"{agent_type.capitalize()} {agent_id} ({agent_name}) enrolled successfully from {request.remote_addr} "
                        f"(MAC: {mac_address}, Machine ID: {machine_id})")
 
             # Broadcast event to WebUI
-            self.broadcast_event('runner_enrolled', {
-                'runner_id': runner_id,
-                'runner_name': runner_name,
+            event_name = 'runner_enrolled' if agent_type == 'runner' else 'listener_enrolled'
+            event_data = {
+                'agent_id': agent_id,
+                'agent_name': agent_name,
+                'agent_type': agent_type,
                 'hostname': hostname,
                 'mac_address': mac_address,
                 'machine_id': machine_id,
                 'timestamp': datetime.now(timezone.utc).isoformat()
-            })
+            }
+            # Add backward compatibility fields
+            if agent_type == 'runner':
+                event_data['runner_id'] = agent_id
+                event_data['runner_name'] = agent_name
+            else:
+                event_data['listener_id'] = agent_id
+                event_data['listener_name'] = agent_name
+
+            self.broadcast_event(event_name, event_data)
 
             return jsonify({
                 'success': True,
-                'runner_id': runner_id,
-                'message': f'Runner {runner_name} enrolled successfully'
+                'agent_id': agent_id,
+                'agent_type': agent_type,
+                'message': f'{agent_type.capitalize()} {agent_name} enrolled successfully'
             }), 201
 
         @self.app.route('/api/enrollment/tokens', methods=['GET'])
