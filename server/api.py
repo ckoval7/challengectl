@@ -1790,12 +1790,13 @@ class ChallengeCtlAPI:
             challenge = self.db.assign_challenge(runner_id)
 
             if challenge:
-                # Process frequency_ranges if present
+                # Process frequency_ranges or manual_frequency_range if present
                 config = challenge['config'].copy()  # Make a copy to avoid modifying stored config
                 frequency_ranges = config.get('frequency_ranges')
+                manual_frequency_range = config.get('manual_frequency_range')
 
                 if frequency_ranges:
-                    # Select random frequency from the ranges
+                    # Select random frequency from named ranges
                     selected_frequency = self.select_random_frequency(frequency_ranges)
                     if selected_frequency:
                         # Replace frequency_ranges with selected frequency
@@ -1806,6 +1807,19 @@ class ChallengeCtlAPI:
                     else:
                         logger.error(f"Failed to select frequency from ranges: {frequency_ranges}")
                         return jsonify({'error': 'Invalid frequency range configuration'}), 500
+                elif manual_frequency_range:
+                    # Select random frequency from manual range
+                    min_hz = manual_frequency_range.get('min_hz')
+                    max_hz = manual_frequency_range.get('max_hz')
+                    if min_hz and max_hz:
+                        selected_frequency = float(random.randint(int(min_hz), int(max_hz)))
+                        config['frequency'] = selected_frequency
+                        # Remove manual_frequency_range from config sent to runner
+                        config.pop('manual_frequency_range', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from manual range {min_hz}-{max_hz}")
+                    else:
+                        logger.error(f"Invalid manual frequency range: {manual_frequency_range}")
+                        return jsonify({'error': 'Invalid manual frequency range configuration'}), 500
                 elif 'frequency' in config:
                     # Ensure existing frequency is a float
                     config['frequency'] = float(config['frequency'])
@@ -3188,6 +3202,7 @@ radios:
             if public_view.get('show_frequency', True):
                 frequency = config.get('frequency')
                 frequency_ranges = config.get('frequency_ranges')
+                manual_frequency_range = config.get('manual_frequency_range')
 
                 if frequency:
                     # Format frequency in MHz for readability
@@ -3210,6 +3225,15 @@ radios:
                         else:
                             display_names.append(range_name)
                     public_challenge['frequency_display'] = f"Random ({', '.join(display_names)})"
+                elif manual_frequency_range:
+                    # Show manual frequency range
+                    min_hz = manual_frequency_range.get('min_hz')
+                    max_hz = manual_frequency_range.get('max_hz')
+                    if min_hz and max_hz:
+                        min_mhz = min_hz / 1_000_000
+                        max_mhz = max_hz / 1_000_000
+                        public_challenge['manual_frequency_range'] = manual_frequency_range
+                        public_challenge['frequency_display'] = f"Random ({min_mhz:.3f}-{max_mhz:.3f} MHz)"
 
             # Show last transmission time if enabled (default: True)
             if public_view.get('show_last_tx_time', True):

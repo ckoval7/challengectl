@@ -63,6 +63,14 @@
                   </el-tag>
                 </el-tooltip>
               </template>
+              <template v-else-if="scope.row.config?.manual_frequency_range">
+                <el-tag
+                  type="warning"
+                  size="small"
+                >
+                  Custom: {{ formatFrequency(scope.row.config.manual_frequency_range.min_hz) }} - {{ formatFrequency(scope.row.config.manual_frequency_range.max_hz) }}
+                </el-tag>
+              </template>
               <template v-else>
                 N/A
               </template>
@@ -200,6 +208,9 @@
               <el-radio label="ranges">
                 Named Ranges
               </el-radio>
+              <el-radio label="manual">
+                Manual Range
+              </el-radio>
             </el-radio-group>
           </el-form-item>
 
@@ -215,6 +226,35 @@
               :step="1000"
               class="w-full"
             />
+          </el-form-item>
+
+          <el-form-item
+            v-if="frequencyMode === 'manual'"
+            label="Custom Frequency Range"
+            required
+          >
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <el-input-number
+                v-model="challengeForm.manual_min_hz"
+                placeholder="Min (Hz)"
+                :min="1000000"
+                :max="6000000000"
+                :step="1000"
+                style="flex: 1;"
+              />
+              <span>to</span>
+              <el-input-number
+                v-model="challengeForm.manual_max_hz"
+                placeholder="Max (Hz)"
+                :min="1000000"
+                :max="6000000000"
+                :step="1000"
+                style="flex: 1;"
+              />
+            </div>
+            <div class="text-sm text-gray-500 mt-5">
+              A random frequency will be selected within this range for each transmission
+            </div>
           </el-form-item>
 
           <el-form-item
@@ -717,6 +757,14 @@ print(response.json())</code></pre>
                   </el-tag>
                 </el-tooltip>
               </template>
+              <template v-else-if="scope.row.config?.manual_frequency_range">
+                <el-tag
+                  type="warning"
+                  size="small"
+                >
+                  Custom: {{ formatFrequency(scope.row.config.manual_frequency_range.min_hz) }} - {{ formatFrequency(scope.row.config.manual_frequency_range.max_hz) }}
+                </el-tag>
+              </template>
               <template v-else>
                 N/A
               </template>
@@ -840,6 +888,8 @@ export default {
       modulation: 'nbfm',
       frequency: 146550000,
       frequency_ranges: [], // Array of named frequency ranges
+      manual_min_hz: null, // Manual range minimum
+      manual_max_hz: null, // Manual range maximum
       enabled: true,
       flag: '',
       min_delay: 60,
@@ -915,6 +965,8 @@ export default {
         modulation: 'nbfm',
         frequency: 146550000,
         frequency_ranges: [],
+        manual_min_hz: null,
+        manual_max_hz: null,
         enabled: true,
         flag: '',
         min_delay: 60,
@@ -966,9 +1018,18 @@ export default {
           ElMessage.error('Frequency is required')
           return
         }
-      } else {
+      } else if (frequencyMode.value === 'ranges') {
         if (!challengeForm.value.frequency_ranges || challengeForm.value.frequency_ranges.length === 0) {
           ElMessage.error('At least one frequency range is required')
+          return
+        }
+      } else if (frequencyMode.value === 'manual') {
+        if (!challengeForm.value.manual_min_hz || !challengeForm.value.manual_max_hz) {
+          ElMessage.error('Both minimum and maximum frequencies are required')
+          return
+        }
+        if (challengeForm.value.manual_min_hz >= challengeForm.value.manual_max_hz) {
+          ElMessage.error('Minimum frequency must be less than maximum frequency')
           return
         }
       }
@@ -993,8 +1054,13 @@ export default {
         // Add frequency or frequency_ranges based on mode
         if (frequencyMode.value === 'direct') {
           config.frequency = challengeForm.value.frequency
-        } else {
+        } else if (frequencyMode.value === 'ranges') {
           config.frequency_ranges = challengeForm.value.frequency_ranges
+        } else if (frequencyMode.value === 'manual') {
+          config.manual_frequency_range = {
+            min_hz: challengeForm.value.manual_min_hz,
+            max_hz: challengeForm.value.manual_max_hz
+          }
         }
 
         // Handle file upload if a file was selected
