@@ -203,7 +203,7 @@
           <el-form-item label="Frequency Mode">
             <el-radio-group v-model="frequencyMode">
               <el-radio label="direct">
-                Direct Frequency
+                Single Frequency
               </el-radio>
               <el-radio label="ranges">
                 Named Ranges
@@ -216,40 +216,43 @@
 
           <el-form-item
             v-if="frequencyMode === 'direct'"
-            label="Frequency (Hz)"
+            label="Frequency (MHz)"
             required
           >
             <el-input-number
-              v-model="challengeForm.frequency"
-              :min="1000000"
-              :max="6000000000"
-              :step="1000"
+              v-model="challengeForm.frequency_mhz"
+              :min="1"
+              :max="6000"
+              :step="0.001"
+              :precision="3"
               class="w-full"
             />
           </el-form-item>
 
           <el-form-item
             v-if="frequencyMode === 'manual'"
-            label="Custom Frequency Range"
+            label="Custom Frequency Range (MHz)"
             required
           >
             <div style="display: flex; gap: 10px; align-items: center;">
               <el-input-number
-                v-model="challengeForm.manual_min_hz"
-                placeholder="Min (Hz)"
-                :min="1000000"
-                :max="6000000000"
-                :step="1000"
-                style="flex: 1;"
+                v-model="challengeForm.manual_min_mhz"
+                placeholder="Min MHz"
+                :min="1"
+                :max="6000"
+                :step="0.001"
+                :precision="3"
+                style="flex: 1; min-width: 180px;"
               />
               <span>to</span>
               <el-input-number
-                v-model="challengeForm.manual_max_hz"
-                placeholder="Max (Hz)"
-                :min="1000000"
-                :max="6000000000"
-                :step="1000"
-                style="flex: 1;"
+                v-model="challengeForm.manual_max_mhz"
+                placeholder="Max MHz"
+                :min="1"
+                :max="6000"
+                :step="0.001"
+                :precision="3"
+                style="flex: 1; min-width: 180px;"
               />
             </div>
             <div class="text-sm text-gray-500 mt-5">
@@ -886,10 +889,10 @@ export default {
     const challengeForm = ref({
       name: '',
       modulation: 'nbfm',
-      frequency: 146550000,
+      frequency_mhz: 146.550, // Stored in MHz for UI
       frequency_ranges: [], // Array of named frequency ranges
-      manual_min_hz: null, // Manual range minimum
-      manual_max_hz: null, // Manual range maximum
+      manual_min_mhz: null, // Manual range minimum in MHz
+      manual_max_mhz: null, // Manual range maximum in MHz
       enabled: true,
       flag: '',
       min_delay: 60,
@@ -963,10 +966,10 @@ export default {
       challengeForm.value = {
         name: '',
         modulation: 'nbfm',
-        frequency: 146550000,
+        frequency_mhz: 146.550,
         frequency_ranges: [],
-        manual_min_hz: null,
-        manual_max_hz: null,
+        manual_min_mhz: null,
+        manual_max_mhz: null,
         enabled: true,
         flag: '',
         min_delay: 60,
@@ -1014,7 +1017,7 @@ export default {
 
       // Validate frequency or frequency_ranges
       if (frequencyMode.value === 'direct') {
-        if (!challengeForm.value.frequency) {
+        if (!challengeForm.value.frequency_mhz) {
           ElMessage.error('Frequency is required')
           return
         }
@@ -1024,11 +1027,11 @@ export default {
           return
         }
       } else if (frequencyMode.value === 'manual') {
-        if (!challengeForm.value.manual_min_hz || !challengeForm.value.manual_max_hz) {
+        if (!challengeForm.value.manual_min_mhz || !challengeForm.value.manual_max_mhz) {
           ElMessage.error('Both minimum and maximum frequencies are required')
           return
         }
-        if (challengeForm.value.manual_min_hz >= challengeForm.value.manual_max_hz) {
+        if (challengeForm.value.manual_min_mhz >= challengeForm.value.manual_max_mhz) {
           ElMessage.error('Minimum frequency must be less than maximum frequency')
           return
         }
@@ -1051,15 +1054,15 @@ export default {
           public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
         }
 
-        // Add frequency or frequency_ranges based on mode
+        // Add frequency or frequency_ranges based on mode (convert MHz to Hz)
         if (frequencyMode.value === 'direct') {
-          config.frequency = challengeForm.value.frequency
+          config.frequency = Math.round(challengeForm.value.frequency_mhz * 1000000)
         } else if (frequencyMode.value === 'ranges') {
           config.frequency_ranges = challengeForm.value.frequency_ranges
         } else if (frequencyMode.value === 'manual') {
           config.manual_frequency_range = {
-            min_hz: challengeForm.value.manual_min_hz,
-            max_hz: challengeForm.value.manual_max_hz
+            min_hz: Math.round(challengeForm.value.manual_min_mhz * 1000000),
+            max_hz: Math.round(challengeForm.value.manual_max_mhz * 1000000)
           }
         }
 
