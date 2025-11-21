@@ -20,6 +20,7 @@ import logging
 import argparse
 import yaml
 import socket
+import hashlib
 import requests
 import threading
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,55 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_mac_address() -> Optional[str]:
+    """Get the MAC address of the primary network interface.
+
+    Returns:
+        MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
+    """
+    try:
+        import uuid
+        mac = uuid.getnode()
+        # Format as colon-separated hex
+        mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
+        return mac_str
+    except Exception as e:
+        logger.warning(f"Could not retrieve MAC address: {e}")
+        return None
+
+
+def get_machine_id() -> Optional[str]:
+    """Get the machine ID from the system.
+
+    Tries to read from:
+    - Linux: /etc/machine-id or /var/lib/dbus/machine-id
+    - Other platforms: Use a UUID based on hardware characteristics
+
+    Returns:
+        Machine ID as a string, or None if unavailable
+    """
+    # Try Linux machine-id files
+    for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+        try:
+            with open(path, 'r') as f:
+                machine_id = f.read().strip()
+                if machine_id:
+                    return machine_id
+        except (FileNotFoundError, PermissionError):
+            continue
+
+    # Fallback: use platform-specific identifier
+    try:
+        import platform
+        # Create a consistent ID from system information
+        system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
+        # Hash it to create a consistent ID
+        return hashlib.sha256(system_info.encode()).hexdigest()[:32]
+    except Exception as e:
+        logger.warning(f"Could not retrieve machine ID: {e}")
+        return None
+
+
 class ListenerAgent:
     """Spectrum listener agent that receives WebSocket recording assignments."""
 
@@ -48,13 +98,38 @@ class ListenerAgent:
         """
         self.config = self.load_config(config_path)
         self.agent_id = self.config['agent']['agent_id']
-        self.server_url = self.config['agent']['server_url']
+        self.server_url = self.config['agent']['server_url'].rstrip('/')
         self.api_key = self.config['agent']['api_key']
         self.heartbeat_interval = self.config['agent'].get('heartbeat_interval', 30)
         self.simulate = simulate
 
         if simulate:
             logger.info("Simulation mode enabled - will generate test data without SDR hardware")
+
+        # Device info
+        self.devices = self.detect_devices()
+
+        # HTTP session for connection pooling
+        self.session = requests.Session()
+
+        # Get host identifiers for authentication
+        mac_address = get_mac_address()
+        machine_id = get_machine_id()
+
+        # Set authentication headers including host identifiers
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        if mac_address:
+            headers['X-Agent-MAC'] = mac_address
+        if machine_id:
+            headers['X-Agent-Machine-ID'] = machine_id
+
+        self.session.headers.update(headers)
+        logger.debug(f"Session configured with host identifiers: MAC={mac_address}, Machine ID={machine_id}")
+
+        # Configure TLS verification (disable for now, could be made configurable)
+        self.session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         # WebSocket client
         self.sio = socketio.Client(
@@ -72,11 +147,10 @@ class ListenerAgent:
         self.heartbeat_thread = None
         self.running = False
 
-        # Device info
-        self.devices = self.detect_devices()
-
         # Register WebSocket event handlers
         self.register_websocket_handlers()
+
+        logger.info(f"Listener initialized: {self.agent_id}")
 
     def load_config(self, config_path: str) -> Dict:
         """Load listener configuration from YAML file."""
@@ -416,9 +490,8 @@ class ListenerAgent:
             recording_id from server, or -1 on error
         """
         try:
-            response = requests.post(
+            response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/recording/start",
-                headers={'Authorization': f'Bearer {self.api_key}'},
                 json={
                     'challenge_id': challenge_id,
                     'transmission_id': transmission_id,
@@ -426,7 +499,6 @@ class ListenerAgent:
                     'sample_rate': sample_rate,
                     'expected_duration': expected_duration
                 },
-                verify=False,
                 timeout=10
             )
 
@@ -454,9 +526,8 @@ class ListenerAgent:
                 with Image.open(image_path) as img:
                     image_width, image_height = img.size
 
-            response = requests.post(
+            response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/recording/{recording_id}/complete",
-                headers={'Authorization': f'Bearer {self.api_key}'},
                 json={
                     'success': success,
                     'duration': duration,
@@ -464,7 +535,6 @@ class ListenerAgent:
                     'image_height': image_height,
                     'error_message': error_message
                 },
-                verify=False,
                 timeout=10
             )
 
@@ -479,11 +549,9 @@ class ListenerAgent:
         try:
             with open(image_path, 'rb') as f:
                 files = {'file': (os.path.basename(image_path), f, 'image/png')}
-                response = requests.post(
+                response = self.session.post(
                     f"{self.server_url}/api/agents/{self.agent_id}/recording/{recording_id}/upload",
-                    headers={'Authorization': f'Bearer {self.api_key}'},
                     files=files,
-                    verify=False,
                     timeout=60  # Longer timeout for file upload
                 )
 
@@ -495,20 +563,102 @@ class ListenerAgent:
         except Exception as e:
             logger.error(f"Error uploading waterfall image: {e}")
 
+    def enroll(self) -> bool:
+        """Enroll this listener with the server using enrollment token.
+
+        Uses the enrollment token from config to register with the server.
+        After enrollment, the listener should be restarted without the enrollment_token in config.
+        """
+        enrollment_token = self.config['agent'].get('enrollment_token')
+
+        if not enrollment_token:
+            logger.debug("No enrollment token found, skipping enrollment")
+            return False
+
+        try:
+            hostname = socket.gethostname()
+            mac_address = get_mac_address()
+            machine_id = get_machine_id()
+
+            logger.info(f"Enrolling with host identifiers: hostname={hostname}, MAC={mac_address}, machine_id={machine_id}")
+
+            # Prepare device info for server
+            devices_info = []
+            for dev in self.devices:
+                devices_info.append({
+                    'name': dev.get('name'),
+                    'model': dev.get('model'),
+                    'gain': dev.get('gain'),
+                    'frequency_limits': dev.get('frequency_limits', [])
+                })
+
+            # Create a session without authentication for enrollment
+            enrollment_session = requests.Session()
+            enrollment_session.verify = False
+
+            response = enrollment_session.post(
+                f"{self.server_url}/api/enrollment/enroll",
+                json={
+                    'enrollment_token': enrollment_token,
+                    'api_key': self.api_key,
+                    'agent_id': self.agent_id,
+                    'agent_type': 'listener',
+                    'hostname': hostname,
+                    'mac_address': mac_address,
+                    'machine_id': machine_id,
+                    'devices': devices_info
+                },
+                timeout=10
+            )
+
+            if response.status_code == 201:
+                logger.info(f"Successfully enrolled as {self.agent_id}")
+                return True
+            elif response.status_code == 401:
+                logger.error("Enrollment failed: Invalid or expired enrollment token")
+                return False
+            elif response.status_code == 409:
+                logger.info("Listener already enrolled with this token")
+                return True  # Return true to continue with normal operation
+            else:
+                logger.error(f"Enrollment failed: HTTP {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.error(f"Error: {error_data.get('error', 'Unknown error')}")
+                except Exception:
+                    pass
+                return False
+
+        except Exception as e:
+            logger.error(f"Error during enrollment: {e}")
+            return False
+
     def register_with_server(self) -> bool:
-        """Register this listener agent with the server via HTTP."""
+        """Register this listener agent with the server via HTTP.
+
+        Note: This is now primarily for backwards compatibility.
+        New listeners should use the enrollment process instead.
+        """
         try:
             hostname = socket.gethostname()
 
-            response = requests.post(
+            # Prepare device info for server
+            devices_info = []
+            for dev in self.devices:
+                devices_info.append({
+                    'name': dev.get('name'),
+                    'model': dev.get('model'),
+                    'gain': dev.get('gain'),
+                    'frequency_limits': dev.get('frequency_limits', [])
+                })
+
+            response = self.session.post(
                 f"{self.server_url}/api/agents/register",
-                headers={'Authorization': f'Bearer {self.api_key}'},
                 json={
                     'agent_type': 'listener',
                     'hostname': hostname,
-                    'devices': self.devices
+                    'devices': devices_info
                 },
-                verify=False,
                 timeout=10
             )
 
@@ -549,10 +699,8 @@ class ListenerAgent:
     def send_heartbeat_http(self):
         """Send heartbeat to server via HTTP."""
         try:
-            response = requests.post(
+            response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/heartbeat",
-                headers={'Authorization': f'Bearer {self.api_key}'},
-                verify=False,
                 timeout=5
             )
 
@@ -574,10 +722,36 @@ class ListenerAgent:
         """Main run loop for the listener agent."""
         self.running = True
 
-        # Register with server
+        # Try enrollment first if enrollment_token exists
+        enrollment_token = self.config['agent'].get('enrollment_token')
+        if enrollment_token:
+            logger.info("Enrollment token found, attempting enrollment...")
+            if not self.enroll():
+                logger.error("Failed to enroll with server. Exiting.")
+                return 1
+            logger.info("Enrollment successful!")
+            logger.info("")
+            logger.info("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
+            logger.info("It will be ignored on subsequent runs once enrolled.")
+            logger.info("")
+
+        # Register with server (or re-register if already enrolled)
         if not self.register_with_server():
-            logger.error("Failed to register with server, exiting")
-            return 1
+            # If registration fails and we have an enrollment token, try enrolling
+            enrollment_token = self.config['agent'].get('enrollment_token')
+            if enrollment_token:
+                logger.info("Registration failed. Attempting enrollment with token...")
+                if not self.enroll():
+                    logger.error("Failed to enroll with server. Exiting.")
+                    return 1
+                logger.info("Enrollment successful!")
+                logger.info("")
+                logger.info("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
+                logger.info("It will be ignored on subsequent runs once enrolled.")
+                logger.info("")
+            else:
+                logger.error("Failed to register with server and no enrollment token found. Exiting.")
+                return 1
 
         # Connect WebSocket
         if not self.connect_websocket():
@@ -611,10 +785,8 @@ class ListenerAgent:
 
         # Sign out from server
         try:
-            requests.post(
+            self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/signout",
-                headers={'Authorization': f'Bearer {self.api_key}'},
-                verify=False,
                 timeout=5
             )
         except Exception as e:
