@@ -6,6 +6,7 @@ This document provides a technical overview of the ChallengeCtl system architect
 
 - [System Overview](#system-overview)
 - [Component Architecture](#component-architecture)
+- [Spectrum Listener Architecture](#spectrum-listener-architecture)
 - [Data Flow](#data-flow)
 - [Database Schema](#database-schema)
 - [Mutual Exclusion Mechanism](#mutual-exclusion-mechanism)
@@ -22,6 +23,7 @@ ChallengeCtl implements a distributed client-server architecture for coordinatin
 2. **Fault Tolerance**: Automatically recover from runner failures
 3. **Simplicity**: Minimal dependencies and straightforward deployment
 4. **Observability**: Real-time monitoring of all system components
+5. **Spectrum Recording**: Capture and visualize transmissions with listener agents
 
 ### High-Level Architecture
 
@@ -37,16 +39,30 @@ ChallengeCtl implements a distributed client-server architecture for coordinatin
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
 │  │   Flask API  │  │   Database   │  │ WebSocket │ │
 │  │  (REST API)  │  │  (SQLite)    │  │ Broadcast │ │
+│  │              │  │              │  │  /agents  │ │
 │  └──────────────┘  └──────────────┘  └───────────┘ │
 │  ┌──────────────────────────────────────────────┐   │
 │  │        Background Tasks                      │   │
 │  │  - Cleanup stale assignments                 │   │
 │  │  - Requeue timed-out tasks                   │   │
-│  │  - Monitor runner health                     │   │
+│  │  - Monitor agent health                      │   │
+│  │  - Priority-based recording coordination     │   │
 │  └──────────────────────────────────────────────┘   │
-└──────────────────┬──────────────────────────────────┘
-                   │ HTTP (Polling)
-         ┌─────────┼─────────┬─────────────┐
+└────────┬──────────────────────────────┬─────────────┘
+         │ HTTP (Polling)                │ WebSocket (Push)
+         │                               │
+         │                        ┌──────┴──────┐
+         │                        ▼             ▼
+         │                   ┌──────────┐  ┌──────────┐
+         │                   │Listener 1│  │Listener 2│
+         │                   │(RTL-SDR) │  │(HackRF)  │
+         │                   └──────────┘  └──────────┘
+         │                        │             │
+         │                        ▼             ▼
+         │                     [Radio]       [Radio]
+         │                    (Receive)     (Receive)
+         │
+         ├─────────┬─────────┬─────────────┐
          ▼         ▼         ▼             ▼
     ┌────────┐ ┌────────┐ ┌────────┐  ┌────────┐
     │Runner 1│ │Runner 2│ │Runner 3│  │Runner N│
@@ -55,6 +71,7 @@ ChallengeCtl implements a distributed client-server architecture for coordinatin
          │         │         │             │
          ▼         ▼         ▼             ▼
       [Radio]  [Radio]  [Radio]       [Radio]
+    (Transmit)(Transmit)(Transmit)   (Transmit)
 ```
 
 ## Component Architecture
@@ -169,13 +186,264 @@ Each runner is a long-running Python process that:
 The Vue.js frontend provides:
 
 - **Dashboard**: Overview of system status and recent transmissions
-- **Runners**: List of registered runners with status and controls
+- **Agents** (Runners/Listeners/Provisioning):
+  - **Runners Tab**: List of registered runner agents with status and controls
+  - **Listeners Tab**: List of registered listener agents with WebSocket status
+  - **Provisioning Tab**: Enrollment token and API key management
 - **Challenges**: Challenge management and manual triggering
-- **Logs**: Real-time log streaming from server and runners
+- **Logs**: Real-time log streaming from server and agents
 
 The frontend communicates with the server via:
 - REST API for data retrieval and actions
 - WebSocket for real-time updates (no polling required)
+
+## Spectrum Listener Architecture
+
+The spectrum listener subsystem enables automatic capture and visualization of RF transmissions. When a runner is assigned a transmission task, the server can coordinate with listener agents to capture the spectrum and generate waterfall images.
+
+### Design Goals
+
+1. **Priority-Based Recording**: Record transmissions intelligently based on priority rather than recording every transmission
+2. **Real-Time Coordination**: Use WebSocket push notifications for precise timing (±1s vs ±15s with polling)
+3. **Minimal Overhead**: Only record high-value transmissions to conserve resources
+4. **Flexible Deployment**: Support varying numbers of listeners vs runners (e.g., 2 listeners for 10 runners)
+
+### Unified Agent Model
+
+Both runners and listeners are managed as "agents" in the database:
+
+```
+agents table:
+  - agent_id (PRIMARY KEY)
+  - agent_type ('runner' or 'listener')
+  - hostname, ip_address, devices
+  - status ('online' or 'offline')
+  - enabled (boolean)
+  - websocket_connected (boolean, listeners only)
+  - websocket_last_connected (timestamp)
+```
+
+**Key differences**:
+- **Runners**: Poll via HTTP for task assignments, transmit RF signals
+- **Listeners**: Connect via WebSocket for real-time push, receive RF signals and generate waterfall images
+
+### Recording Priority Algorithm
+
+The server calculates a priority score for each challenge transmission:
+
+```python
+def calculate_recording_priority(challenge):
+    # Never recorded = highest priority
+    if no previous recording:
+        return 1000.0
+
+    # Get transmission count since last recording
+    transmissions_since = count_transmissions_since_last_recording(challenge)
+
+    # Calculate time factor (increases over hours)
+    minutes_since = time_since_last_recording(challenge)
+    time_multiplier = min(10.0, minutes_since / 60.0)
+
+    # Combine factors
+    priority = transmissions_since * time_multiplier
+
+    # Apply challenge priority boost (0-10 scale)
+    priority *= (challenge.priority / 10.0)
+
+    return min(1000.0, priority)
+```
+
+**Assignment decision**:
+- If `priority >= threshold` (default 10.0), assign a listener
+- Example: Challenge transmitted 5 times in past hour → priority = 5 × 1.0 = 5.0 (below threshold, not recorded)
+- Example: Challenge not recorded in 3 hours, transmitted 4 times → priority = 4 × 3.0 = 12.0 (above threshold, recorded)
+
+This prevents recording every transmission while ensuring good coverage of all challenges.
+
+### Coordinated Assignment Workflow
+
+When a runner polls for a task:
+
+```
+1. Server assigns challenge to runner (HTTP polling)
+   └─ Creates transmission record in database
+
+2. Server calculates recording priority
+   └─ If priority >= threshold:
+       ├─ Find available listeners (online + WebSocket connected)
+       ├─ Create listener_assignment record
+       ├─ Push 'recording_assignment' event via WebSocket
+       │  (includes frequency, expected_start, expected_duration)
+       └─ Listener receives assignment instantly
+
+3. Listener prepares for recording
+   ├─ Waits until expected_start time
+   ├─ Starts GNU Radio flowgraph
+   ├─ Captures RF with pre-roll buffer (5s before transmission)
+   └─ Reports recording started to server
+
+4. Runner executes transmission
+   └─ Listener is already recording
+
+5. Transmission completes
+   └─ Listener continues recording with post-roll buffer (5s after)
+
+6. Listener generates waterfall image
+   ├─ Converts FFT data to dB scale
+   ├─ Generates PNG with matplotlib
+   └─ Uploads to server
+
+7. Server stores waterfall metadata
+   └─ Image available in web UI
+```
+
+**Timing precision**:
+- HTTP polling: ±15s coordination accuracy (10s poll interval)
+- WebSocket push: ±1s coordination accuracy (instant notification)
+
+### WebSocket Agent Namespace
+
+Listeners connect to the `/agents` WebSocket namespace for real-time coordination:
+
+**Authentication**:
+```python
+# Listener connects with API key
+socketio.connect(
+    server_url,
+    auth={'agent_id': 'listener-1', 'api_key': api_key},
+    namespaces=['/agents']
+)
+```
+
+**Events**:
+
+Server → Listener:
+- `connected`: Connection acknowledgment
+- `recording_assignment`: New recording task with full details
+- `assignment_cancelled`: If transmission fails before recording starts
+
+Listener → Server:
+- `heartbeat`: Optional WebSocket heartbeat (in addition to HTTP)
+
+**Agent-specific rooms**:
+- Each listener joins room `agent_<id>`
+- Server emits to specific room: `socketio.emit('recording_assignment', data, room='agent_listener-1')`
+- Enables targeted messaging without broadcasting to all listeners
+
+### Listener Components
+
+A listener agent consists of:
+
+1. **listener.py**: Main Python client
+   - WebSocket connection management
+   - Recording assignment handler
+   - HTTP registration and heartbeat
+   - Orchestrates capture and upload workflow
+
+2. **spectrum_listener.py**: GNU Radio flowgraph
+   - Osmocom source for SDR hardware (RTL-SDR, HackRF, USRP, etc.)
+   - FFT processing with configurable size and frame rate
+   - IQ sample capture and vector sink
+   - Simulated mode for testing without hardware
+
+3. **waterfall_generator.py**: Waterfall image generation
+   - Converts FFT power data to dB scale
+   - Custom colormap (blue → green → yellow → red)
+   - Auto-scaling using 5th-95th percentile
+   - Matplotlib PNG output with frequency/time axes
+
+4. **listener-config.yml**: Configuration
+   - Agent ID and server URL
+   - SDR device settings (sample rate, gain, device ID)
+   - Recording parameters (FFT size, frame rate)
+   - Pre-roll and post-roll timing
+
+### Database Schema Extensions
+
+**recordings table**:
+```sql
+CREATE TABLE recordings (
+    recording_id INTEGER PRIMARY KEY,
+    challenge_id TEXT,
+    agent_id TEXT,  -- listener agent
+    transmission_id INTEGER,
+    frequency INTEGER,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    status TEXT,  -- 'recording', 'completed', 'failed'
+    image_path TEXT,  -- path to waterfall PNG
+    image_width INTEGER,
+    image_height INTEGER,
+    sample_rate INTEGER,
+    duration_seconds REAL,
+    error_message TEXT
+)
+```
+
+**listener_assignments table**:
+```sql
+CREATE TABLE listener_assignments (
+    assignment_id INTEGER PRIMARY KEY,
+    agent_id TEXT,
+    challenge_id TEXT,
+    transmission_id INTEGER,
+    frequency INTEGER,
+    assigned_at TIMESTAMP,
+    expected_start TIMESTAMP,
+    expected_duration REAL,
+    status TEXT,  -- 'pending', 'recording', 'completed', 'cancelled'
+    cancelled_at TIMESTAMP,
+    completed_at TIMESTAMP
+)
+```
+
+### API Endpoints
+
+**Agent management** (unified for runners and listeners):
+- `POST /api/agents/register` - Register with `agent_type` parameter
+- `POST /api/agents/<id>/heartbeat` - Heartbeat (HTTP)
+- `POST /api/agents/<id>/signout` - Graceful shutdown
+- `GET /api/agents` - List all agents (admin, with optional type filter)
+- `POST /api/agents/<id>/enable` - Enable agent
+- `POST /api/agents/<id>/disable` - Disable agent
+
+**Recording management**:
+- `POST /api/agents/<id>/recording/start` - Listener reports recording started
+- `POST /api/agents/<id>/recording/<id>/complete` - Listener reports completion
+- `POST /api/agents/<id>/recording/<id>/upload` - Upload waterfall PNG
+- `GET /api/recordings` - List recordings (admin)
+- `GET /api/recordings/<id>/image` - Serve waterfall image
+- `GET /api/challenges/<id>/recordings` - Get recordings for challenge
+
+### Deployment Scenarios
+
+**Scenario 1: Single listener, 5 runners**
+- Listener records high-priority transmissions only
+- Example: Records each challenge once per hour
+- Low resource overhead, good coverage
+
+**Scenario 2: Multiple listeners, many runners**
+- First available listener gets assignment
+- Future: Load balancing across listeners
+- Future: Frequency-based listener selection
+
+**Scenario 3: No listeners**
+- System operates normally without any listeners
+- No recording coordination overhead
+- Backward compatible with pure runner deployments
+
+### Failure Handling
+
+**Listener failures**:
+- WebSocket disconnect: Server marks `websocket_connected = false`
+- Heartbeat timeout: Server marks listener offline
+- Recording failure: Listener reports error, server logs to database
+- No listeners available: Server logs warning, transmission proceeds normally
+
+**Recording failures**:
+- GNU Radio errors: Captured in error_message field
+- File upload errors: Retried by listener
+- Partial recordings: Marked as 'failed' in database
 
 ## Data Flow
 
@@ -260,9 +528,31 @@ If a runner misses 3 consecutive heartbeats (90 seconds), the server marks it as
 
 The server uses SQLite with the following schema:
 
-### runners
+### agents
 
-Stores registered runners and their status.
+Unified table for both runner and listener agents (new in spectrum listener architecture).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `agent_id` | TEXT PRIMARY KEY | Unique agent identifier |
+| `agent_type` | TEXT | Agent type: 'runner' or 'listener' |
+| `hostname` | TEXT | Agent machine hostname |
+| `ip_address` | TEXT | Agent IP address |
+| `mac_address` | TEXT | MAC address (for host validation) |
+| `machine_id` | TEXT | Machine ID (for host validation) |
+| `status` | TEXT | online or offline |
+| `enabled` | BOOLEAN | Whether agent can receive tasks/assignments |
+| `last_heartbeat` | TIMESTAMP | Last received heartbeat |
+| `devices` | JSON | JSON array of SDR devices and their capabilities |
+| `api_key_hash` | TEXT | Bcrypt-hashed API key |
+| `websocket_connected` | BOOLEAN | WebSocket connection status (listeners only) |
+| `websocket_last_connected` | TIMESTAMP | Last WebSocket connection time |
+| `created_at` | TIMESTAMP | Initial registration time |
+| `updated_at` | TIMESTAMP | Last update time |
+
+### runners (legacy)
+
+Legacy table maintained for backward compatibility. New agents register in the `agents` table.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -273,8 +563,51 @@ Stores registered runners and their status.
 | `enabled` | BOOLEAN | Whether runner can receive tasks |
 | `last_heartbeat` | TIMESTAMP | Last received heartbeat |
 | `devices` | TEXT | JSON array of SDR devices and their capabilities |
+| `api_key_hash` | TEXT | Bcrypt-hashed API key |
 | `created_at` | TIMESTAMP | Initial registration time |
 | `updated_at` | TIMESTAMP | Last update time |
+
+**Migration**: On first startup with the new schema, existing runners are automatically migrated to the `agents` table with `agent_type='runner'`.
+
+### recordings
+
+Stores waterfall image metadata for spectrum captures.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `recording_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
+| `challenge_id` | TEXT | Challenge that was recorded |
+| `agent_id` | TEXT | Listener agent that performed recording |
+| `transmission_id` | INTEGER | Associated transmission ID |
+| `frequency` | INTEGER | Center frequency (Hz) |
+| `started_at` | TIMESTAMP | Recording start time |
+| `completed_at` | TIMESTAMP | Recording completion time |
+| `status` | TEXT | recording, completed, or failed |
+| `image_path` | TEXT | Path to waterfall PNG file |
+| `image_width` | INTEGER | Image width in pixels |
+| `image_height` | INTEGER | Image height in pixels |
+| `sample_rate` | INTEGER | SDR sample rate (Hz) |
+| `duration_seconds` | REAL | Actual recording duration |
+| `error_message` | TEXT | Error details (if failed) |
+| `created_at` | TIMESTAMP | Record creation time |
+
+### listener_assignments
+
+Tracks recording assignments to listener agents for coordination.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `assignment_id` | INTEGER PRIMARY KEY | Auto-incrementing ID |
+| `agent_id` | TEXT | Listener agent ID |
+| `challenge_id` | TEXT | Challenge to be recorded |
+| `transmission_id` | INTEGER | Associated transmission ID |
+| `frequency` | INTEGER | Center frequency (Hz) |
+| `assigned_at` | TIMESTAMP | When assignment was created |
+| `expected_start` | TIMESTAMP | Expected transmission start time |
+| `expected_duration` | REAL | Expected duration (seconds) |
+| `status` | TEXT | pending, recording, completed, cancelled, or failed |
+| `cancelled_at` | TIMESTAMP | When assignment was cancelled (if applicable) |
+| `completed_at` | TIMESTAMP | When recording completed |
 
 ### challenges
 
