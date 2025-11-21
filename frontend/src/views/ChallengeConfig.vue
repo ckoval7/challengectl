@@ -39,19 +39,29 @@
           </el-table-column>
           <el-table-column
             label="Frequency"
-            width="200"
+            width="250"
           >
             <template #default="scope">
               <template v-if="scope.row.config?.frequency">
                 {{ formatFrequency(scope.row.config.frequency) }}
               </template>
               <template v-else-if="scope.row.config?.frequency_ranges">
-                <el-tag
-                  type="info"
-                  size="small"
+                <el-tooltip
+                  :content="formatFrequencyRanges(scope.row.config.frequency_ranges)"
+                  placement="top"
                 >
-                  Random: {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
-                </el-tag>
+                  <el-tag
+                    type="info"
+                    size="small"
+                  >
+                    <template v-if="scope.row.config.frequency_ranges.length === 1">
+                      {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
+                    </template>
+                    <template v-else>
+                      {{ scope.row.config.frequency_ranges.length }} ranges
+                    </template>
+                  </el-tag>
+                </el-tooltip>
               </template>
               <template v-else>
                 N/A
@@ -683,19 +693,29 @@ print(response.json())</code></pre>
           </el-table-column>
           <el-table-column
             label="Frequency"
-            width="200"
+            width="250"
           >
             <template #default="scope">
               <template v-if="scope.row.config?.frequency">
                 {{ formatFrequency(scope.row.config.frequency) }}
               </template>
               <template v-else-if="scope.row.config?.frequency_ranges">
-                <el-tag
-                  type="info"
-                  size="small"
+                <el-tooltip
+                  :content="formatFrequencyRanges(scope.row.config.frequency_ranges)"
+                  placement="top"
                 >
-                  Random: {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
-                </el-tag>
+                  <el-tag
+                    type="info"
+                    size="small"
+                  >
+                    <template v-if="scope.row.config.frequency_ranges.length === 1">
+                      {{ formatFrequencyRanges(scope.row.config.frequency_ranges) }}
+                    </template>
+                    <template v-else>
+                      {{ scope.row.config.frequency_ranges.length }} ranges
+                    </template>
+                  </el-tag>
+                </el-tooltip>
               </template>
               <template v-else>
                 N/A
