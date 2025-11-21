@@ -676,42 +676,92 @@
                 SDR Device Configuration (Optional)
               </el-divider>
 
-              <el-form-item label="Device Type">
-                <el-select
-                  v-model="addListenerForm.deviceType"
-                  placeholder="Select SDR model"
-                >
-                  <el-option
-                    label="RTL-SDR"
-                    value="rtlsdr"
-                  />
-                  <el-option
-                    label="HackRF"
-                    value="hackrf"
-                  />
-                  <el-option
-                    label="USRP"
-                    value="usrp"
-                  />
-                  <el-option
-                    label="BladeRF"
-                    value="bladerf"
-                  />
-                </el-select>
-                <div class="hint-text">
-                  Type of SDR receiver hardware
+              <div
+                v-for="(device, index) in addListenerForm.devices"
+                :key="index"
+                class="device-config-item"
+              >
+                <div class="device-header">
+                  <h4>Device {{ index + 1 }}</h4>
+                  <el-button
+                    v-if="addListenerForm.devices.length > 1"
+                    size="small"
+                    type="danger"
+                    @click="removeListenerDevice(index)"
+                  >
+                    Remove
+                  </el-button>
                 </div>
-              </el-form-item>
 
-              <el-form-item label="Device ID">
-                <el-input
-                  v-model="addListenerForm.deviceId"
-                  placeholder="e.g., rtlsdr=0, hackrf=0"
-                />
-                <div class="hint-text">
-                  osmosdr device string (e.g., rtlsdr=0, hackrf=0, uhd=0)
-                </div>
-              </el-form-item>
+                <el-form-item label="Device Name">
+                  <el-input
+                    v-model="device.name"
+                    placeholder="e.g., 0, 1, or serial number"
+                  />
+                  <div class="hint-text">
+                    Device index (0, 1, 2) or serial number
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Model">
+                  <el-select
+                    v-model="device.model"
+                    placeholder="Select SDR model"
+                  >
+                    <el-option
+                      label="RTL-SDR"
+                      value="rtlsdr"
+                    />
+                    <el-option
+                      label="HackRF"
+                      value="hackrf"
+                    />
+                    <el-option
+                      label="USRP"
+                      value="usrp"
+                    />
+                    <el-option
+                      label="BladeRF"
+                      value="bladerf"
+                    />
+                  </el-select>
+                  <div class="hint-text">
+                    Type of SDR receiver hardware
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Gain (dB)">
+                  <el-input-number
+                    v-model="device.gain"
+                    :min="0"
+                    :max="100"
+                  />
+                  <div class="hint-text">
+                    RF gain setting (0-100 dB, typical: 20-50)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Frequency Limits">
+                  <el-input
+                    v-model="device.frequency_limits"
+                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                  />
+                  <div class="hint-text">
+                    Comma-separated ranges in Hz (optional). Leave blank for full range.
+                  </div>
+                </el-form-item>
+
+                <el-divider v-if="index < addListenerForm.devices.length - 1" />
+              </div>
+
+              <el-button
+                type="primary"
+                plain
+                class="mt-10 w-full"
+                @click="addListenerDevice"
+              >
+                Add Another Device
+              </el-button>
             </el-form>
 
             <div class="dialog-footer">
@@ -1083,13 +1133,19 @@ export default {
     const reEnrollData = ref(null)
 
     // Listener enrollment state
-    // Note: Kept separate due to different form structure and simpler device config
+    // Note: Updated to support multiple devices like runners
     const addListenerDialogVisible = ref(false)
     const addListenerForm = ref({
       listenerName: '',
       expiresHours: 24,
-      deviceType: 'rtlsdr',
-      deviceId: 'rtlsdr=0'
+      devices: [
+        {
+          name: '0',
+          model: 'rtlsdr',
+          gain: 40,
+          frequency_limits: ''
+        }
+      ]
     })
     const listenerEnrollmentData = ref(null)
 
@@ -1158,8 +1214,14 @@ export default {
       addListenerForm.value = {
         listenerName: '',
         expiresHours: 24,
-        deviceType: 'rtlsdr',
-        deviceId: 'rtlsdr=0'
+        devices: [
+          {
+            name: '0',
+            model: 'rtlsdr',
+            gain: 40,
+            frequency_limits: ''
+          }
+        ]
       }
     }
 
@@ -1175,6 +1237,19 @@ export default {
 
     const removeDevice = (index) => {
       addRunnerForm.value.devices.splice(index, 1)
+    }
+
+    const addListenerDevice = () => {
+      addListenerForm.value.devices.push({
+        name: String(addListenerForm.value.devices.length),
+        model: 'rtlsdr',
+        gain: 40,
+        frequency_limits: ''
+      })
+    }
+
+    const removeListenerDevice = (index) => {
+      addListenerForm.value.devices.splice(index, 1)
     }
 
     const generateEnrollmentToken = async () => {
@@ -1308,14 +1383,23 @@ ${addRunnerForm.value.devices.map(device => {
       return config
     })
 
-    const downloadConfig = () => {
-      if (!enrollmentData.value) return
+    const downloadConfig = (content = null, filename = null) => {
+      // Support both runner and listener configs
+      let configContent = content
+      let configFilename = filename
 
-      const blob = new Blob([generatedConfig.value], { type: 'text/yaml' })
+      if (!configContent) {
+        // Default to runner config if no content provided
+        if (!enrollmentData.value) return
+        configContent = generatedConfig.value
+        configFilename = 'runner-config.yml'
+      }
+
+      const blob = new Blob([configContent], { type: 'text/yaml' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'runner-config.yml'
+      link.download = configFilename
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -1590,6 +1674,26 @@ radios:
           agent_type: 'listener'
         })
 
+        // Generate devices YAML section
+        const devicesYaml = addListenerForm.value.devices.map(device => {
+          const freqLimits = device.frequency_limits
+            ? device.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
+            : []
+
+          let deviceYaml = `  - name: ${device.name}\n`
+          deviceYaml += `    model: ${device.model}\n`
+          deviceYaml += `    gain: ${device.gain}\n`
+
+          if (freqLimits.length > 0) {
+            deviceYaml += `    frequency_limits:\n`
+            freqLimits.forEach(limit => {
+              deviceYaml += `      - "${limit}"\n`
+            })
+          }
+
+          return deviceYaml
+        }).join('\n')
+
         // Generate complete configuration YAML
         const configYaml = `# ChallengeCtl Listener Configuration
 # Generated: ${new Date().toISOString()}
@@ -1607,13 +1711,14 @@ agent:
     sample_rate: 2000000  # 2 MHz
     fft_size: 1024
     frame_rate: 20
-    gain: 40  # Adjust based on signal strength
     pre_roll_seconds: 5
     post_roll_seconds: 5
 
-    device:
-      id: "${addListenerForm.value.deviceId}"
-      type: "${addListenerForm.value.deviceType}"
+# SDR Device Configuration
+radios:
+  # Individual device configuration
+  devices:
+${devicesYaml}
 
 logging:
   level: "INFO"
@@ -1859,6 +1964,8 @@ curl -k \\
       addListenerForm,
       listenerEnrollmentData,
       showAddListenerDialog,
+      addListenerDevice,
+      removeListenerDevice,
       generateListenerEnrollmentToken,
       provisioningKeys,
       createProvKeyDialogVisible,

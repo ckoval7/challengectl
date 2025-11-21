@@ -223,17 +223,27 @@ agent:
     sample_rate: 2000000  # 2 MHz (adjust for your SDR)
     fft_size: 1024        # FFT bins (1024, 2048, 4096)
     frame_rate: 20        # Waterfall frames per second
-    gain: 40              # RF gain in dB (0-50 typical)
 
     # Timing buffers
     pre_roll_seconds: 5   # Capture before transmission
     post_roll_seconds: 5  # Capture after transmission
 
-    # SDR device configuration
-    device:
-      id: "rtlsdr=0"      # Device identifier
-      type: "rtlsdr"      # Device type
-      serial: "00000001"  # Optional serial number
+# SDR Device Configuration (supports multiple devices)
+radios:
+  devices:
+  - name: 0               # Device index or serial
+    model: rtlsdr         # Device type
+    gain: 40              # RF gain in dB (0-50 typical)
+    frequency_limits:     # Optional frequency ranges
+      - "144000000-148000000"  # 2m ham band
+      - "420000000-450000000"  # 70cm ham band
+
+  # Add additional devices for multi-receiver setups
+  # - name: 1
+  #   model: hackrf
+  #   gain: 30
+  #   frequency_limits:
+  #     - "902000000-928000000"  # 33cm ISM band
 
 logging:
   level: "INFO"           # DEBUG, INFO, WARNING, ERROR
@@ -257,6 +267,46 @@ logging:
 - 1024: Good frequency resolution, fast processing
 - 2048: Better frequency resolution, more CPU
 - 4096: Excellent resolution, highest CPU usage
+
+### Multi-Device Configuration
+
+**NEW**: Listeners now support multiple SDR receiver devices, allowing you to:
+
+- **Monitor Multiple Bands**: Use different receivers for VHF and UHF simultaneously
+- **Optimize Antennas**: Dedicate specific receivers to optimized antennas for each band
+- **Provide Redundancy**: Configure backup receivers in case of hardware failure
+- **Increase Coverage**: Capture transmissions across a wider frequency range
+
+**Example Multi-Device Setup**:
+```yaml
+radios:
+  devices:
+  # VHF receiver with optimized antenna
+  - name: 0
+    model: rtlsdr
+    gain: 45
+    frequency_limits:
+      - "144000000-148000000"  # 2m ham band only
+
+  # UHF receiver with different antenna
+  - name: 1
+    model: hackrf
+    gain: 35
+    frequency_limits:
+      - "420000000-450000000"  # 70cm ham band only
+      - "902000000-928000000"  # 33cm ISM band
+
+  # Wideband receiver for general monitoring
+  - name: 2
+    model: usrp
+    gain: 30
+    # No frequency limits = captures all assignments
+```
+
+**Device Selection**: The listener will automatically select the appropriate device based on:
+1. Frequency limits match the transmission frequency
+2. Device availability (not currently recording)
+3. First available device if multiple match
 
 ## Running the Listener
 

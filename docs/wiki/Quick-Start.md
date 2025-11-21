@@ -182,7 +182,9 @@ Listeners capture RF transmissions and generate waterfall images for spectrum vi
 1. **Enroll the listener** via the Web UI:
    - Navigate to **Agents → Listeners** tab
    - Click **"Add Listener"** button
-   - Enter listener name and click **"Generate Token"**
+   - Enter listener name and configure SDR devices (model, gain, frequency limits)
+   - Support for multiple receiver devices for multi-band monitoring
+   - Click **"Generate Token"**
    - Copy or download the generated `listener-config.yml`
 2. **Install dependencies**: GNU Radio, gr-osmosdr, and Python packages (see [Listener Setup](Listener-Setup))
 3. **Start the listener**: `./listener/listener.py --config listener-config.yml`

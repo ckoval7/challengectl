@@ -137,9 +137,15 @@ The **Add Listener** button allows you to enroll new listener agents through the
 2. **Configure Listener Details**:
    - **Listener Name**: Unique identifier (e.g., `listener-1`)
    - **Token Expiry**: Choose expiration time (1 hour, 6 hours, 24 hours, or 7 days)
-3. **Configure SDR Device** (optional):
-   - **Device Type**: Select SDR model (RTL-SDR, HackRF, USRP, BladeRF)
-   - **Device ID**: osmosdr device string (e.g., `rtlsdr=0`, `hackrf=0`)
+3. **Configure SDR Devices** (optional):
+   - Add one or more SDR receiver devices
+   - For each device:
+     - **Device Name**: Device index (0, 1, 2) or serial number
+     - **Model**: Select SDR type (RTL-SDR, HackRF, USRP, BladeRF)
+     - **Gain**: RF gain in dB (0-100, typical: 20-50)
+     - **Frequency Limits**: Comma-separated ranges in Hz (optional)
+   - Click **"Add Another Device"** to configure multiple receivers
+   - Click **"Remove"** to remove a device from the configuration
 4. **Click "Generate Token"**
 
 ### Enrollment Credentials
@@ -152,10 +158,11 @@ After generation, you'll receive:
 The generated configuration includes all required settings:
 - Agent configuration (agent_id, server_url, api_key, WebSocket settings)
 - Recording parameters (sample_rate: 2 MHz, fft_size: 1024, frame_rate: 20)
-- SDR device configuration (device id and type)
-- Default gain settings (40 dB - adjust as needed)
+- SDR device configuration (multiple devices with gain and frequency limits)
 - Pre/post roll buffers (5 seconds each)
 - Logging configuration
+
+**Multi-Device Support**: The configuration now supports multiple SDR receivers, allowing you to monitor different frequency bands simultaneously or provide redundancy.
 
 **Important**: Copy or download these credentials immediately - they're only shown once!
 

@@ -395,14 +395,25 @@ agent:
     sample_rate: 2000000
     fft_size: 1024
     frame_rate: 20
-    gain: 40
     pre_roll_seconds: 5
     post_roll_seconds: 5
 
-    device:
-      id: "rtlsdr=0"
-      type: "rtlsdr"
-      serial: "00000001"
+# SDR Device Configuration (supports multiple devices)
+radios:
+  devices:
+  - name: 0
+    model: rtlsdr
+    gain: 40
+    frequency_limits:
+      - "144000000-148000000"
+      - "420000000-450000000"
+
+  # Additional devices (optional)
+  # - name: 1
+  #   model: hackrf
+  #   gain: 35
+  #   frequency_limits:
+  #     - "902000000-928000000"
 
 logging:
   level: "INFO"
@@ -466,13 +477,6 @@ logging:
 - Typical: `10-20` fps
 - Default: `20`
 
-**gain** (integer/float, required):
-- RF gain in dB
-- Adjust based on signal strength and SDR model
-- RTL-SDR: 0-50 dB (typical: 30-40)
-- HackRF: 0-62 dB (typical: 40)
-- Start with 40 and adjust based on signal quality
-
 **pre_roll_seconds** (integer, optional):
 - Seconds to record before expected transmission start
 - Ensures entire transmission is captured despite timing variations
@@ -484,26 +488,63 @@ logging:
 - Default: `5`
 - Recommended: 3-10 seconds
 
-### Device Section
+### Radios Section
 
-**id** (string, required):
-- osmosdr device identifier string
-- Examples:
-  - RTL-SDR: `"rtlsdr=0"` or `"rtlsdr=<serial_number>"`
-  - HackRF: `"hackrf=0"`
-  - USRP: `"uhd=0"`
-  - BladeRF: `"bladerf=0"`
-- Use `osmocom_fft` to list available devices
+**NEW**: Listeners now support multiple SDR receiver devices. Configure one or more devices in the `radios.devices` array.
 
-**type** (string, required):
-- Device type for identification
+**name** (string/integer, required):
+- Device identifier or index
+- Examples: `0`, `1`, `"00000001"` (serial number)
+- Used to identify the device in logs and osmosdr connection string
+
+**model** (string, required):
+- Device type
 - Valid values: `"rtlsdr"`, `"hackrf"`, `"usrp"`, `"bladerf"`
-- Used for logging and device-specific handling
+- Determines osmosdr device string format
 
-**serial** (string, optional):
-- Device serial number
-- Useful for identifying specific hardware in multi-device setups
-- Not required for operation
+**gain** (integer/float, required):
+- RF gain in dB for this specific device
+- Adjust based on signal strength and SDR model
+- RTL-SDR: 0-50 dB (typical: 30-40)
+- HackRF: 0-62 dB (typical: 40)
+- USRP/BladeRF: 0-76 dB (typical: 30-50)
+- Start with 40 and adjust based on signal quality
+
+**frequency_limits** (list of strings, optional):
+- Frequency ranges this device should handle (in Hz)
+- Format: `"min_hz-max_hz"`
+- Examples:
+  - `["144000000-148000000"]` - 2m ham band only
+  - `["420000000-450000000", "902000000-928000000"]` - Multiple ranges
+- If not specified, device can capture any frequency
+- Useful for dedicating devices to specific bands
+
+**Multi-Device Example**:
+```yaml
+radios:
+  devices:
+  # VHF-only receiver
+  - name: 0
+    model: rtlsdr
+    gain: 45
+    frequency_limits:
+      - "144000000-148000000"
+
+  # UHF receiver for multiple bands
+  - name: 1
+    model: hackrf
+    gain: 35
+    frequency_limits:
+      - "420000000-450000000"
+      - "902000000-928000000"
+
+  # Wideband receiver (no limits)
+  - name: 2
+    model: usrp
+    gain: 30
+```
+
+The listener will automatically select the appropriate device based on frequency limits and availability.
 
 ### Logging Section
 
