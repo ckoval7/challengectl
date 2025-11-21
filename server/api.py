@@ -2230,6 +2230,229 @@ class ChallengeCtlAPI:
 
             return jsonify({'status': 'received'}), 200
 
+        # Recording endpoints (for listener agents)
+        @self.app.route('/api/agents/<agent_id>/recording/start', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def recording_start(agent_id):
+            """Listener reports recording has started."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify this is a listener agent
+            agent = self.db.get_agent(agent_id)
+            if not agent or agent['agent_type'] != 'listener':
+                return jsonify({'error': 'Only listener agents can start recordings'}), 400
+
+            data = request.json
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            challenge_id = data.get('challenge_id')
+            transmission_id = data.get('transmission_id')
+            frequency = data.get('frequency')
+            sample_rate = data.get('sample_rate', 2000000)
+            expected_duration = data.get('expected_duration', 30.0)
+
+            if not all([challenge_id, transmission_id, frequency]):
+                return jsonify({'error': 'Missing required fields'}), 400
+
+            # Create recording entry
+            recording_id = self.db.create_recording(
+                challenge_id=challenge_id,
+                agent_id=agent_id,
+                transmission_id=transmission_id,
+                frequency=int(frequency),
+                sample_rate=int(sample_rate),
+                expected_duration=float(expected_duration)
+            )
+
+            if recording_id > 0:
+                # Broadcast recording started event
+                self.broadcast_event('recording_started', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'listener_id': agent_id,
+                    'challenge_id': challenge_id,
+                    'transmission_id': transmission_id,
+                    'frequency': frequency,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({
+                    'status': 'recording',
+                    'recording_id': recording_id
+                }), 200
+            else:
+                return jsonify({'error': 'Failed to create recording'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/recording/<int:recording_id>/complete', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def recording_complete(agent_id, recording_id):
+            """Listener reports recording has completed."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            data = request.json
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            success = data.get('success', False)
+            error_message = data.get('error_message')
+            duration = data.get('duration')
+            image_width = data.get('image_width')
+            image_height = data.get('image_height')
+
+            # Note: image_path will be set after upload
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            if recording['agent_id'] != agent_id:
+                return jsonify({'error': 'Unauthorized - recording belongs to different agent'}), 403
+
+            # Update recording status
+            updated = self.db.update_recording_complete(
+                recording_id=recording_id,
+                success=success,
+                image_path=None,  # Will be set on upload
+                image_width=image_width,
+                image_height=image_height,
+                duration=duration,
+                error_message=error_message
+            )
+
+            if updated:
+                # Broadcast recording completed event
+                self.broadcast_event('recording_complete', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'listener_id': agent_id,
+                    'challenge_id': recording['challenge_id'],
+                    'status': 'completed' if success else 'failed',
+                    'error_message': error_message,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({'status': 'updated'}), 200
+            else:
+                return jsonify({'error': 'Failed to update recording'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/recording/<int:recording_id>/upload', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("20 per minute")  # Lower limit for file uploads
+        def recording_upload(agent_id, recording_id):
+            """Upload waterfall image for a recording."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify recording exists and belongs to this agent
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            if recording['agent_id'] != agent_id:
+                return jsonify({'error': 'Unauthorized - recording belongs to different agent'}), 403
+
+            # Check if file was uploaded
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file provided'}), 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+
+            # Validate file type (PNG images only)
+            if not file.filename.lower().endswith('.png'):
+                return jsonify({'error': 'Only PNG images are allowed'}), 400
+
+            # Create recordings directory if it doesn't exist
+            import os
+            recordings_dir = os.path.join(os.path.dirname(__file__), '..', 'recordings')
+            os.makedirs(recordings_dir, exist_ok=True)
+
+            # Save file with recording ID as filename
+            filename = f"recording_{recording_id}.png"
+            file_path = os.path.join(recordings_dir, filename)
+
+            try:
+                file.save(file_path)
+
+                # Get image dimensions
+                from PIL import Image
+                with Image.open(file_path) as img:
+                    width, height = img.size
+
+                # Update recording with image path and dimensions
+                self.db.update_recording_complete(
+                    recording_id=recording_id,
+                    success=True,
+                    image_path=file_path,
+                    image_width=width,
+                    image_height=height,
+                    duration=recording.get('duration_seconds')
+                )
+
+                logger.info(f"Uploaded waterfall image for recording {recording_id}: {width}x{height}px")
+
+                return jsonify({
+                    'status': 'uploaded',
+                    'filename': filename,
+                    'width': width,
+                    'height': height
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error saving recording image: {e}")
+                return jsonify({'error': 'Failed to save image'}), 500
+
+        # Recording query endpoints (admin)
+        @self.app.route('/api/recordings', methods=['GET'])
+        @self.require_admin_auth
+        def get_recordings():
+            """Get all recordings."""
+            limit = request.args.get('limit', 100, type=int)
+            recordings = self.db.get_all_recordings(limit=min(limit, 500))
+            return jsonify({'recordings': recordings}), 200
+
+        @self.app.route('/api/recordings/<int:recording_id>', methods=['GET'])
+        @self.require_admin_auth
+        def get_recording(recording_id):
+            """Get specific recording details."""
+            recording = self.db.get_recording(recording_id)
+            if recording:
+                return jsonify(recording), 200
+            else:
+                return jsonify({'error': 'Recording not found'}), 404
+
+        @self.app.route('/api/recordings/<int:recording_id>/image', methods=['GET'])
+        @self.require_admin_auth
+        def get_recording_image(recording_id):
+            """Serve waterfall image for a recording."""
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            image_path = recording.get('image_path')
+            if not image_path:
+                return jsonify({'error': 'No image available for this recording'}), 404
+
+            import os
+            from flask import send_file
+            if os.path.exists(image_path):
+                return send_file(image_path, mimetype='image/png')
+            else:
+                return jsonify({'error': 'Image file not found'}), 404
+
+        @self.app.route('/api/challenges/<challenge_id>/recordings', methods=['GET'])
+        @self.require_admin_auth
+        def get_challenge_recordings(challenge_id):
+            """Get recordings for a specific challenge."""
+            limit = request.args.get('limit', 50, type=int)
+            recordings = self.db.get_recordings_for_challenge(challenge_id, limit=min(limit, 200))
+            return jsonify({'recordings': recordings}), 200
+
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
         @self.require_admin_auth
