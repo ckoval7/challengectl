@@ -1939,6 +1939,297 @@ class ChallengeCtlAPI:
 
             return jsonify({'status': 'received'}), 200
 
+        # Unified Agent endpoints (support both runners and listeners)
+        @self.app.route('/api/agents/register', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def register_agent():
+            """Register an agent (runner or listener) with the server."""
+            data = request.json
+
+            # Validate request body
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            agent_id = request.runner_id  # Note: Uses same authentication mechanism
+
+            # Validate required fields
+            agent_type = data.get('agent_type', 'runner')  # Default to runner for backward compatibility
+            if agent_type not in ['runner', 'listener']:
+                return jsonify({'error': 'Invalid agent_type. Must be "runner" or "listener"'}), 400
+
+            hostname = data.get('hostname')
+            if not hostname or not hostname.strip():
+                return jsonify({'error': 'Missing required field: hostname'}), 400
+
+            devices = data.get('devices')
+            if devices is None:
+                return jsonify({'error': 'Missing required field: devices'}), 400
+
+            if not isinstance(devices, list):
+                return jsonify({'error': 'Field "devices" must be a list'}), 400
+
+            ip_address = request.remote_addr
+
+            # Get host identifiers from custom headers
+            mac_address = request.headers.get('X-Runner-MAC') or request.headers.get('X-Agent-MAC')
+            machine_id = request.headers.get('X-Runner-Machine-ID') or request.headers.get('X-Agent-Machine-ID')
+
+            success = self.db.register_agent(agent_id, agent_type, hostname, ip_address, devices,
+                                            mac_address=mac_address, machine_id=machine_id)
+
+            if success:
+                # Broadcast agent online event
+                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                self.broadcast_event(event_name, {
+                    'agent_id': agent_id,
+                    'runner_id': agent_id if agent_type == 'runner' else None,  # Backward compat
+                    'listener_id': agent_id if agent_type == 'listener' else None,
+                    'status': 'online',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({
+                    'status': 'registered',
+                    'agent_id': agent_id,
+                    'agent_type': agent_type
+                }), 200
+            else:
+                return jsonify({'error': 'Registration failed'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/heartbeat', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("1000 per minute")
+        def agent_heartbeat(agent_id):
+            """Update agent heartbeat (runner or listener)."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            success, previous_status = self.db.update_agent_heartbeat(agent_id)
+
+            if success:
+                # Get agent details to determine type
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    agent_type = agent['agent_type']
+                    heartbeat_time = datetime.now(timezone.utc).isoformat()
+
+                    # Broadcast with appropriate event name for backward compatibility
+                    event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                    self.broadcast_event(event_name, {
+                        'agent_id': agent_id,
+                        'runner_id': agent_id if agent_type == 'runner' else None,
+                        'listener_id': agent_id if agent_type == 'listener' else None,
+                        'status': 'online',
+                        'last_heartbeat': heartbeat_time,
+                        'timestamp': heartbeat_time
+                    })
+
+                return jsonify({'status': 'ok'}), 200
+            else:
+                return jsonify({'error': 'Agent not found'}), 404
+
+        @self.app.route('/api/agents/<agent_id>/signout', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def agent_signout(agent_id):
+            """Agent graceful signout."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Get agent details before marking offline
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            agent_type = agent['agent_type']
+
+            # Mark agent as offline
+            success = self.db.mark_agent_offline(agent_id)
+
+            if success:
+                # Broadcast offline status
+                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                self.broadcast_event(event_name, {
+                    'agent_id': agent_id,
+                    'runner_id': agent_id if agent_type == 'runner' else None,
+                    'listener_id': agent_id if agent_type == 'listener' else None,
+                    'status': 'offline',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+                logger.info(f"{agent_type.capitalize()} {agent_id} signed out gracefully")
+                return jsonify({'status': 'signed_out'}), 200
+            else:
+                return jsonify({'error': 'Failed to sign out'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/task', methods=['GET'])
+        @self.require_api_key
+        @self.limiter.limit("1000 per minute")
+        def agent_get_task(agent_id):
+            """Get next challenge assignment for runner agent (HTTP polling).
+            Note: Listener agents use WebSocket push instead of polling."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify this is a runner agent
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            if agent['agent_type'] != 'runner':
+                return jsonify({'error': 'Only runner agents can poll for tasks. Listeners use WebSocket.'}), 400
+
+            # Check if system is paused
+            if self.db.get_system_state('paused', 'false') == 'true':
+                return jsonify({'task': None, 'message': 'System paused'}), 200
+
+            # Assign challenge (same logic as old /api/runners/{id}/task)
+            challenge = self.db.assign_challenge(agent_id)
+
+            if challenge:
+                # Process frequency_ranges or manual_frequency_range if present
+                config = challenge['config'].copy()
+                frequency_ranges = config.get('frequency_ranges')
+                manual_frequency_range = config.get('manual_frequency_range')
+
+                if frequency_ranges:
+                    selected_frequency = self.select_random_frequency(frequency_ranges)
+                    if selected_frequency:
+                        config['frequency'] = selected_frequency
+                        config.pop('frequency_ranges', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from ranges {frequency_ranges}")
+                    else:
+                        logger.error(f"Failed to select frequency from ranges: {frequency_ranges}")
+                        return jsonify({'error': 'Invalid frequency range configuration'}), 500
+                elif manual_frequency_range:
+                    min_hz = manual_frequency_range.get('min_hz')
+                    max_hz = manual_frequency_range.get('max_hz')
+                    if min_hz and max_hz:
+                        selected_frequency = float(random.randint(int(min_hz), int(max_hz)))
+                        config['frequency'] = selected_frequency
+                        config.pop('manual_frequency_range', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from manual range {min_hz}-{max_hz}")
+                    else:
+                        logger.error(f"Invalid manual frequency range: {manual_frequency_range}")
+                        return jsonify({'error': 'Invalid manual frequency range configuration'}), 500
+                elif 'frequency' in config:
+                    config['frequency'] = float(config['frequency'])
+
+                # Broadcast assignment event
+                self.broadcast_event('challenge_assigned', {
+                    'runner_id': agent_id,
+                    'agent_id': agent_id,
+                    'challenge_id': challenge['challenge_id'],
+                    'challenge_name': challenge['name'],
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                # TODO: Check if we should assign a listener to record this transmission
+                # This will be implemented in the coordinated assignment logic
+
+                return jsonify({
+                    'task': {
+                        'challenge_id': challenge['challenge_id'],
+                        'name': challenge['name'],
+                        'config': config
+                    }
+                }), 200
+            else:
+                return jsonify({'task': None, 'message': 'No challenges available'}), 200
+
+        @self.app.route('/api/agents/<agent_id>/complete', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("1000 per minute")
+        def agent_complete_task(agent_id):
+            """Mark challenge as completed by runner agent."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            data = request.json
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            challenge_id = data.get('challenge_id')
+            if not challenge_id:
+                return jsonify({'error': 'Missing required field: challenge_id'}), 400
+
+            success = data.get('success', False)
+            if not isinstance(success, bool):
+                return jsonify({'error': 'Field "success" must be a boolean'}), 400
+
+            error_message = data.get('error_message')
+
+            # Get challenge info
+            challenge = self.db.get_challenge(challenge_id)
+            challenge_name = challenge['name'] if challenge else challenge_id
+
+            config = self.db.complete_challenge(challenge_id, agent_id, success, error_message)
+            if not config:
+                return jsonify({'error': 'Challenge not found'}), 404
+
+            # Add to in-memory transmission buffer
+            timestamp = datetime.now(timezone.utc).isoformat()
+            transmission = {
+                'started_at': timestamp,
+                'runner_id': agent_id,
+                'agent_id': agent_id,
+                'challenge_id': challenge_id,
+                'challenge_name': challenge_name,
+                'frequency': config.get('frequency', 0),
+                'status': 'success' if success else 'failed',
+                'error_message': error_message
+            }
+
+            with self.transmission_lock:
+                self.transmission_buffer.appendleft(transmission)
+
+            # Broadcast completion event
+            self.broadcast_event('transmission_complete', {
+                'runner_id': agent_id,
+                'agent_id': agent_id,
+                'challenge_id': challenge_id,
+                'challenge_name': challenge_name,
+                'frequency': config.get('frequency', 0),
+                'status': 'success' if success else 'failed',
+                'error_message': error_message,
+                'timestamp': timestamp
+            })
+
+            # Broadcast updated public challenges
+            self.broadcast_public_challenges()
+
+            return jsonify({'status': 'recorded'}), 200
+
+        @self.app.route('/api/agents/<agent_id>/log', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("1000 per minute")
+        def agent_upload_log(agent_id):
+            """Receive log entries from agent (runner or listener)."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            data = request.json
+            log_entry = data.get('log', {})
+
+            # Create structured log event
+            log_event = {
+                'type': 'log',
+                'source': agent_id,
+                'level': log_entry.get('level', 'INFO'),
+                'message': log_entry.get('message', ''),
+                'timestamp': log_entry.get('timestamp', datetime.now(timezone.utc).isoformat())
+            }
+
+            # Store in log buffer
+            if len(self.log_buffer) >= 1000:
+                self.log_buffer.pop(0)
+            self.log_buffer.append(log_event)
+
+            # Broadcast log event to WebUI
+            self.broadcast_event('log', log_event)
+
+            return jsonify({'status': 'received'}), 200
+
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
         @self.require_admin_auth
