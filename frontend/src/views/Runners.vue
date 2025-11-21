@@ -1701,7 +1701,11 @@ radios:
 agent:
   agent_id: "${addListenerForm.value.listenerName}"
   server_url: "${serverUrl.value}"
+
+  # Enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
+  enrollment_token: "${response.data.token}"
   api_key: "${response.data.api_key}"
+
   heartbeat_interval: 30
   websocket_enabled: true
   websocket_reconnect_delay: 5
