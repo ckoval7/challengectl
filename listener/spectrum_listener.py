@@ -27,7 +27,8 @@ class SpectrumListener:
     """GNU Radio flowgraph for capturing RF spectrum and generating FFT data."""
 
     def __init__(self, frequency: int, sample_rate: int = 2000000,
-                 fft_size: int = 1024, gain: float = 40.0, device_id: str = ""):
+                 fft_size: int = 1024, gain: float = 40.0, device_id: str = "",
+                 simulate: bool = False):
         """Initialize spectrum listener.
 
         Args:
@@ -36,22 +37,26 @@ class SpectrumListener:
             fft_size: FFT size for spectrum analysis (default 1024)
             gain: RF gain in dB (default 40)
             device_id: Device identifier string (e.g., "rtlsdr=0", "hackrf=0")
+            simulate: Force simulation mode (generate test data without SDR hardware)
         """
         self.frequency = frequency
         self.sample_rate = sample_rate
         self.fft_size = fft_size
         self.gain = gain
         self.device_id = device_id
+        self.simulate = simulate
 
         # FFT data storage
         self.fft_frames = []
         self.recording = False
 
-        if HAS_GNURADIO:
+        if HAS_GNURADIO and not simulate:
             self.tb = gr.top_block()
             self._build_flowgraph()
         else:
             self.tb = None
+            if simulate:
+                logger.info("Simulation mode: Using simulated spectrum data")
 
     def _build_flowgraph(self):
         """Build GNU Radio flowgraph for spectrum capture."""
@@ -95,9 +100,12 @@ class SpectrumListener:
         Returns:
             2D numpy array of FFT data [time, frequency]
         """
-        if not HAS_GNURADIO:
+        if not HAS_GNURADIO or self.simulate:
             # Return simulated data for testing
-            logger.warning("Using simulated spectrum data (GNU Radio not available)")
+            if self.simulate:
+                logger.info("Using simulated spectrum data (simulation mode enabled)")
+            else:
+                logger.warning("Using simulated spectrum data (GNU Radio not available)")
             return self._generate_simulated_spectrum(duration, frame_rate)
 
         self.fft_frames = []

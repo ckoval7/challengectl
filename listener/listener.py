@@ -39,17 +39,22 @@ logger = logging.getLogger(__name__)
 class ListenerAgent:
     """Spectrum listener agent that receives WebSocket recording assignments."""
 
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, simulate: bool = False):
         """Initialize listener agent.
 
         Args:
             config_path: Path to listener configuration YAML file
+            simulate: Force simulation mode (generate test data without SDR hardware)
         """
         self.config = self.load_config(config_path)
         self.agent_id = self.config['agent']['agent_id']
         self.server_url = self.config['agent']['server_url']
         self.api_key = self.config['agent']['api_key']
         self.heartbeat_interval = self.config['agent'].get('heartbeat_interval', 30)
+        self.simulate = simulate
+
+        if simulate:
+            logger.info("Simulation mode enabled - will generate test data without SDR hardware")
 
         # WebSocket client
         self.sio = socketio.Client(
@@ -364,7 +369,8 @@ class ListenerAgent:
                 sample_rate=sample_rate,
                 fft_size=fft_size,
                 gain=selected_device['gain'],
-                device_id=device_id
+                device_id=device_id,
+                simulate=self.simulate
             )
 
             logger.info(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate})")
@@ -623,13 +629,15 @@ def main():
                        help='Path to listener configuration YAML file')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose logging')
+    parser.add_argument('--simulate', '-s', action='store_true',
+                       help='Force simulation mode (generate test data without SDR hardware)')
 
     args = parser.parse_args()
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    agent = ListenerAgent(args.config)
+    agent = ListenerAgent(args.config, simulate=args.simulate)
     sys.exit(agent.run())
 
 
