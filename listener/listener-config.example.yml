@@ -1,0 +1,63 @@
+# ChallengeCtl Listener Agent Configuration
+# Copy this file to listener-config.yml and customize for your setup
+
+agent:
+  # Unique identifier for this listener agent
+  # Should match the agent_id enrolled via the server's enrollment system
+  agent_id: "listener-1"
+
+  # ChallengeCtl server URL (HTTPS recommended)
+  server_url: "https://192.168.1.100:8443"
+
+  # API key for authentication (obtained during enrollment)
+  # Keep this secure - treat it like a password
+  api_key: "your-api-key-here"
+
+  # Heartbeat interval in seconds (how often to check in with server)
+  heartbeat_interval: 30
+
+  # WebSocket configuration
+  websocket_enabled: true
+  websocket_reconnect_delay: 5  # seconds between reconnection attempts
+
+  # Recording configuration
+  recording:
+    # Output directory for waterfall images
+    output_dir: "recordings"
+
+    # RF parameters
+    sample_rate: 2000000  # 2 MHz sample rate
+    fft_size: 1024        # FFT size for spectrum analysis
+    frame_rate: 20        # Waterfall frames per second
+    gain: 40              # RF gain in dB
+
+    # Pre-roll and post-roll (seconds before/after transmission)
+    # This ensures we capture the entire transmission even with timing variations
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+
+    # SDR device configuration (osmosdr format)
+    device:
+      # Device ID string (osmosdr format)
+      # Examples:
+      #   - RTL-SDR: "rtlsdr=0" or "rtlsdr=<serial>"
+      #   - HackRF: "hackrf=0"
+      #   - USRP: "uhd=0"
+      id: "rtlsdr=0"
+
+      # Device type for identification
+      type: "rtlsdr"
+
+      # Device serial number (optional, for multi-device setups)
+      serial: "00000001"
+
+# Logging configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+  # Log file path (optional, omit to log to stdout only)
+  # file: "listener.log"
+
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
