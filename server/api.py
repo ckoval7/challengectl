@@ -1542,6 +1542,32 @@ class ChallengeCtlAPI:
                 logger.error(f"Error getting frequency ranges: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
+        @self.app.route('/api/frequency-ranges/reload', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def reload_frequency_ranges():
+            """Reload configuration file to pick up new frequency ranges.
+
+            This reloads the entire server configuration from disk, making any
+            new frequency ranges immediately available without restarting the server.
+            """
+            try:
+                # Reload config from disk
+                self.config = self.load_config(self.config_path)
+                logger.info(f"Configuration reloaded from {self.config_path}")
+
+                # Get updated frequency ranges
+                frequency_ranges = self.get_frequency_ranges()
+
+                return jsonify({
+                    'status': 'reloaded',
+                    'count': len(frequency_ranges),
+                    'ranges': frequency_ranges
+                }), 200
+            except Exception as e:
+                logger.error(f"Error reloading configuration: {e}")
+                return jsonify({'error': 'Failed to reload configuration'}), 500
+
         # Conference settings endpoints (admin only)
         @self.app.route('/api/conference/day-times', methods=['PUT'])
         @self.require_admin_auth

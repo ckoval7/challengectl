@@ -212,24 +212,38 @@
             label="Named Frequency Ranges"
             required
           >
-            <el-select
-              v-model="challengeForm.frequency_ranges"
-              multiple
-              placeholder="Select one or more frequency ranges"
-              class="w-full"
-            >
-              <el-option
-                v-for="range in availableFrequencyRanges"
-                :key="range.name"
-                :label="range.display_name || range.name"
-                :value="range.name"
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <el-select
+                v-model="challengeForm.frequency_ranges"
+                multiple
+                placeholder="Select one or more frequency ranges"
+                style="flex: 1;"
               >
-                <span style="font-weight: 500">{{ range.display_name || range.name }}</span>
-                <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px">
-                  {{ range.description }}
-                </span>
-              </el-option>
-            </el-select>
+                <el-option
+                  v-for="range in availableFrequencyRanges"
+                  :key="range.name"
+                  :label="range.display_name || range.name"
+                  :value="range.name"
+                >
+                  <span style="font-weight: 500">{{ range.display_name || range.name }}</span>
+                  <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px">
+                    {{ range.description }}
+                  </span>
+                </el-option>
+              </el-select>
+              <el-tooltip
+                content="Reload frequency ranges from config file"
+                placement="top"
+              >
+                <el-button
+                  :icon="loadingRanges ? 'Loading' : 'Refresh'"
+                  :loading="loadingRanges"
+                  @click="reloadFrequencyRanges"
+                >
+                  Reload
+                </el-button>
+              </el-tooltip>
+            </div>
             <div class="text-sm text-gray-500 mt-5">
               A random frequency will be selected from the chosen range(s) for each transmission
             </div>
@@ -787,6 +801,7 @@ export default {
     // Frequency ranges
     const availableFrequencyRanges = ref([])
     const frequencyMode = ref('direct') // 'direct' or 'ranges'
+    const loadingRanges = ref(false)
 
     // Create form
     const challengeForm = ref({
@@ -1091,6 +1106,20 @@ export default {
       }
     }
 
+    const reloadFrequencyRanges = async () => {
+      loadingRanges.value = true
+      try {
+        const response = await api.post('/frequency-ranges/reload')
+        availableFrequencyRanges.value = response.data.ranges || []
+        ElMessage.success(`Reloaded ${response.data.count} frequency ranges`)
+      } catch (error) {
+        console.error('Failed to reload frequency ranges:', error)
+        ElMessage.error(error.response?.data?.error || 'Failed to reload frequency ranges')
+      } finally {
+        loadingRanges.value = false
+      }
+    }
+
     const reloadChallenges = async () => {
       try {
         const response = await api.post('/challenges/reload')
@@ -1213,6 +1242,7 @@ export default {
       importing,
       availableFrequencyRanges,
       frequencyMode,
+      loadingRanges,
       challengeForm,
       flagFile,
       flagUploadRef,
@@ -1234,6 +1264,7 @@ export default {
       importChallenges,
       loadChallenges,
       loadFrequencyRanges,
+      reloadFrequencyRanges,
       reloadChallenges,
       toggleChallenge,
       triggerChallenge,
