@@ -499,16 +499,46 @@ class transmitter:
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
 
 
-def select_freq(band):
-    """Read from frequencies text file, select row that starts with band argument.
-    Returns tuple with randomly selected frequency, the minimum frequency for that band, and
-    the maximum frequency for that band."""
-    with open("frequencies.txt", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if row[0] == band:
-                freq = randint(int(row[1]), int(row[2]))
-                return ((freq, row[1], row[2]))
+def select_freq(band, config=None):
+    """Read from config or frequencies text file, select row that starts with band argument.
+    Returns tuple with randomly selected frequency (in kHz), the minimum frequency for that band (in kHz),
+    and the maximum frequency for that band (in kHz).
+
+    Args:
+        band: Named frequency range (e.g., "ham_144")
+        config: Optional config dict. If provided, reads from config['frequency_ranges'].
+                If not provided, falls back to frequencies.txt for backward compatibility.
+
+    Returns:
+        Tuple of (random_freq_khz, min_freq_khz, max_freq_khz)
+    """
+    # Try to read from config first
+    if config and 'frequency_ranges' in config:
+        for freq_range in config['frequency_ranges']:
+            if freq_range.get('name') == band:
+                min_hz = freq_range['min_hz']
+                max_hz = freq_range['max_hz']
+                # Select random frequency in Hz
+                freq_hz = randint(min_hz, max_hz)
+                # Convert to kHz for return value (legacy compatibility)
+                freq_khz = freq_hz // 1000
+                min_khz = min_hz // 1000
+                max_khz = max_hz // 1000
+                return (freq_khz, min_khz, max_khz)
+
+    # Fallback to frequencies.txt for backward compatibility
+    try:
+        with open("frequencies.txt", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if row[0] == band:
+                    freq = randint(int(row[1]), int(row[2]))
+                    return ((freq, row[1], row[2]))
+    except FileNotFoundError:
+        logging.warning(f"frequencies.txt not found and frequency range '{band}' not in config")
+        pass
+
+    return None
 
 
 # def select_dvbt(channel):
@@ -952,19 +982,39 @@ def main(options=None):
                 cc_modopt1 = challenge.get('speed') or challenge.get('capcode') or challenge.get('mode') or challenge.get('wav_samplerate', '')
                 cc_modopt2 = challenge.get('wav_samplerate', '')
 
-            # Determine frequency (could be numeric or named range)
-            try:
-                # Frequency in Hz from YAML
-                txfreq = int(cc_freq1)
-                # Convert to kHz for display/legacy compatibility
-                txfreq_khz = txfreq // 1000
-                freq_or_range = str(txfreq_khz)
-            except (ValueError, TypeError):
-                # Named frequency range (e.g., "ham_144")
-                freq_range = select_freq(cc_freq1)
-                txfreq_khz = freq_range[0]
-                txfreq = txfreq_khz * 1000
-                freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
+            # Determine frequency (could be numeric, named range, or array of named ranges)
+            frequency_ranges = challenge.get('frequency_ranges')
+
+            if frequency_ranges:
+                # New format: array of named frequency ranges
+                # Select a random range from the array
+                selected_range_name = choice(frequency_ranges)
+                freq_range = select_freq(selected_range_name, config)
+                if freq_range:
+                    txfreq_khz = freq_range[0]
+                    txfreq = float(txfreq_khz * 1000)  # Convert to Hz as float
+                    freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
+                else:
+                    logging.error(f"Could not find frequency range: {selected_range_name}")
+                    raise ValueError(f"Unknown frequency range: {selected_range_name}")
+            else:
+                # Legacy format: single frequency or band name
+                try:
+                    # Frequency in Hz from YAML
+                    txfreq = float(cc_freq1)  # Ensure float type
+                    # Convert to kHz for display/legacy compatibility
+                    txfreq_khz = txfreq // 1000
+                    freq_or_range = str(int(txfreq_khz))
+                except (ValueError, TypeError):
+                    # Named frequency range (e.g., "ham_144")
+                    freq_range = select_freq(cc_freq1, config)
+                    if freq_range:
+                        txfreq_khz = freq_range[0]
+                        txfreq = float(txfreq_khz * 1000)  # Convert to Hz as float
+                        freq_or_range = str(freq_range[1]) + "-" + str(freq_range[2])
+                    else:
+                        logging.error(f"Could not find frequency range: {cc_freq1}")
+                        raise ValueError(f"Unknown frequency range: {cc_freq1}")
 
             # Paint waterfall every time during the CTF, or only once when testing
             if(test != True or challenges_transmitted == 0):

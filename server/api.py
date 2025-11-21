@@ -24,6 +24,7 @@ import threading
 import secrets
 import bcrypt
 import pyotp
+import random
 
 from database import Database
 from crypto import encrypt_totp_secret
@@ -195,6 +196,42 @@ class ChallengeCtlAPI:
     def get_conference_name(self) -> str:
         """Get the conference name from config."""
         return self.config.get('conference', {}).get('name', 'ChallengeCtl')
+
+    def get_frequency_ranges(self) -> List[Dict]:
+        """Get frequency ranges from config.
+
+        Returns:
+            List of frequency range dictionaries with name, description, min_hz, max_hz
+        """
+        return self.config.get('frequency_ranges', [])
+
+    def select_random_frequency(self, frequency_ranges: List[str]) -> Optional[float]:
+        """Select a random frequency from one or more named frequency ranges.
+
+        Args:
+            frequency_ranges: List of frequency range names (e.g., ["ham_144", "ham_220"])
+
+        Returns:
+            Random frequency in Hz as a float, or None if ranges not found
+        """
+        if not frequency_ranges:
+            return None
+
+        # Select a random range from the list
+        selected_range_name = random.choice(frequency_ranges)
+
+        # Find the range configuration
+        available_ranges = self.get_frequency_ranges()
+        for freq_range in available_ranges:
+            if freq_range.get('name') == selected_range_name:
+                min_hz = freq_range.get('min_hz')
+                max_hz = freq_range.get('max_hz')
+                if min_hz is not None and max_hz is not None:
+                    # Select random frequency within the range and return as float
+                    return float(random.randint(int(min_hz), int(max_hz)))
+
+        logger.warning(f"Frequency range '{selected_range_name}' not found in configuration")
+        return None
 
     def check_config_sync(self) -> Dict:
         """Check if database challenges are in sync with config file.
@@ -1520,6 +1557,46 @@ class ChallengeCtlAPI:
                 logger.error(f"Error getting conference info: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
+        @self.app.route('/api/frequency-ranges', methods=['GET'])
+        def get_frequency_ranges():
+            """Get available named frequency ranges from configuration.
+
+            Returns:
+                List of frequency range objects with name, description, min_hz, max_hz
+            """
+            try:
+                frequency_ranges = self.get_frequency_ranges()
+                return jsonify(frequency_ranges), 200
+            except Exception as e:
+                logger.error(f"Error getting frequency ranges: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
+        @self.app.route('/api/frequency-ranges/reload', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def reload_frequency_ranges():
+            """Reload configuration file to pick up new frequency ranges.
+
+            This reloads the entire server configuration from disk, making any
+            new frequency ranges immediately available without restarting the server.
+            """
+            try:
+                # Reload config from disk
+                self.config = self.load_config(self.config_path)
+                logger.info(f"Configuration reloaded from {self.config_path}")
+
+                # Get updated frequency ranges
+                frequency_ranges = self.get_frequency_ranges()
+
+                return jsonify({
+                    'status': 'reloaded',
+                    'count': len(frequency_ranges),
+                    'ranges': frequency_ranges
+                }), 200
+            except Exception as e:
+                logger.error(f"Error reloading configuration: {e}")
+                return jsonify({'error': 'Failed to reload configuration'}), 500
+
         # Conference settings endpoints (admin only)
         @self.app.route('/api/conference/day-times', methods=['PUT'])
         @self.require_admin_auth
@@ -1713,6 +1790,40 @@ class ChallengeCtlAPI:
             challenge = self.db.assign_challenge(runner_id)
 
             if challenge:
+                # Process frequency_ranges or manual_frequency_range if present
+                config = challenge['config'].copy()  # Make a copy to avoid modifying stored config
+                frequency_ranges = config.get('frequency_ranges')
+                manual_frequency_range = config.get('manual_frequency_range')
+
+                if frequency_ranges:
+                    # Select random frequency from named ranges
+                    selected_frequency = self.select_random_frequency(frequency_ranges)
+                    if selected_frequency:
+                        # Replace frequency_ranges with selected frequency
+                        config['frequency'] = selected_frequency
+                        # Remove frequency_ranges from config sent to runner
+                        config.pop('frequency_ranges', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from ranges {frequency_ranges}")
+                    else:
+                        logger.error(f"Failed to select frequency from ranges: {frequency_ranges}")
+                        return jsonify({'error': 'Invalid frequency range configuration'}), 500
+                elif manual_frequency_range:
+                    # Select random frequency from manual range
+                    min_hz = manual_frequency_range.get('min_hz')
+                    max_hz = manual_frequency_range.get('max_hz')
+                    if min_hz and max_hz:
+                        selected_frequency = float(random.randint(int(min_hz), int(max_hz)))
+                        config['frequency'] = selected_frequency
+                        # Remove manual_frequency_range from config sent to runner
+                        config.pop('manual_frequency_range', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from manual range {min_hz}-{max_hz}")
+                    else:
+                        logger.error(f"Invalid manual frequency range: {manual_frequency_range}")
+                        return jsonify({'error': 'Invalid manual frequency range configuration'}), 500
+                elif 'frequency' in config:
+                    # Ensure existing frequency is a float
+                    config['frequency'] = float(config['frequency'])
+
                 # Broadcast assignment event
                 self.broadcast_event('challenge_assigned', {
                     'runner_id': runner_id,
@@ -1725,7 +1836,7 @@ class ChallengeCtlAPI:
                     'task': {
                         'challenge_id': challenge['challenge_id'],
                         'name': challenge['name'],
-                        'config': challenge['config']
+                        'config': config
                     }
                 }), 200
             else:
@@ -2461,12 +2572,73 @@ radios:
             if not isinstance(config, dict):
                 return jsonify({'error': 'Field "config" must be a dictionary'}), 400
 
+            # Validate required fields in config
+            modulation = config.get('modulation')
+            if not modulation:
+                return jsonify({'error': 'Missing required field: modulation'}), 400
+
             # Validate timing configuration
             min_delay = config.get('min_delay')
             max_delay = config.get('max_delay')
-            if min_delay is not None and max_delay is not None:
-                if min_delay > max_delay:
-                    return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
+            if min_delay is None:
+                return jsonify({'error': 'Missing required field: min_delay'}), 400
+            if max_delay is None:
+                return jsonify({'error': 'Missing required field: max_delay'}), 400
+
+            if min_delay > max_delay:
+                return jsonify({'error': 'min_delay must be less than or equal to max_delay'}), 400
+
+            # Validate frequency specification - exactly one required
+            frequency = config.get('frequency')
+            frequency_ranges = config.get('frequency_ranges')
+            manual_frequency_range = config.get('manual_frequency_range')
+
+            freq_specs_present = sum([
+                frequency is not None,
+                frequency_ranges is not None,
+                manual_frequency_range is not None
+            ])
+
+            if freq_specs_present == 0:
+                return jsonify({
+                    'error': 'Missing frequency specification. Must provide one of: frequency, frequency_ranges, or manual_frequency_range'
+                }), 400
+
+            if freq_specs_present > 1:
+                return jsonify({
+                    'error': 'Multiple frequency specifications provided. Must provide exactly one of: frequency, frequency_ranges, or manual_frequency_range'
+                }), 400
+
+            # Validate frequency_ranges if provided
+            if frequency_ranges is not None:
+                if not isinstance(frequency_ranges, list) or len(frequency_ranges) == 0:
+                    return jsonify({'error': 'frequency_ranges must be a non-empty array'}), 400
+
+                # Validate that all ranges exist in configuration
+                available_ranges = self.get_frequency_ranges()
+                available_names = {r.get('name') for r in available_ranges}
+                for range_name in frequency_ranges:
+                    if range_name not in available_names:
+                        return jsonify({
+                            'error': f'Unknown frequency range: {range_name}. Available ranges: {", ".join(sorted(available_names))}'
+                        }), 400
+
+            # Validate manual_frequency_range if provided
+            if manual_frequency_range is not None:
+                if not isinstance(manual_frequency_range, dict):
+                    return jsonify({'error': 'manual_frequency_range must be an object with min_hz and max_hz'}), 400
+
+                min_hz = manual_frequency_range.get('min_hz')
+                max_hz = manual_frequency_range.get('max_hz')
+
+                if min_hz is None:
+                    return jsonify({'error': 'manual_frequency_range.min_hz is required'}), 400
+                if max_hz is None:
+                    return jsonify({'error': 'manual_frequency_range.max_hz is required'}), 400
+
+                if min_hz >= max_hz:
+                    return jsonify({'error': 'manual_frequency_range.min_hz must be less than max_hz'}), 400
 
             # Ensure name is in config
             config['name'] = name
@@ -3090,11 +3262,39 @@ radios:
             # Show frequency if enabled (default: True)
             if public_view.get('show_frequency', True):
                 frequency = config.get('frequency')
+                frequency_ranges = config.get('frequency_ranges')
+                manual_frequency_range = config.get('manual_frequency_range')
+
                 if frequency:
                     # Format frequency in MHz for readability
                     freq_mhz = frequency / 1_000_000
                     public_challenge['frequency'] = frequency
                     public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
+                elif frequency_ranges:
+                    # Show named frequency ranges with display names
+                    public_challenge['frequency_ranges'] = frequency_ranges
+                    # Get display names for the ranges
+                    display_names = []
+                    for range_name in frequency_ranges:
+                        # Look up the display name from config
+                        freq_range_config = next(
+                            (r for r in self.get_frequency_ranges() if r.get('name') == range_name),
+                            None
+                        )
+                        if freq_range_config and 'display_name' in freq_range_config:
+                            display_names.append(freq_range_config['display_name'])
+                        else:
+                            display_names.append(range_name)
+                    public_challenge['frequency_display'] = ', '.join(display_names)
+                elif manual_frequency_range:
+                    # Show manual frequency range
+                    min_hz = manual_frequency_range.get('min_hz')
+                    max_hz = manual_frequency_range.get('max_hz')
+                    if min_hz and max_hz:
+                        min_mhz = min_hz / 1_000_000
+                        max_mhz = max_hz / 1_000_000
+                        public_challenge['manual_frequency_range'] = manual_frequency_range
+                        public_challenge['frequency_display'] = f"{min_mhz:.3f}-{max_mhz:.3f} MHz"
 
             # Show last transmission time if enabled (default: True)
             if public_view.get('show_last_tx_time', True):

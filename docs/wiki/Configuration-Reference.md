@@ -77,6 +77,61 @@ The enrollment process provides:
 - Each runner has a unique, cryptographically random 32-character key
 - Re-enrollment process for legitimate host migration
 
+### Frequency Ranges Section
+
+Defines named frequency ranges for random frequency selection in challenges. This is optional but recommended for dynamic frequency allocation.
+
+```yaml
+frequency_ranges:
+  - name: "ham_144"
+    display_name: "2 Meter Ham Band"
+    description: "2m Amateur Radio Band (144-148 MHz)"
+    min_hz: 144000000
+    max_hz: 148000000
+
+  - name: "ham_440"
+    display_name: "70 Centimeter Ham Band"
+    description: "70cm Amateur Radio Band (420-450 MHz)"
+    min_hz: 420000000
+    max_hz: 450000000
+
+  - name: "ism_433"
+    display_name: "433 MHz ISM Band"
+    description: "433 MHz ISM Band (433.05-434.79 MHz)"
+    min_hz: 433050000
+    max_hz: 434790000
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Unique identifier for the range. Used in challenge configuration. |
+| `display_name` | string | yes | Human-friendly name shown in the UI and public dashboard. |
+| `description` | string | yes | Detailed description of the frequency range. |
+| `min_hz` | integer | yes | Minimum frequency in Hz. |
+| `max_hz` | integer | yes | Maximum frequency in Hz. |
+
+#### Usage
+
+When a challenge references one or more frequency ranges, the system:
+1. Randomly selects one of the specified ranges (if multiple are configured)
+2. Randomly selects a frequency within that range
+3. Assigns the frequency to the runner before transmission
+
+This allows for:
+- **Dynamic frequency allocation** - Different frequency on each transmission
+- **Band-specific challenges** - Constrain challenges to specific amateur or ISM bands
+- **Event flexibility** - Update available ranges without modifying challenges
+
+#### Reloading Configuration
+
+Frequency ranges can be dynamically reloaded without restarting the server:
+- Via API: `POST /api/frequency-ranges/reload`
+- Via Web UI: Click "Reload" button in the frequency range selector
+
+See [API Reference](API-Reference#frequency-range-management) for endpoint details.
+
 ### Conference Section
 
 Defines event metadata and scheduling (optional).
@@ -325,12 +380,38 @@ Challenges are defined in the server configuration file. Each challenge specifie
 
 ### Basic Challenge Structure
 
+ChallengeCtl supports three ways to specify frequencies:
+
 ```yaml
 challenges:
-  - name: CHALLENGE_NAME
-    frequency: 146550000
+  # Option 1: Single frequency
+  - name: NBFM_FIXED
+    frequency: 146550000  # Hz (146.550 MHz)
     modulation: nbfm
     flag: challenges/file.wav
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # Option 2: Named frequency ranges
+  - name: NBFM_RANDOM
+    frequency_ranges:  # Random frequency from these ranges
+      - ham_144
+      - ham_220
+    modulation: nbfm
+    flag: challenges/file.wav
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # Option 3: Manual frequency range
+  - name: CW_CUSTOM_RANGE
+    manual_frequency_range:
+      min_hz: 146000000  # 146.000 MHz
+      max_hz: 146100000  # 146.100 MHz
+    modulation: cw
+    flag: "CQ CQ CQ DE RFCTF K"
+    speed: 35
     min_delay: 60
     max_delay: 90
     enabled: true
@@ -343,12 +424,23 @@ These parameters apply to all challenges regardless of modulation type.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | string | yes | Unique identifier for the challenge. Alphanumeric and underscores. |
-| `frequency` | integer | yes | Transmission frequency in Hz (e.g., 146550000 for 146.55 MHz). |
+| `frequency` | integer | conditional | Transmission frequency in Hz (e.g., 146550000 for 146.55 MHz). Required if not using `frequency_ranges` or `manual_frequency_range`. |
+| `frequency_ranges` | array | conditional | Array of named frequency range identifiers (e.g., `["ham_144", "ham_440"]`). System randomly selects a frequency from these ranges on each transmission. Required if not using `frequency` or `manual_frequency_range`. |
+| `manual_frequency_range` | object | conditional | Custom frequency range with `min_hz` and `max_hz` integer fields. System randomly selects a frequency within this range on each transmission. Required if not using `frequency` or `frequency_ranges`. |
 | `modulation` | string | yes | Modulation type. See [Modulation-Specific Parameters](#modulation-specific-parameters). |
 | `flag` | string | yes | Path to challenge file or inline text content. |
 | `min_delay` | integer | yes | Minimum seconds between transmissions of this challenge. |
 | `max_delay` | integer | yes | Maximum seconds between transmissions of this challenge. |
 | `enabled` | boolean | yes | Whether this challenge is currently active. |
+
+**Frequency Specification:** Each challenge must use exactly one of: `frequency`, `frequency_ranges`, or `manual_frequency_range`.
+
+**Named Frequency Ranges:** The named ranges referenced in `frequency_ranges` must be defined in the `frequency_ranges` section at the top of the configuration file. See [Frequency Ranges Section](#frequency-ranges-section) for details.
+
+**Frequency Selection Logic:**
+- `frequency`: Always uses the specified frequency
+- `frequency_ranges`: On each transmission, randomly selects one range from the array, then randomly selects a frequency within that range
+- `manual_frequency_range`: On each transmission, randomly selects a frequency between `min_hz` and `max_hz`
 
 ### Optional Parameters
 
