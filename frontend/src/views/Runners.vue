@@ -1055,6 +1055,10 @@ export default {
   setup() {
     const runners = ref([])
     const listeners = ref([])
+
+    // Runner enrollment state
+    // Note: Kept separate from listener enrollment due to significantly different
+    // form structures (runners have complex multi-device config, listeners are simpler)
     const addRunnerDialogVisible = ref(false)
     const addRunnerForm = ref({
       runnerName: '',
@@ -1079,6 +1083,7 @@ export default {
     const reEnrollData = ref(null)
 
     // Listener enrollment state
+    // Note: Kept separate due to different form structure and simpler device config
     const addListenerDialogVisible = ref(false)
     const addListenerForm = ref({
       listenerName: '',
@@ -1144,6 +1149,17 @@ export default {
             frequency_limits: '144000000-148000000, 420000000-450000000'
           }
         ]
+      }
+    }
+
+    const showAddListenerDialog = () => {
+      addListenerDialogVisible.value = true
+      listenerEnrollmentData.value = null
+      addListenerForm.value = {
+        listenerName: '',
+        expiresHours: 24,
+        deviceType: 'rtlsdr',
+        deviceId: 'rtlsdr=0'
       }
     }
 
