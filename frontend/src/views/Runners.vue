@@ -1938,6 +1938,7 @@ curl -k \\
       activeTab,
       runners,
       listeners,
+      loadAgents,
       addRunnerDialogVisible,
       addRunnerForm,
       enrollmentData,
