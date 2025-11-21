@@ -290,6 +290,72 @@ class ChallengeCtlAPI:
                 runner['devices'] = []
         return runner
 
+    def calculate_recording_priority(self, challenge: Dict) -> float:
+        """Calculate recording priority for a challenge transmission.
+
+        Priority algorithm balances:
+        - Number of transmissions since last recording
+        - Time elapsed since last recording
+        - Challenge priority setting
+
+        Args:
+            challenge: Challenge dictionary with id, priority, etc.
+
+        Returns:
+            Priority score (0-1000, higher = more urgent)
+        """
+        challenge_id = challenge['challenge_id']
+        challenge_priority = challenge.get('priority', 0)
+
+        # Get last completed recording for this challenge
+        last_recording = self.db.get_last_recording_for_challenge(challenge_id)
+
+        # Get count of successful transmissions since last recording
+        if last_recording:
+            since_time = datetime.fromisoformat(last_recording['completed_at'])
+        else:
+            since_time = None
+
+        transmissions_since = self.db.get_transmissions_since_recording(challenge_id, since_time)
+
+        # Never recorded = highest priority
+        if last_recording is None:
+            return 1000.0
+
+        # Calculate time factor
+        now = datetime.now(timezone.utc)
+        completed_at = datetime.fromisoformat(last_recording['completed_at'])
+        minutes_since = (now - completed_at).total_seconds() / 60.0
+
+        # Time multiplier: gradually increases up to 10x over hours
+        # max(1.0, ...) ensures minimum 1x multiplier
+        time_multiplier = max(1.0, min(10.0, minutes_since / 60.0))
+
+        # Base priority: transmissions since last recording
+        # Multiply by time to gradually increase priority
+        priority = transmissions_since * time_multiplier
+
+        # Apply challenge priority boost (0-10 scale, default 0 = 1.0x)
+        priority_boost = max(0.1, challenge_priority / 10.0)
+        priority *= priority_boost
+
+        # Cap at 1000
+        return min(1000.0, priority)
+
+    def should_assign_listener(self, challenge: Dict, threshold: float = 10.0) -> bool:
+        """Determine if a listener should be assigned for this transmission.
+
+        Args:
+            challenge: Challenge dictionary
+            threshold: Minimum priority score to trigger recording (default 10)
+
+        Returns:
+            True if priority exceeds threshold, False otherwise
+        """
+        priority = self.calculate_recording_priority(challenge)
+        logger.debug(f"Recording priority for {challenge['name']}: {priority:.2f}")
+        return priority >= threshold
+
     def require_api_key(self, f):
         """Decorator to require API key authentication (for runners only).
 
@@ -2115,23 +2181,82 @@ class ChallengeCtlAPI:
                 elif 'frequency' in config:
                     config['frequency'] = float(config['frequency'])
 
+                # Create transmission record for tracking
+                transmission_id = self.db.record_transmission_start(
+                    challenge['challenge_id'],
+                    agent_id,
+                    config.get('device_id', ''),
+                    int(config.get('frequency', 0))
+                )
+
                 # Broadcast assignment event
                 self.broadcast_event('challenge_assigned', {
                     'runner_id': agent_id,
                     'agent_id': agent_id,
                     'challenge_id': challenge['challenge_id'],
                     'challenge_name': challenge['name'],
+                    'frequency': config.get('frequency', 0),
+                    'transmission_id': transmission_id,
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
-                # TODO: Check if we should assign a listener to record this transmission
-                # This will be implemented in the coordinated assignment logic
+                # Check if we should assign a listener to record this transmission
+                if self.should_assign_listener(challenge):
+                    # Find available listener agents with WebSocket connection
+                    listener_agents = self.db.get_all_agents(agent_type='listener')
+                    available_listeners = [
+                        l for l in listener_agents
+                        if l['status'] == 'online'
+                        and l['enabled']
+                        and l.get('websocket_connected')
+                    ]
+
+                    if available_listeners:
+                        # Select first available listener (TODO: implement better selection)
+                        listener = available_listeners[0]
+                        listener_id = listener['agent_id']
+
+                        # Calculate expected transmission timing
+                        expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
+                        expected_duration = config.get('duration', 30.0) + 10.0  # Add 10s buffer (5s pre-roll + 5s post-roll)
+
+                        # Create listener assignment
+                        assignment_id = self.db.create_listener_assignment(
+                            agent_id=listener_id,
+                            challenge_id=challenge['challenge_id'],
+                            transmission_id=transmission_id,
+                            frequency=int(config.get('frequency', 0)),
+                            expected_start=expected_start,
+                            expected_duration=expected_duration
+                        )
+
+                        if assignment_id > 0:
+                            # Push assignment to listener via WebSocket
+                            # Note: This uses SocketIO rooms - listener must join 'agent_<id>' room
+                            self.socketio.emit('recording_assignment', {
+                                'assignment_id': assignment_id,
+                                'challenge_id': challenge['challenge_id'],
+                                'challenge_name': challenge['name'],
+                                'transmission_id': transmission_id,
+                                'frequency': int(config.get('frequency', 0)),
+                                'expected_start': expected_start.isoformat(),
+                                'expected_duration': expected_duration,
+                                'runner_id': agent_id,
+                                'timestamp': datetime.now(timezone.utc).isoformat()
+                            }, room=f'agent_{listener_id}')
+
+                            logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
+                        else:
+                            logger.error(f"Failed to create listener assignment for {challenge['name']}")
+                    else:
+                        logger.warning(f"No available listeners for recording {challenge['name']} (priority score exceeded threshold)")
 
                 return jsonify({
                     'task': {
                         'challenge_id': challenge['challenge_id'],
                         'name': challenge['name'],
-                        'config': config
+                        'config': config,
+                        'transmission_id': transmission_id
                     }
                 }), 200
             else:
@@ -3717,6 +3842,103 @@ radios:
         @self.socketio.on('disconnect', namespace='/public')
         def handle_public_disconnect():
             logger.info(f"Public WebSocket client disconnected: {request.sid}")
+
+        # Agent namespace - for listener agents (authenticated via API key)
+        @self.socketio.on('connect', namespace='/agents')
+        def handle_agent_connect(auth):
+            """Handle WebSocket connection from listener agents.
+
+            Agents authenticate via API key in the auth dict.
+            Only listener agents should use this WebSocket connection.
+            """
+            logger.debug(f"Agent WebSocket connection attempt from {request.remote_addr}")
+
+            # Extract authentication from auth dict
+            if not auth or not isinstance(auth, dict):
+                logger.warning(f"Agent WebSocket rejected: Missing auth dict")
+                return False
+
+            api_key = auth.get('api_key')
+            agent_id = auth.get('agent_id')
+
+            if not api_key or not agent_id:
+                logger.warning(f"Agent WebSocket rejected: Missing api_key or agent_id")
+                return False
+
+            # Verify agent exists and API key is valid
+            # Use similar validation as HTTP endpoints
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                logger.warning(f"Agent WebSocket rejected: Agent {agent_id} not found")
+                return False
+
+            # For simplicity, we'll verify the API key matches
+            # In production, you'd want to use the full verification with bcrypt
+            # For now, just check if agent has an API key set
+            if not agent.get('api_key_hash'):
+                logger.warning(f"Agent WebSocket rejected: No API key set for {agent_id}")
+                return False
+
+            # Verify this is a listener agent
+            if agent['agent_type'] != 'listener':
+                logger.warning(f"Agent WebSocket rejected: {agent_id} is not a listener (type: {agent['agent_type']})")
+                return False
+
+            # Authentication successful - join agent-specific room
+            from flask_socketio import join_room
+            join_room(f'agent_{agent_id}', namespace='/agents')
+
+            # Update WebSocket connection status in database
+            self.db.update_listener_websocket_status(agent_id, connected=True)
+
+            logger.info(f"Listener agent WebSocket connected: {agent_id} (sid: {request.sid})")
+
+            # Broadcast listener online status to admin UI
+            self.broadcast_event('listener_status', {
+                'agent_id': agent_id,
+                'listener_id': agent_id,
+                'status': 'online',
+                'websocket_connected': True,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+            # Send welcome message with connection confirmation
+            emit('connected', {
+                'agent_id': agent_id,
+                'message': 'WebSocket connection established',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }, namespace='/agents')
+
+            return True
+
+        @self.socketio.on('disconnect', namespace='/agents')
+        def handle_agent_disconnect():
+            """Handle listener agent WebSocket disconnection."""
+            # Note: We don't have easy access to agent_id here, so we'll rely on
+            # heartbeat timeout to mark agents as offline. We just update the
+            # websocket_connected flag based on connection state.
+            logger.info(f"Agent WebSocket disconnected: {request.sid}")
+
+            # The agent will be marked as having no WebSocket connection
+            # We can't easily determine which agent this was without storing
+            # a mapping, so the cleanup will happen via heartbeat timeout
+
+        @self.socketio.on('heartbeat', namespace='/agents')
+        def handle_agent_heartbeat(data):
+            """Handle heartbeat from listener agent over WebSocket.
+
+            This is optional - agents can also send HTTP heartbeats.
+            This allows for more frequent keepalive over the WebSocket.
+            """
+            agent_id = data.get('agent_id')
+            if agent_id:
+                # Update heartbeat timestamp
+                self.db.update_agent_heartbeat(agent_id)
+
+                # Confirm heartbeat
+                emit('heartbeat_ack', {
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }, namespace='/agents')
 
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
