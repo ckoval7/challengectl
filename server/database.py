@@ -53,7 +53,29 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Runners table
+            # Agents table (unified runners and listeners)
+            # Note: For backward compatibility, we first create as 'runners' then migrate to 'agents'
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS agents (
+                    agent_id TEXT PRIMARY KEY,
+                    agent_type TEXT NOT NULL DEFAULT 'runner',
+                    hostname TEXT,
+                    ip_address TEXT,
+                    mac_address TEXT,
+                    machine_id TEXT,
+                    status TEXT DEFAULT 'offline',
+                    enabled BOOLEAN DEFAULT 1,
+                    last_heartbeat TIMESTAMP,
+                    devices JSON,
+                    api_key_hash TEXT,
+                    websocket_connected BOOLEAN DEFAULT 0,
+                    websocket_last_connected TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Legacy runners table (will be migrated to agents)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS runners (
                     runner_id TEXT PRIMARY KEY,
@@ -68,6 +90,50 @@ class Database:
                     api_key_hash TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Recordings table (for listener waterfall captures)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS recordings (
+                    recording_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    challenge_id TEXT,
+                    agent_id TEXT,
+                    transmission_id INTEGER,
+                    frequency INTEGER,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    status TEXT DEFAULT 'recording',
+                    image_path TEXT,
+                    image_width INTEGER,
+                    image_height INTEGER,
+                    sample_rate INTEGER,
+                    duration_seconds REAL,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
+                    FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
+                )
+            ''')
+
+            # Listener assignments table (tracks recording assignments to listeners)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS listener_assignments (
+                    assignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id TEXT NOT NULL,
+                    challenge_id TEXT,
+                    transmission_id INTEGER,
+                    frequency INTEGER NOT NULL,
+                    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expected_start TIMESTAMP,
+                    expected_duration REAL,
+                    status TEXT DEFAULT 'pending',
+                    cancelled_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
+                    FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                    FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
                 )
             ''')
 
@@ -302,6 +368,28 @@ class Database:
                 logger.info("Adding 'is_temporary' column to users table")
                 cursor.execute('ALTER TABLE users ADD COLUMN is_temporary BOOLEAN DEFAULT 0')
 
+            # Migration: Migrate existing runners to agents table
+            cursor.execute("SELECT COUNT(*) as count FROM runners")
+            runners_count = cursor.fetchone()['count']
+            cursor.execute("SELECT COUNT(*) as count FROM agents")
+            agents_count = cursor.fetchone()['count']
+
+            if runners_count > 0 and agents_count == 0:
+                logger.info(f"Migrating {runners_count} existing runners to agents table")
+                cursor.execute('''
+                    INSERT INTO agents (
+                        agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
+                        status, enabled, last_heartbeat, devices, api_key_hash,
+                        created_at, updated_at
+                    )
+                    SELECT
+                        runner_id, 'runner', hostname, ip_address, mac_address, machine_id,
+                        status, enabled, last_heartbeat, devices, api_key_hash,
+                        created_at, updated_at
+                    FROM runners
+                ''')
+                logger.info(f"Successfully migrated {runners_count} runners to agents table")
+
             # Create indexes
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_challenges_status
@@ -347,6 +435,38 @@ class Database:
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_permissions_username
                 ON permissions(username)
+            ''')
+
+            # Indices for unified agents architecture
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agents_type_status
+                ON agents(agent_type, status, enabled)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agents_websocket
+                ON agents(agent_type, websocket_connected)
+                WHERE agent_type = 'listener'
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_recordings_challenge
+                ON recordings(challenge_id, completed_at DESC)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_recordings_agent
+                ON recordings(agent_id, started_at DESC)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_listener_assignments_agent
+                ON listener_assignments(agent_id, status)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_listener_assignments_transmission
+                ON listener_assignments(transmission_id)
             ''')
 
             conn.commit()
@@ -1719,11 +1839,30 @@ class Database:
 
             stats = {}
 
-            # Runner stats
-            cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online FROM runners')
+            # Agent stats (backward compatible with runners)
+            cursor.execute('''
+                SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online
+                FROM agents WHERE agent_type = 'runner'
+            ''')
             row = cursor.fetchone()
-            stats['runners_total'] = row['total']
-            stats['runners_online'] = row['online']
+            stats['runners_total'] = row['total'] if row else 0
+            stats['runners_online'] = row['online'] if row else 0
+
+            # Fallback to old runners table if agents is empty
+            if stats['runners_total'] == 0:
+                cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online FROM runners')
+                row = cursor.fetchone()
+                stats['runners_total'] = row['total']
+                stats['runners_online'] = row['online']
+
+            # Listener stats
+            cursor.execute('''
+                SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online
+                FROM agents WHERE agent_type = 'listener'
+            ''')
+            row = cursor.fetchone()
+            stats['listeners_total'] = row['total'] if row else 0
+            stats['listeners_online'] = row['online'] if row else 0
 
             # Challenge stats
             cursor.execute('''
@@ -1743,7 +1882,482 @@ class Database:
             stats['challenges_assigned'] = row['assigned']
             stats['total_transmissions'] = row['total_transmissions'] or 0
 
+            # Recording stats
+            cursor.execute('SELECT COUNT(*) as total FROM recordings')
+            row = cursor.fetchone()
+            stats['recordings_total'] = row['total'] if row else 0
+
             # System state
             stats['paused'] = self.get_system_state('paused', 'false') == 'true'
 
             return stats
+
+    # Agent management (unified runners and listeners)
+    def register_agent(self, agent_id: str, agent_type: str, hostname: str, ip_address: str,
+                      devices: List[Dict], api_key: Optional[str] = None,
+                      mac_address: Optional[str] = None, machine_id: Optional[str] = None) -> bool:
+        """Register a new agent (runner or listener) or update existing one.
+
+        Args:
+            agent_id: Unique identifier for the agent
+            agent_type: Type of agent ('runner' or 'listener')
+            hostname: Hostname of the agent
+            ip_address: IP address of the agent
+            devices: List of SDR devices available on this agent
+            api_key: Optional API key to set for this agent (will be bcrypt hashed)
+            mac_address: Optional MAC address
+            machine_id: Optional machine ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import bcrypt
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Hash API key if provided
+                api_key_hash = None
+                if api_key:
+                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+                cursor.execute('''
+                    INSERT INTO agents (agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
+                                       status, last_heartbeat, devices, api_key_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, 'online', ?, ?, ?)
+                    ON CONFLICT(agent_id) DO UPDATE SET
+                        agent_type = excluded.agent_type,
+                        hostname = excluded.hostname,
+                        ip_address = excluded.ip_address,
+                        mac_address = CASE
+                            WHEN excluded.mac_address IS NOT NULL THEN excluded.mac_address
+                            ELSE agents.mac_address
+                        END,
+                        machine_id = CASE
+                            WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
+                            ELSE agents.machine_id
+                        END,
+                        status = 'online',
+                        last_heartbeat = excluded.last_heartbeat,
+                        devices = excluded.devices,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
+                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
+                conn.commit()
+                logger.info(f"Registered {agent_type}: {agent_id} from {ip_address}")
+                return True
+            except Exception as e:
+                logger.error(f"Error registering agent {agent_id}: {e}")
+                return False
+
+    def update_agent_heartbeat(self, agent_id: str) -> tuple[bool, str]:
+        """Update agent heartbeat timestamp.
+
+        Returns:
+            tuple: (success: bool, previous_status: str)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Get previous status
+                cursor.execute('SELECT status FROM agents WHERE agent_id = ?', (agent_id,))
+                row = cursor.fetchone()
+                previous_status = row['status'] if row else 'offline'
+
+                # Update heartbeat and status
+                cursor.execute('''
+                    UPDATE agents
+                    SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
+                    WHERE agent_id = ?
+                ''', (datetime.now(timezone.utc), agent_id))
+                conn.commit()
+                return (cursor.rowcount > 0, previous_status)
+            except Exception as e:
+                logger.error(f"Error updating heartbeat for {agent_id}: {e}")
+                return (False, 'offline')
+
+    def get_agent(self, agent_id: str) -> Optional[Dict]:
+        """Get agent details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM agents WHERE agent_id = ?', (agent_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_all_agents(self, agent_type: Optional[str] = None) -> List[Dict]:
+        """Get all registered agents, optionally filtered by type.
+
+        Args:
+            agent_type: Optional filter by agent type ('runner' or 'listener')
+
+        Returns:
+            List of agent dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if agent_type:
+                cursor.execute('SELECT * FROM agents WHERE agent_type = ? ORDER BY agent_id', (agent_type,))
+            else:
+                cursor.execute('SELECT * FROM agents ORDER BY agent_type, agent_id')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def mark_agent_offline(self, agent_id: str) -> bool:
+        """Mark an agent as offline."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET status = 'offline', updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def enable_agent(self, agent_id: str) -> bool:
+        """Enable an agent to receive task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Enabled agent: {agent_id}")
+            return cursor.rowcount > 0
+
+    def disable_agent(self, agent_id: str) -> bool:
+        """Disable an agent from receiving task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Disabled agent: {agent_id}")
+            return cursor.rowcount > 0
+
+    def update_listener_websocket_status(self, agent_id: str, connected: bool) -> bool:
+        """Update WebSocket connection status for a listener agent.
+
+        Args:
+            agent_id: The listener agent ID
+            connected: True if connected, False if disconnected
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            timestamp = datetime.now(timezone.utc) if connected else None
+            cursor.execute('''
+                UPDATE agents
+                SET websocket_connected = ?,
+                    websocket_last_connected = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ? AND agent_type = 'listener'
+            ''', (1 if connected else 0, timestamp, agent_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def cleanup_stale_agents(self, timeout_seconds: int = 90) -> list[str]:
+        """Mark agents as offline if they haven't sent heartbeat within timeout.
+
+        Returns:
+            list: List of agent IDs that were marked offline
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Get the IDs of agents that will be marked offline
+            cursor.execute('''
+                SELECT agent_id FROM agents
+                WHERE status = 'online'
+                  AND last_heartbeat < ?
+            ''', (threshold,))
+            offline_agents = [row['agent_id'] for row in cursor.fetchall()]
+
+            # Now mark them offline
+            if offline_agents:
+                cursor.execute('''
+                    UPDATE agents
+                    SET status = 'offline'
+                    WHERE status = 'online'
+                      AND last_heartbeat < ?
+                ''', (threshold,))
+                conn.commit()
+                logger.warning(f"Marked {len(offline_agents)} agent(s) as offline due to missed heartbeats")
+
+            return offline_agents
+
+    # Recording management
+    def create_recording(self, challenge_id: str, agent_id: str, transmission_id: int,
+                        frequency: int, sample_rate: int, expected_duration: float) -> int:
+        """Create a new recording entry.
+
+        Args:
+            challenge_id: Challenge being recorded
+            agent_id: Listener agent performing the recording
+            transmission_id: Associated transmission ID
+            frequency: Frequency in Hz
+            sample_rate: Sample rate in Hz
+            expected_duration: Expected duration in seconds
+
+        Returns:
+            recording_id if successful, -1 otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO recordings (
+                        challenge_id, agent_id, transmission_id, frequency,
+                        started_at, status, sample_rate, duration_seconds
+                    )
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'recording', ?, ?)
+                ''', (challenge_id, agent_id, transmission_id, frequency, sample_rate, expected_duration))
+                conn.commit()
+                return cursor.lastrowid
+            except Exception as e:
+                logger.error(f"Error creating recording: {e}")
+                return -1
+
+    def update_recording_complete(self, recording_id: int, success: bool, image_path: Optional[str] = None,
+                                  image_width: Optional[int] = None, image_height: Optional[int] = None,
+                                  duration: Optional[float] = None, error_message: Optional[str] = None) -> bool:
+        """Mark recording as completed.
+
+        Args:
+            recording_id: Recording ID
+            success: True if successful, False if failed
+            image_path: Path to waterfall image (if successful)
+            image_width: Width of image in pixels
+            image_height: Height of image in pixels
+            duration: Actual duration in seconds
+            error_message: Error message if failed
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            status = 'completed' if success else 'failed'
+            cursor.execute('''
+                UPDATE recordings
+                SET completed_at = CURRENT_TIMESTAMP,
+                    status = ?,
+                    image_path = ?,
+                    image_width = ?,
+                    image_height = ?,
+                    duration_seconds = ?,
+                    error_message = ?
+                WHERE recording_id = ?
+            ''', (status, image_path, image_width, image_height, duration, error_message, recording_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_recording(self, recording_id: int) -> Optional[Dict]:
+        """Get recording details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM recordings WHERE recording_id = ?', (recording_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_recordings_for_challenge(self, challenge_id: str, limit: int = 50) -> List[Dict]:
+        """Get recordings for a specific challenge.
+
+        Args:
+            challenge_id: Challenge ID
+            limit: Maximum number of recordings to return
+
+        Returns:
+            List of recording dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT r.*, a.agent_id as listener_id
+                FROM recordings r
+                LEFT JOIN agents a ON r.agent_id = a.agent_id
+                WHERE r.challenge_id = ?
+                ORDER BY r.started_at DESC
+                LIMIT ?
+            ''', (challenge_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_recordings(self, limit: int = 100) -> List[Dict]:
+        """Get recent recordings across all challenges.
+
+        Args:
+            limit: Maximum number of recordings to return
+
+        Returns:
+            List of recording dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT r.*, c.name as challenge_name, a.agent_id as listener_id
+                FROM recordings r
+                LEFT JOIN challenges c ON r.challenge_id = c.challenge_id
+                LEFT JOIN agents a ON r.agent_id = a.agent_id
+                ORDER BY r.started_at DESC
+                LIMIT ?
+            ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_last_recording_for_challenge(self, challenge_id: str) -> Optional[Dict]:
+        """Get the most recent completed recording for a challenge.
+
+        Args:
+            challenge_id: Challenge ID
+
+        Returns:
+            Recording dictionary or None if no completed recordings exist
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM recordings
+                WHERE challenge_id = ? AND status = 'completed'
+                ORDER BY completed_at DESC
+                LIMIT 1
+            ''', (challenge_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_transmissions_since_recording(self, challenge_id: str, since: Optional[datetime] = None) -> int:
+        """Get count of transmissions for a challenge since a given time.
+
+        Args:
+            challenge_id: Challenge ID
+            since: Timestamp to count from (if None, count all transmissions)
+
+        Returns:
+            Number of transmissions
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if since:
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM transmissions
+                    WHERE challenge_id = ? AND completed_at > ? AND status = 'success'
+                ''', (challenge_id, since))
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM transmissions
+                    WHERE challenge_id = ? AND status = 'success'
+                ''', (challenge_id,))
+            row = cursor.fetchone()
+            return row['count'] if row else 0
+
+    # Listener assignment management
+    def create_listener_assignment(self, agent_id: str, challenge_id: str, transmission_id: int,
+                                  frequency: int, expected_start: datetime, expected_duration: float) -> int:
+        """Create a listener assignment.
+
+        Args:
+            agent_id: Listener agent ID
+            challenge_id: Challenge ID
+            transmission_id: Transmission ID
+            frequency: Frequency in Hz
+            expected_start: Expected start time
+            expected_duration: Expected duration in seconds
+
+        Returns:
+            assignment_id if successful, -1 otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO listener_assignments (
+                        agent_id, challenge_id, transmission_id, frequency,
+                        expected_start, expected_duration, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                ''', (agent_id, challenge_id, transmission_id, frequency, expected_start, expected_duration))
+                conn.commit()
+                return cursor.lastrowid
+            except Exception as e:
+                logger.error(f"Error creating listener assignment: {e}")
+                return -1
+
+    def update_listener_assignment_status(self, assignment_id: int, status: str) -> bool:
+        """Update listener assignment status.
+
+        Args:
+            assignment_id: Assignment ID
+            status: New status ('pending', 'recording', 'completed', 'cancelled', 'failed')
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if status == 'completed':
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            elif status == 'cancelled':
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?, cancelled_at = CURRENT_TIMESTAMP
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            else:
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_listener_assignment(self, assignment_id: int) -> Optional[Dict]:
+        """Get listener assignment details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM listener_assignments WHERE assignment_id = ?', (assignment_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_active_listener_assignments(self, agent_id: Optional[str] = None) -> List[Dict]:
+        """Get active listener assignments.
+
+        Args:
+            agent_id: Optional filter by agent ID
+
+        Returns:
+            List of active assignment dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if agent_id:
+                cursor.execute('''
+                    SELECT * FROM listener_assignments
+                    WHERE agent_id = ? AND status IN ('pending', 'recording')
+                    ORDER BY expected_start
+                ''', (agent_id,))
+            else:
+                cursor.execute('''
+                    SELECT * FROM listener_assignments
+                    WHERE status IN ('pending', 'recording')
+                    ORDER BY expected_start
+                ''')
+            return [dict(row) for row in cursor.fetchall()]
