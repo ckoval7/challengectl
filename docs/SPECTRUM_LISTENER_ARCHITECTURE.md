@@ -19,15 +19,16 @@ The Spectrum Listener system adds passive RF monitoring capabilities to challeng
 ┌─────────────────────────────────────────────────────────────┐
 │                    ChallengeCtl Server                      │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ New: Listener Coordination Service                    │  │
-│  │  - Track listener availability                        │  │
+│  │ Unified Agent Management System                       │  │
+│  │  - Track all agents (transmitters & listeners)       │  │
 │  │  - Calculate recording priorities                     │  │
-│  │  - Coordinate listener-transmitter pairs             │  │
+│  │  - Coordinate transmitter-listener pairs             │  │
 │  │  - Store waterfall images and metadata               │  │
+│  │  - Shared provisioning & enrollment                  │  │
 │  └───────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ Database Extensions                                   │  │
-│  │  - listeners table (similar to runners)              │  │
+│  │ Database Schema Updates                               │  │
+│  │  - agents table (unified runners + listeners)        │  │
 │  │  - recordings table (waterfall metadata)             │  │
 │  │  - listener_assignments table (active recordings)    │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -39,9 +40,11 @@ The Spectrum Listener system adds passive RF monitoring capabilities to challeng
            │               │               │
            ▼               ▼               ▼
     ┌──────────┐    ┌──────────┐    ┌──────────┐
-    │Runner 1  │    │Listener 1│    │Listener 2│
+    │ Agent 1  │    │ Agent 2  │    │ Agent 3  │
     │(HackRF)  │    │(RTL-SDR) │    │(BladeRF) │
     │TX Only   │    │RX Only   │    │RX Only   │
+    │type:     │    │type:     │    │type:     │
+    │runner    │    │listener  │    │listener  │
     └──────────┘    └──────────┘    └──────────┘
          │                │               │
          │ Transmits      │ Records       │ Records
@@ -50,6 +53,8 @@ The Spectrum Listener system adds passive RF monitoring capabilities to challeng
     │         RF Spectrum (e.g., 2m band)      │
     └──────────────────────────────────────────┘
 ```
+
+**Key Architectural Change:** Runners and listeners are unified as "agents" with a `type` field. This simplifies provisioning, management, and UI display while maintaining their distinct roles.
 
 ## Component Design
 
@@ -73,28 +78,35 @@ A new Python client similar to `runner.py` but specialized for receiving:
 
 **Configuration (`listener-config.yml`):**
 ```yaml
-listener:
-  listener_id: "listener-1"
+agent:
+  agent_id: "listener-1"          # Unique identifier
+  agent_type: "listener"          # Type: 'runner' or 'listener'
   server_url: "https://192.168.1.100:8443"
-  api_key: "listener-key-1"
+  api_key: "agent-key-1"          # Shared provisioning with runners
 
   heartbeat_interval: 30
-  poll_interval: 5  # Check more frequently than runners
+  poll_interval: 5                # Check more frequently than runners
 
   recording:
-    output_dir: "recordings"  # Where to store waterfall images
-    sample_rate: 2000000      # 2 MHz (match transmitter)
-    fft_size: 1024            # FFT bins for waterfall
-    frame_rate: 20            # Waterfall frames per second
-    gain: 40                  # RF gain
+    output_dir: "recordings"      # Where to store waterfall images
+    sample_rate: 2000000          # 2 MHz (match transmitter)
+    fft_size: 1024                # FFT bins for waterfall
+    frame_rate: 20                # Waterfall frames per second
+    gain: 40                      # RF gain
 
 radio:
-  model: rtlsdr              # RTL-SDR is cheap, ideal for listeners
+  model: rtlsdr                   # RTL-SDR is cheap, ideal for listeners
   device: "rtl=0"
   frequency_limits:
-    - "144000000-148000000"  # 2m band
-    - "420000000-450000000"  # 70cm band
+    - "144000000-148000000"       # 2m band
+    - "420000000-450000000"       # 70cm band
 ```
+
+**Unified Provisioning:**
+- Listeners use the same enrollment tokens as runners
+- API keys work for both agent types
+- Agent type is specified during registration
+- Simplifies credential management
 
 ### 2. GNU Radio Flowgraph (`spectrum_listener.py`)
 
@@ -133,81 +145,139 @@ Vector Sink / File Sink
 
 ### 3. Server Extensions
 
-#### 3.1 Database Schema Extensions
+#### 3.1 Database Schema Updates
 
-**listeners table:**
+**Unified agents table (replaces existing runners table):**
+
+The existing `runners` table is renamed/extended to `agents` to support both transmitters and listeners:
+
 ```sql
-CREATE TABLE listeners (
-    listener_id TEXT PRIMARY KEY,
+-- Migration: Rename runners to agents and add type column
+ALTER TABLE runners RENAME TO agents;
+ALTER TABLE agents ADD COLUMN agent_type TEXT DEFAULT 'runner';  -- 'runner' or 'listener'
+
+-- Updated schema:
+CREATE TABLE agents (
+    agent_id TEXT PRIMARY KEY,            -- Replaces runner_id/listener_id
+    agent_type TEXT NOT NULL,             -- 'runner' or 'listener'
     hostname TEXT,
     ip_address TEXT,
-    status TEXT,              -- 'online', 'offline'
-    enabled BOOLEAN,          -- Can receive assignments
+    mac_address TEXT,                     -- For host validation
+    machine_id TEXT,                      -- For host validation
+    status TEXT,                          -- 'online', 'offline'
+    enabled BOOLEAN,                      -- Can receive assignments
     last_heartbeat TIMESTAMP,
-    device_info JSON,         -- Radio capabilities
-    api_key_hash TEXT,
+    devices JSON,                         -- Array of device capabilities (existing)
+    api_key_hash TEXT,                    -- Bcrypt hash
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 );
+
+-- Create indexes for common queries
+CREATE INDEX idx_agents_type_status ON agents(agent_type, status);
+CREATE INDEX idx_agents_enabled ON agents(enabled);
 ```
+
+**Benefits of Unified Schema:**
+- Single enrollment/provisioning workflow
+- Simplified API endpoints (agents instead of runners/listeners)
+- Easier UI management (one "Agents" page)
+- Agents can potentially support both roles in future
 
 **recordings table:**
 ```sql
 CREATE TABLE recordings (
     recording_id INTEGER PRIMARY KEY AUTOINCREMENT,
     challenge_id TEXT,
-    listener_id TEXT,
-    transmission_id INTEGER,   -- Links to specific transmission
+    agent_id TEXT,                         -- References agents table (listener)
+    transmission_id INTEGER,               -- Links to specific transmission
     frequency INTEGER,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
-    status TEXT,               -- 'recording', 'completed', 'failed'
-    image_path TEXT,           -- Path to waterfall PNG
+    status TEXT,                           -- 'recording', 'completed', 'failed'
+    image_path TEXT,                       -- Path to waterfall PNG
     image_width INTEGER,
     image_height INTEGER,
     sample_rate INTEGER,
     duration_seconds REAL,
     error_message TEXT,
     FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
-    FOREIGN KEY (listener_id) REFERENCES listeners(listener_id),
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
     FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
 );
+
+-- Indexes for common queries
+CREATE INDEX idx_recordings_challenge ON recordings(challenge_id);
+CREATE INDEX idx_recordings_agent ON recordings(agent_id);
+CREATE INDEX idx_recordings_completed_at ON recordings(completed_at);
 ```
 
 **listener_assignments table:**
 ```sql
 CREATE TABLE listener_assignments (
     assignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    listener_id TEXT,
+    agent_id TEXT,                         -- References agents table (listener)
     challenge_id TEXT,
     transmission_id INTEGER,
     frequency INTEGER,
     assigned_at TIMESTAMP,
-    expected_start TIMESTAMP,  -- When transmission will begin
-    expected_duration REAL,    -- Estimated seconds
-    status TEXT,               -- 'assigned', 'recording', 'completed'
-    FOREIGN KEY (listener_id) REFERENCES listeners(listener_id),
+    expected_start TIMESTAMP,              -- When transmission will begin
+    expected_duration REAL,                -- Estimated seconds
+    status TEXT,                           -- 'assigned', 'recording', 'completed'
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
     FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
     FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
 );
+
+-- Indexes
+CREATE INDEX idx_listener_assignments_agent ON listener_assignments(agent_id);
+CREATE INDEX idx_listener_assignments_status ON listener_assignments(status);
 ```
+
+**Note:** The existing `challenges` table's `assigned_to` field references `runners.runner_id`. After migration, this should reference `agents.agent_id` for consistency.
 
 #### 3.2 API Endpoints
 
-**Listener Endpoints (require listener API key):**
-```
-POST /api/listeners/register
-  - Register listener with server
-  - Request body: {listener_id, hostname, device_info}
-  - Response: {status: "success", message: "Registered"}
+**Updated Agent Endpoints (unified runners + listeners):**
 
-POST /api/listeners/{id}/heartbeat
-  - Send periodic heartbeat
+The existing runner endpoints are extended to support both agent types:
+
+```
+POST /api/agents/register
+  - Register agent (runner or listener) with server
+  - Request body: {
+      agent_id,
+      agent_type,      # 'runner' or 'listener'
+      hostname,
+      devices          # Array of device capabilities
+    }
+  - Response: {status: "success", message: "Registered"}
+  - Replaces: /api/runners/register and /api/listeners/register
+
+POST /api/agents/{id}/heartbeat
+  - Send periodic heartbeat (works for both types)
   - Request body: {status, timestamp}
   - Response: {status: "success"}
+  - Replaces: /api/runners/{id}/heartbeat and /api/listeners/{id}/heartbeat
 
-GET /api/listeners/{id}/assignment
-  - Poll for recording assignments
+POST /api/agents/{id}/signout
+  - Graceful signout on shutdown (both types)
+  - Response: {status: "success"}
+  - Replaces: /api/runners/{id}/signout
+
+GET /api/agents/{id}/task
+  - Poll for task assignment (runner agents only)
+  - Response: {challenge details} or empty
+  - Existing endpoint, unchanged behavior
+
+POST /api/agents/{id}/complete
+  - Report task completion (runner agents only)
+  - Request body: {success, device_id, frequency, error_message}
+  - Response: {status: "success"}
+  - Existing endpoint, unchanged behavior
+
+GET /api/agents/{id}/assignment
+  - Poll for recording assignments (listener agents only)
   - Response: {
       assignment_id,
       challenge_id,
@@ -218,14 +288,15 @@ GET /api/listeners/{id}/assignment
       modulation_type
     }
   - Returns empty if no assignment
+  - New endpoint for listeners
 
-POST /api/listeners/{id}/recording_started
-  - Report recording has begun
+POST /api/agents/{id}/recording_started
+  - Report recording has begun (listener agents only)
   - Request body: {assignment_id, actual_start_time}
   - Response: {status: "success"}
 
-POST /api/listeners/{id}/recording_complete
-  - Report recording finished
+POST /api/agents/{id}/recording_complete
+  - Report recording finished (listener agents only)
   - Request body: {
       assignment_id,
       duration,
@@ -233,22 +304,55 @@ POST /api/listeners/{id}/recording_complete
     }
   - Response: {upload_url, recording_id}
 
+POST /api/agents/{id}/recording_failed
+  - Report recording failure (listener agents only)
+  - Request body: {assignment_id, error_message}
+  - Response: {status: "success"}
+
+POST /api/agents/{id}/log
+  - Forward log entries to server (both types)
+  - Existing endpoint, unchanged
+```
+
+**Recording Endpoints:**
+```
 POST /api/recordings/{id}/upload
   - Upload waterfall image (multipart/form-data)
   - File field: "waterfall"
   - Response: {status: "success", image_url}
-
-POST /api/listeners/{id}/recording_failed
-  - Report recording failure
-  - Request body: {assignment_id, error_message}
-  - Response: {status: "success"}
 ```
 
 **Admin Endpoints (require admin auth):**
 ```
+GET /api/agents
+  - List all agents (runners + listeners)
+  - Query params: type (optional: 'runner' or 'listener')
+  - Response: {agents: [...]}
+  - Replaces: GET /api/runners
+
+GET /api/agents/{id}
+  - Get detailed agent information
+  - Response: {agent details, current_assignment, statistics}
+  - Replaces: GET /api/runners/{id}
+
+POST /api/agents/{id}/enable
+  - Enable agent to receive assignments
+  - Response: {status: "success"}
+  - Replaces: POST /api/runners/{id}/enable
+
+POST /api/agents/{id}/disable
+  - Disable agent from receiving tasks/assignments
+  - Response: {status: "success"}
+  - Replaces: POST /api/runners/{id}/disable
+
+DELETE /api/agents/{id}
+  - Kick agent (forcefully disconnect)
+  - Response: {status: "success"}
+  - Replaces: DELETE /api/runners/{id}
+
 GET /api/recordings
   - List all recordings with pagination
-  - Query params: challenge_id, listener_id, page, per_page
+  - Query params: challenge_id, agent_id, page, per_page
   - Response: {recordings: [...], total, page, per_page}
 
 GET /api/recordings/{id}
@@ -282,27 +386,61 @@ When a listener polls for an assignment, the server:
 2. **Calculate priority score for each:**
    ```python
    def calculate_recording_priority(challenge):
-       # Get most recent recording timestamp
+       # Get most recent recording and transmission count
        last_recording = get_last_recording(challenge.challenge_id)
+       transmissions_since_last_recording = get_transmissions_since_recording(
+           challenge.challenge_id,
+           last_recording.completed_at if last_recording else None
+       )
 
        if last_recording is None:
            # Never recorded - highest priority
            return 1000
 
-       # Time since last recording (hours)
-       hours_since = (now() - last_recording.completed_at).total_seconds() / 3600
+       # Time-based component (minutes since last recording)
+       minutes_since = (now() - last_recording.completed_at).total_seconds() / 60
 
-       # Priority decays over time but never reaches zero
-       # Recent recording: low priority
-       # Old recording: medium priority
-       # Never recorded: high priority
-       priority = min(1000, hours_since * 10)
+       # Transmission-based component
+       # For high-frequency challenges (multiple per hour), this is more important
+       # than pure time-based priority
+       transmission_factor = transmissions_since_last_recording
 
-       # Boost priority based on challenge priority setting
-       priority *= (challenge.priority / 10.0)
+       # Combined priority calculation
+       # Base: Number of transmissions since last recording (primary factor)
+       # Multiplier: Time decay (secondary factor)
+       #
+       # Examples (assuming ~10 transmissions/hour):
+       # - 5 transmissions, 30 mins: priority = 5 * (30/60) = 2.5
+       # - 20 transmissions, 2 hours: priority = 20 * (120/60) = 40
+       # - 100 transmissions, 10 hours: priority = 100 * (600/60) = 1000 (capped)
+       #
+       # This ensures:
+       # - Recently recorded challenges have low priority
+       # - Challenges with many transmissions since recording get higher priority
+       # - Very old recordings (even if few transmissions) still get recorded
+
+       time_multiplier = min(10.0, minutes_since / 60.0)  # Cap at 10x for very old
+       priority = transmission_factor * time_multiplier
+
+       # Cap at reasonable maximum
+       priority = min(1000, priority)
+
+       # Boost based on challenge priority setting (1-100)
+       # Allows manual prioritization of important challenges
+       priority_multiplier = challenge.priority / 10.0
+       priority *= priority_multiplier
+
+       # Final clamp
+       priority = min(1000, priority)
 
        return priority
    ```
+
+   **Algorithm Rationale:**
+   - **Transmission-based primary metric**: Since challenges transmit frequently (multiple times per hour), we don't need to record every transmission. Priority is based on how many transmissions have occurred since the last recording.
+   - **Time-based multiplier**: Ensures old recordings get refreshed even if transmission count is low. Also provides diversity by naturally spreading recordings over time.
+   - **Configurable weighting**: Challenge priority setting allows admins to boost specific challenges.
+   - **Result**: Listeners naturally sample challenges periodically rather than recording every single transmission, while ensuring all challenges get recorded regularly.
 
 3. **Select challenge with highest priority score**
 
@@ -317,22 +455,27 @@ When a listener polls for an assignment, the server:
 
 **Coordinated Assignment:**
 
-When a runner is assigned a challenge:
+When a runner agent is assigned a challenge:
 ```python
-def assign_task_to_runner(runner_id):
+def assign_task_to_runner_agent(agent_id):
     with db.begin_immediate():
-        # Assign challenge to runner (existing logic)
-        challenge = assign_challenge(runner_id)
+        # Assign challenge to runner agent (existing logic)
+        challenge = assign_challenge(agent_id)
 
         if challenge:
-            # Check if listeners are available
-            listeners = get_available_listeners_for_frequency(challenge.frequency)
+            # Check if listener agents are available
+            listener_agents = get_available_agents_for_frequency(
+                challenge.frequency,
+                agent_type='listener'
+            )
 
-            if listeners:
-                # Assign to highest priority listener
-                listener = select_listener_by_priority(listeners, challenge)
+            if listener_agents:
+                # Calculate priority for each listener agent
+                # Select listener with highest recording priority
+                listener = select_listener_by_priority(listener_agents, challenge)
+
                 create_listener_assignment(
-                    listener.listener_id,
+                    listener.agent_id,
                     challenge.challenge_id,
                     transmission_id,
                     expected_start=now() + timedelta(seconds=10),  # Runner prep time
@@ -460,8 +603,8 @@ Display waterfall images for a challenge:
         <el-descriptions-item label="Duration">
           {{ currentRecording.duration_seconds?.toFixed(1) }}s
         </el-descriptions-item>
-        <el-descriptions-item label="Listener">
-          {{ currentRecording.listener_id }}
+        <el-descriptions-item label="Recorded By">
+          {{ currentRecording.agent_id }}
         </el-descriptions-item>
         <el-descriptions-item label="Sample Rate">
           {{ formatSampleRate(currentRecording.sample_rate) }}
@@ -523,7 +666,7 @@ export default {
 
     formatRecordingLabel(rec) {
       const date = new Date(rec.completed_at)
-      return `${date.toLocaleString()} - ${rec.listener_id}`
+      return `${date.toLocaleString()} - ${rec.agent_id}`
     }
   }
 }
@@ -575,50 +718,101 @@ export default {
 - **Metadata display**: Show recording details below image
 - **Dark background**: Better contrast for waterfall colors
 
-#### 4.3 New View: Listeners.vue
+#### 4.3 Updated View: Agents.vue (Replaces Runners.vue)
 
-Similar to `Runners.vue`, for managing listeners:
+Unified view for managing all agents (runners + listeners):
 
 ```vue
 <template>
-  <div class="listeners">
-    <h1>Spectrum Listeners</h1>
+  <div class="agents">
+    <h1>Agents</h1>
 
-    <el-table :data="listeners">
-      <el-table-column prop="listener_id" label="Listener ID" />
-      <el-table-column label="Status">
+    <!-- Filter controls -->
+    <div class="mb-xl">
+      <el-radio-group v-model="filterType" @change="loadAgents">
+        <el-radio-button label="all">All Agents</el-radio-button>
+        <el-radio-button label="runner">Runners</el-radio-button>
+        <el-radio-button label="listener">Listeners</el-radio-button>
+      </el-radio-group>
+    </div>
+
+    <el-table :data="filteredAgents" class="w-full">
+      <el-table-column prop="agent_id" label="Agent ID" width="150" />
+
+      <el-table-column label="Type" width="100">
+        <template #default="scope">
+          <el-tag :type="scope.row.agent_type === 'runner' ? 'primary' : 'success'">
+            {{ scope.row.agent_type }}
+          </el-tag>
+        </template>
+      </el-table-column>
+
+      <el-table-column label="Status" width="100">
         <template #default="scope">
           <el-tag :type="scope.row.status === 'online' ? 'success' : 'danger'">
             {{ scope.row.status }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Device">
+
+      <el-table-column prop="hostname" label="Hostname" width="150" />
+
+      <el-table-column label="Devices" width="120">
         <template #default="scope">
-          {{ scope.row.device_info?.model || 'N/A' }}
+          <span v-if="scope.row.devices && scope.row.devices.length">
+            {{ scope.row.devices[0]?.model || 'Unknown' }}
+            <el-tag v-if="scope.row.devices.length > 1" size="small">
+              +{{ scope.row.devices.length - 1 }}
+            </el-tag>
+          </span>
+          <span v-else>No devices</span>
         </template>
       </el-table-column>
-      <el-table-column label="Current Assignment">
+
+      <el-table-column label="Current Assignment" width="200">
         <template #default="scope">
-          {{ scope.row.current_assignment?.challenge_name || 'None' }}
+          <span v-if="scope.row.current_assignment">
+            {{ scope.row.current_assignment.challenge_name }}
+          </span>
+          <span v-else class="text-muted">Idle</span>
         </template>
       </el-table-column>
-      <el-table-column label="Recordings">
+
+      <el-table-column label="Stats" width="150">
         <template #default="scope">
-          {{ scope.row.recording_count || 0 }}
+          <!-- For runners: transmission count -->
+          <span v-if="scope.row.agent_type === 'runner'">
+            TX: {{ scope.row.transmission_count || 0 }}
+          </span>
+          <!-- For listeners: recording count -->
+          <span v-else>
+            Rec: {{ scope.row.recording_count || 0 }}
+          </span>
         </template>
       </el-table-column>
-      <el-table-column label="Enabled">
+
+      <el-table-column label="Last Heartbeat" width="180">
+        <template #default="scope">
+          {{ formatTimestamp(scope.row.last_heartbeat) }}
+        </template>
+      </el-table-column>
+
+      <el-table-column label="Enabled" width="100" align="center">
         <template #default="scope">
           <el-switch
             v-model="scope.row.enabled"
-            @change="toggleListener(scope.row)"
+            @change="toggleAgent(scope.row)"
           />
         </template>
       </el-table-column>
-      <el-table-column label="Actions">
+
+      <el-table-column label="Actions" width="150">
         <template #default="scope">
-          <el-button size="small" type="danger" @click="kickListener(scope.row.listener_id)">
+          <el-button
+            size="small"
+            type="danger"
+            @click="kickAgent(scope.row.agent_id)"
+          >
             Kick
           </el-button>
         </template>
@@ -626,7 +820,98 @@ Similar to `Runners.vue`, for managing listeners:
     </el-table>
   </div>
 </template>
+
+<script>
+import { ref, computed, onMounted } from 'vue'
+import { api } from '../api'
+import { ElMessage } from 'element-plus'
+import { formatDateTime } from '../utils/time'
+
+export default {
+  name: 'Agents',
+  setup() {
+    const agents = ref([])
+    const filterType = ref('all')
+
+    const filteredAgents = computed(() => {
+      if (filterType.value === 'all') {
+        return agents.value
+      }
+      return agents.value.filter(a => a.agent_type === filterType.value)
+    })
+
+    const loadAgents = async () => {
+      try {
+        const params = filterType.value !== 'all' ? { type: filterType.value } : {}
+        const response = await api.get('/agents', { params })
+        agents.value = response.data.agents || []
+      } catch (error) {
+        console.error('Error loading agents:', error)
+        ElMessage.error('Failed to load agents')
+      }
+    }
+
+    const toggleAgent = async (agent) => {
+      try {
+        const endpoint = agent.enabled ? 'enable' : 'disable'
+        await api.post(`/agents/${agent.agent_id}/${endpoint}`)
+        ElMessage.success(`Agent ${agent.enabled ? 'enabled' : 'disabled'}`)
+      } catch (error) {
+        console.error('Error toggling agent:', error)
+        ElMessage.error('Failed to update agent')
+        loadAgents()  // Reload to reset state
+      }
+    }
+
+    const kickAgent = async (agentId) => {
+      try {
+        await api.delete(`/agents/${agentId}`)
+        ElMessage.success('Agent kicked')
+        loadAgents()
+      } catch (error) {
+        console.error('Error kicking agent:', error)
+        ElMessage.error('Failed to kick agent')
+      }
+    }
+
+    onMounted(() => {
+      loadAgents()
+      // Refresh periodically
+      const interval = setInterval(loadAgents, 15000)
+      onUnmounted(() => clearInterval(interval))
+    })
+
+    return {
+      agents,
+      filterType,
+      filteredAgents,
+      loadAgents,
+      toggleAgent,
+      kickAgent,
+      formatTimestamp: formatDateTime
+    }
+  }
+}
+</script>
+
+<style scoped>
+.agents {
+  padding: 20px;
+}
+
+.text-muted {
+  color: #909399;
+  font-style: italic;
+}
+</style>
 ```
+
+**Key Features:**
+- **Type filtering**: Toggle between all/runners/listeners
+- **Unified table**: Single view for all agent types
+- **Type-specific stats**: Shows TX count for runners, recording count for listeners
+- **Visual differentiation**: Color-coded tags for agent type
+- **Shared actions**: Enable/disable and kick work for both types
 
 ### 5. Waterfall Image Generation
 
@@ -836,33 +1121,46 @@ class SpectrumListener(gr.top_block):
 
 #### 6.2 Priority Scheduling Example
 
-Scenario: 10 challenges, 3 runners, 1 listener
+Scenario: 10 challenges, 3 runner agents, 1 listener agent
+
+Challenges transmit ~10 times per hour (every 6 minutes average)
 
 ```
-Challenges:
-- NBFM_1: Last recorded 5 days ago
-- NBFM_2: Last recorded 2 days ago
-- NBFM_3: Never recorded
-- CW_1: Last recorded 1 hour ago
-- CW_2: Never recorded
-- SSB_1: Last recorded 10 hours ago
-- ... (4 more)
+Challenges with transmission history:
+- NBFM_1: Last recorded 2 hours ago, 20 transmissions since
+- NBFM_2: Last recorded 30 minutes ago, 5 transmissions since
+- NBFM_3: Never recorded, 100+ transmissions total
+- CW_1: Last recorded 10 minutes ago, 2 transmissions since
+- CW_2: Never recorded, 50+ transmissions total
+- SSB_1: Last recorded 4 hours ago, 40 transmissions since
+- FHSS_1: Last recorded 1 hour ago, 10 transmissions since
+- ... (3 more)
 
-Priority Calculation:
-1. NBFM_3: 1000 (never recorded)
+Priority Calculation (using updated algorithm):
+1. NBFM_3: 1000 (never recorded - always highest priority)
 2. CW_2: 1000 (never recorded)
-3. NBFM_1: 1200 (5 days * 10 * 2.4 = 1200, capped at 1000 + priority boost)
-4. NBFM_2: 480 (2 days * 10 * 2.4)
-5. SSB_1: 100 (10 hours * 10)
-6. CW_1: 10 (1 hour * 10)
+3. SSB_1: ~267 (40 transmissions × (4 hours / 60 min / 60 min) = 40 × 6.67)
+4. NBFM_1: ~67 (20 transmissions × (2 hours / 60 min / 60 min) = 20 × 3.33)
+5. FHSS_1: ~17 (10 transmissions × (1 hour / 60 min / 60 min) = 10 × 1.67)
+6. NBFM_2: ~4 (5 transmissions × (30 min / 60 min) = 5 × 0.5)
+7. CW_1: ~0.3 (2 transmissions × (10 min / 60 min) = 2 × 0.17)
 
-When listener polls:
-- Server selects NBFM_3 (highest priority)
-- If NBFM_3 not currently assigned to runner:
-  - Wait for next assignment
-- If NBFM_3 currently assigned to runner:
+When listener agent polls:
+- Server calculates priorities for all eligible challenges
+- Selects NBFM_3 (highest priority, never recorded)
+- If NBFM_3 not currently assigned to runner agent:
+  - Wait for next assignment (or queue for next transmission)
+- If NBFM_3 currently assigned to runner agent:
   - Create listener assignment immediately
-  - Listener begins recording
+  - Listener agent begins recording
+- After recording NBFM_3:
+  - NBFM_3 priority drops to 0 (just recorded)
+  - Next poll will select CW_2 (next highest priority)
+
+Result: Listener naturally rotates through all challenges, prioritizing:
+- Challenges never recorded (immediate attention)
+- Challenges with many transmissions since last recording
+- Challenges not recorded in a long time (even if few transmissions)
 ```
 
 ### 7. Storage and Retention
