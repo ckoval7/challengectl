@@ -44,6 +44,50 @@ conference:
   stop: "2025-04-07 18:00:00 -5"
   timezone: "America/New_York"
 
+# Named Frequency Ranges
+# Define frequency ranges that can be used for random frequency selection
+# When a challenge uses a named range, a random frequency will be selected within that range
+frequency_ranges:
+  - name: "ham_50"
+    description: "6m Amateur Radio Band"
+    min_hz: 50000000
+    max_hz: 54000000
+
+  - name: "ham_144"
+    description: "2m Amateur Radio Band"
+    min_hz: 144000000
+    max_hz: 148000000
+
+  - name: "ham_220"
+    description: "1.25m Amateur Radio Band"
+    min_hz: 222000000
+    max_hz: 225000000
+
+  - name: "ham_440"
+    description: "70cm Amateur Radio Band"
+    min_hz: 420000000
+    max_hz: 450000000
+
+  - name: "ham_900"
+    description: "33cm Amateur Radio Band"
+    min_hz: 902000000
+    max_hz: 928000000
+
+  - name: "ham_1200"
+    description: "23cm Amateur Radio Band"
+    min_hz: 1240000000
+    max_hz: 1300000000
+
+  - name: "wbfm"
+    description: "Wideband FM Broadcast"
+    min_hz: 88100000
+    max_hz: 107900000
+
+  - name: "ism_433"
+    description: "433 MHz ISM Band"
+    min_hz: 433050000
+    max_hz: 434790000
+
 # Challenge Configuration
 # Challenges are configured through the Web UI at /challenge-config
 # Navigate to "Configure Challenges" in the web interface to:
@@ -56,9 +100,21 @@ conference:
 #
 # Example challenge configuration (commented out):
 # challenges:
-#   # NBFM Example
+#   # NBFM Example with specific frequency
 #   - name: NBFM_FLAG_1
 #     frequency: 146550000  # Hz (146.550 MHz)
+#     modulation: nbfm
+#     flag: challenges/examples/example_voice.wav
+#     wav_samplerate: 48000
+#     min_delay: 60
+#     max_delay: 90
+#     enabled: true
+#
+#   # NBFM Example with named frequency range (random frequency selected from range)
+#   - name: NBFM_FLAG_2
+#     frequency_ranges:  # Use one or more named ranges
+#       - ham_144
+#       - ham_220
 #     modulation: nbfm
 #     flag: challenges/examples/example_voice.wav
 #     wav_samplerate: 48000

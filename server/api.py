@@ -196,6 +196,14 @@ class ChallengeCtlAPI:
         """Get the conference name from config."""
         return self.config.get('conference', {}).get('name', 'ChallengeCtl')
 
+    def get_frequency_ranges(self) -> List[Dict]:
+        """Get frequency ranges from config.
+
+        Returns:
+            List of frequency range dictionaries with name, description, min_hz, max_hz
+        """
+        return self.config.get('frequency_ranges', [])
+
     def check_config_sync(self) -> Dict:
         """Check if database challenges are in sync with config file.
 
@@ -1518,6 +1526,20 @@ class ChallengeCtlAPI:
 
             except Exception as e:
                 logger.error(f"Error getting conference info: {e}")
+                return jsonify({'error': 'Internal server error'}), 500
+
+        @self.app.route('/api/frequency-ranges', methods=['GET'])
+        def get_frequency_ranges():
+            """Get available named frequency ranges from configuration.
+
+            Returns:
+                List of frequency range objects with name, description, min_hz, max_hz
+            """
+            try:
+                frequency_ranges = self.get_frequency_ranges()
+                return jsonify(frequency_ranges), 200
+            except Exception as e:
+                logger.error(f"Error getting frequency ranges: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
         # Conference settings endpoints (admin only)
@@ -3090,11 +3112,17 @@ radios:
             # Show frequency if enabled (default: True)
             if public_view.get('show_frequency', True):
                 frequency = config.get('frequency')
+                frequency_ranges = config.get('frequency_ranges')
+
                 if frequency:
                     # Format frequency in MHz for readability
                     freq_mhz = frequency / 1_000_000
                     public_challenge['frequency'] = frequency
                     public_challenge['frequency_display'] = f"{freq_mhz:.3f} MHz"
+                elif frequency_ranges:
+                    # Show named frequency ranges
+                    public_challenge['frequency_ranges'] = frequency_ranges
+                    public_challenge['frequency_display'] = f"Random ({', '.join(frequency_ranges)})"
 
             # Show last transmission time if enabled (default: True)
             if public_view.get('show_last_tx_time', True):

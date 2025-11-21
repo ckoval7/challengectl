@@ -39,10 +39,23 @@
           </el-table-column>
           <el-table-column
             label="Frequency"
-            width="150"
+            width="200"
           >
             <template #default="scope">
-              {{ formatFrequency(scope.row.config?.frequency) }}
+              <template v-if="scope.row.config?.frequency">
+                {{ formatFrequency(scope.row.config.frequency) }}
+              </template>
+              <template v-else-if="scope.row.config?.frequency_ranges">
+                <el-tag
+                  type="info"
+                  size="small"
+                >
+                  Random: {{ scope.row.config.frequency_ranges.join(', ') }}
+                </el-tag>
+              </template>
+              <template v-else>
+                N/A
+              </template>
             </template>
           </el-table-column>
           <el-table-column
@@ -169,7 +182,19 @@
             </el-select>
           </el-form-item>
 
+          <el-form-item label="Frequency Mode">
+            <el-radio-group v-model="frequencyMode">
+              <el-radio label="direct">
+                Direct Frequency
+              </el-radio>
+              <el-radio label="ranges">
+                Named Ranges
+              </el-radio>
+            </el-radio-group>
+          </el-form-item>
+
           <el-form-item
+            v-if="frequencyMode === 'direct'"
             label="Frequency (Hz)"
             required
           >
@@ -180,6 +205,29 @@
               :step="1000"
               class="w-full"
             />
+          </el-form-item>
+
+          <el-form-item
+            v-if="frequencyMode === 'ranges'"
+            label="Named Frequency Ranges"
+            required
+          >
+            <el-select
+              v-model="challengeForm.frequency_ranges"
+              multiple
+              placeholder="Select one or more frequency ranges"
+              class="w-full"
+            >
+              <el-option
+                v-for="range in availableFrequencyRanges"
+                :key="range.name"
+                :label="`${range.name} - ${range.description} (${formatFrequency(range.min_hz)} - ${formatFrequency(range.max_hz)})`"
+                :value="range.name"
+              />
+            </el-select>
+            <div class="text-sm text-gray-500 mt-5">
+              A random frequency will be selected from the chosen range(s) for each transmission
+            </div>
           </el-form-item>
 
           <el-form-item label="Enabled">
@@ -605,10 +653,23 @@ print(response.json())</code></pre>
           </el-table-column>
           <el-table-column
             label="Frequency"
-            width="150"
+            width="200"
           >
             <template #default="scope">
-              {{ formatFrequency(scope.row.config?.frequency) }}
+              <template v-if="scope.row.config?.frequency">
+                {{ formatFrequency(scope.row.config.frequency) }}
+              </template>
+              <template v-else-if="scope.row.config?.frequency_ranges">
+                <el-tag
+                  type="info"
+                  size="small"
+                >
+                  Random: {{ scope.row.config.frequency_ranges.join(', ') }}
+                </el-tag>
+              </template>
+              <template v-else>
+                N/A
+              </template>
             </template>
           </el-table-column>
           <el-table-column
@@ -718,11 +779,16 @@ export default {
     const challenges = ref([])
     const importing = ref(false)
 
+    // Frequency ranges
+    const availableFrequencyRanges = ref([])
+    const frequencyMode = ref('direct') // 'direct' or 'ranges'
+
     // Create form
     const challengeForm = ref({
       name: '',
       modulation: 'nbfm',
       frequency: 146550000,
+      frequency_ranges: [], // Array of named frequency ranges
       enabled: true,
       flag: '',
       min_delay: 60,
@@ -797,6 +863,7 @@ export default {
         name: '',
         modulation: 'nbfm',
         frequency: 146550000,
+        frequency_ranges: [],
         enabled: true,
         flag: '',
         min_delay: 60,
@@ -813,6 +880,7 @@ export default {
         bandwidth: 125000,
         coding_rate: '4/5',
       }
+      frequencyMode.value = 'direct'
       flagFile.value = null
       if (flagUploadRef.value) {
         flagUploadRef.value.clearFiles()
@@ -841,9 +909,17 @@ export default {
         return
       }
 
-      if (!challengeForm.value.frequency) {
-        ElMessage.error('Frequency is required')
-        return
+      // Validate frequency or frequency_ranges
+      if (frequencyMode.value === 'direct') {
+        if (!challengeForm.value.frequency) {
+          ElMessage.error('Frequency is required')
+          return
+        }
+      } else {
+        if (!challengeForm.value.frequency_ranges || challengeForm.value.frequency_ranges.length === 0) {
+          ElMessage.error('At least one frequency range is required')
+          return
+        }
       }
 
       if (challengeForm.value.min_delay > challengeForm.value.max_delay) {
@@ -856,12 +932,18 @@ export default {
         const config = {
           name: challengeForm.value.name,
           modulation: challengeForm.value.modulation,
-          frequency: challengeForm.value.frequency,
           enabled: challengeForm.value.enabled,
           min_delay: challengeForm.value.min_delay,
           max_delay: challengeForm.value.max_delay,
           priority: challengeForm.value.priority,
           public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
+        }
+
+        // Add frequency or frequency_ranges based on mode
+        if (frequencyMode.value === 'direct') {
+          config.frequency = challengeForm.value.frequency
+        } else {
+          config.frequency_ranges = challengeForm.value.frequency_ranges
         }
 
         // Handle file upload if a file was selected
@@ -994,6 +1076,16 @@ export default {
       }
     }
 
+    const loadFrequencyRanges = async () => {
+      try {
+        const response = await api.get('/frequency-ranges')
+        availableFrequencyRanges.value = response.data || []
+      } catch (error) {
+        console.error('Failed to load frequency ranges:', error)
+        // Don't show error message - frequency ranges are optional
+      }
+    }
+
     const reloadChallenges = async () => {
       try {
         const response = await api.post('/challenges/reload')
@@ -1093,6 +1185,7 @@ export default {
 
     onMounted(() => {
       loadChallenges()
+      loadFrequencyRanges()
 
       // Refresh periodically for live status
       const interval = setInterval(loadChallenges, 15000)
@@ -1103,6 +1196,8 @@ export default {
       activeTab,
       challenges,
       importing,
+      availableFrequencyRanges,
+      frequencyMode,
       challengeForm,
       flagFile,
       flagUploadRef,
@@ -1123,6 +1218,7 @@ export default {
       createChallenge,
       importChallenges,
       loadChallenges,
+      loadFrequencyRanges,
       reloadChallenges,
       toggleChallenge,
       triggerChallenge,
