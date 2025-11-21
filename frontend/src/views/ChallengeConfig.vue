@@ -217,7 +217,8 @@
                 v-model="challengeForm.frequency_ranges"
                 multiple
                 :placeholder="availableFrequencyRanges.length === 0 ? 'No ranges available - click Reload' : 'Select one or more ranges...'"
-                style="flex: 1;"
+                style="flex: 1; min-width: 350px; width: 100%;"
+                popper-class="frequency-ranges-dropdown"
                 collapse-tags
                 collapse-tags-tooltip
               >
@@ -1323,5 +1324,21 @@ html.dark .code-example {
   background: #2d2d2d;
   color: var(--el-text-color-primary);
   border: 1px solid var(--el-border-color);
+}
+</style>
+
+<style>
+/* Non-scoped styles for dropdown popper (rendered outside component) */
+.frequency-ranges-dropdown {
+  min-width: 400px !important;
+  max-width: 600px !important;
+}
+
+.frequency-ranges-dropdown .el-select-dropdown__item {
+  height: auto !important;
+  min-height: 34px;
+  padding: 8px 20px !important;
+  white-space: normal !important;
+  line-height: 1.4;
 }
 </style>
