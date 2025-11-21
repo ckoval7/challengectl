@@ -27,7 +27,7 @@ class SpectrumListener:
     """GNU Radio flowgraph for capturing RF spectrum and generating FFT data."""
 
     def __init__(self, frequency: int, sample_rate: int = 2000000,
-                 fft_size: int = 1024, gain: float = 40.0):
+                 fft_size: int = 1024, gain: float = 40.0, device_id: str = ""):
         """Initialize spectrum listener.
 
         Args:
@@ -35,11 +35,13 @@ class SpectrumListener:
             sample_rate: Sample rate in Hz (default 2 MHz)
             fft_size: FFT size for spectrum analysis (default 1024)
             gain: RF gain in dB (default 40)
+            device_id: Device identifier string (e.g., "rtlsdr=0", "hackrf=0")
         """
         self.frequency = frequency
         self.sample_rate = sample_rate
         self.fft_size = fft_size
         self.gain = gain
+        self.device_id = device_id
 
         # FFT data storage
         self.fft_frames = []
@@ -54,7 +56,8 @@ class SpectrumListener:
     def _build_flowgraph(self):
         """Build GNU Radio flowgraph for spectrum capture."""
         # Osmocom source (supports RTL-SDR, HackRF, etc.)
-        self.source = osmo_source(args="")
+        # Use device_id to select specific device
+        self.source = osmo_source(args=self.device_id)
         self.source.set_sample_rate(self.sample_rate)
         self.source.set_center_freq(self.frequency, 0)
         self.source.set_freq_corr(0, 0)

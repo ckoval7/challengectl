@@ -85,29 +85,101 @@ class ListenerAgent:
             sys.exit(1)
 
     def detect_devices(self) -> list:
-        """Detect available SDR devices.
+        """Detect available SDR devices from configuration.
 
         Returns:
-            List of device dictionaries with id, type, serial
+            List of device dictionaries with name, model, gain, frequency_limits
         """
         devices = []
 
-        # Try to detect osmosdr-compatible devices
-        # In a real implementation, you'd use gr-osmosdr to enumerate devices
-        # For now, return device from config
-        device_config = self.config['agent'].get('recording', {}).get('device', {})
+        # First, try new radios.devices format (multi-device)
+        radios_config = self.config.get('radios', {})
+        devices_config = radios_config.get('devices', [])
 
-        if device_config:
-            devices.append({
-                'id': device_config.get('id', 'rtlsdr=0'),
-                'type': device_config.get('type', 'rtlsdr'),
-                'serial': device_config.get('serial', 'unknown')
-            })
+        if devices_config:
+            # New format: multiple devices with gain and frequency_limits
+            for device in devices_config:
+                device_info = {
+                    'name': str(device.get('name', '0')),
+                    'model': device.get('model', 'rtlsdr'),
+                    'gain': device.get('gain', 40),
+                    'frequency_limits': device.get('frequency_limits', []),
+                    'in_use': False  # Track device availability
+                }
+                devices.append(device_info)
+                logger.info(f"Configured device: {device_info['model']}={device_info['name']} "
+                          f"(gain: {device_info['gain']} dB, freq_limits: {device_info['frequency_limits']})")
+        else:
+            # Fallback to old format: single device in agent.recording.device
+            device_config = self.config['agent'].get('recording', {}).get('device', {})
+            gain = self.config['agent'].get('recording', {}).get('gain', 40)
+
+            if device_config:
+                device_info = {
+                    'name': device_config.get('id', 'rtlsdr=0'),
+                    'model': device_config.get('type', 'rtlsdr'),
+                    'gain': gain,
+                    'frequency_limits': [],
+                    'in_use': False
+                }
+                devices.append(device_info)
+                logger.info(f"Configured device (legacy format): {device_info['model']}={device_info['name']} "
+                          f"(gain: {device_info['gain']} dB)")
 
         if not devices:
-            logger.warning("No SDR devices detected!")
+            logger.warning("No SDR devices configured!")
 
         return devices
+
+    def select_device(self, frequency: int) -> Optional[Dict]:
+        """Select an appropriate device for the given frequency.
+
+        Selection criteria:
+        1. Device must not be currently in use
+        2. If device has frequency_limits, frequency must be within range
+        3. If multiple devices match, prefer first match
+
+        Args:
+            frequency: Center frequency in Hz
+
+        Returns:
+            Device dict if found, None if no suitable device available
+        """
+        available_devices = []
+
+        for device in self.devices:
+            # Skip devices currently in use
+            if device.get('in_use', False):
+                continue
+
+            freq_limits = device.get('frequency_limits', [])
+
+            # If no frequency limits, device can handle any frequency
+            if not freq_limits:
+                available_devices.append(device)
+                continue
+
+            # Check if frequency is within any of the device's ranges
+            for freq_range in freq_limits:
+                try:
+                    # Parse range like "144000000-148000000"
+                    if '-' in freq_range:
+                        min_freq, max_freq = map(int, freq_range.split('-'))
+                        if min_freq <= frequency <= max_freq:
+                            available_devices.append(device)
+                            break
+                except ValueError:
+                    logger.warning(f"Invalid frequency range format: {freq_range}")
+
+        if not available_devices:
+            logger.error(f"No available device for frequency {frequency} Hz")
+            return None
+
+        # Return first available device
+        selected = available_devices[0]
+        logger.info(f"Selected device {selected['model']}={selected['name']} "
+                   f"for {frequency} Hz (gain: {selected['gain']} dB)")
+        return selected
 
     def register_websocket_handlers(self):
         """Register WebSocket event handlers for SocketIO client."""
@@ -254,10 +326,21 @@ class ListenerAgent:
         Returns:
             Tuple of (success, image_path, actual_duration, error_message)
         """
+        selected_device = None
         try:
             # Import GNU Radio components
             from spectrum_listener import SpectrumListener
             from waterfall_generator import generate_waterfall
+
+            # Select appropriate device for this frequency
+            selected_device = self.select_device(frequency)
+            if not selected_device:
+                error_msg = f"No available device for frequency {frequency} Hz"
+                logger.error(error_msg)
+                return False, None, 0, error_msg
+
+            # Mark device as in use
+            selected_device['in_use'] = True
 
             recording_config = self.config['agent'].get('recording', {})
             output_dir = recording_config.get('output_dir', 'recordings')
@@ -266,19 +349,22 @@ class ListenerAgent:
             sample_rate = recording_config.get('sample_rate', 2000000)
             fft_size = recording_config.get('fft_size', 1024)
             frame_rate = recording_config.get('frame_rate', 20)
-            gain = recording_config.get('gain', 40)
             pre_roll = recording_config.get('pre_roll_seconds', 5)
             post_roll = recording_config.get('post_roll_seconds', 5)
 
             # Total recording duration includes pre-roll and post-roll
             total_duration = pre_roll + duration + post_roll
 
-            # Create spectrum listener
+            # Build device identifier string for osmosdr
+            device_id = f"{selected_device['model']}={selected_device['name']}"
+
+            # Create spectrum listener with device-specific parameters
             listener = SpectrumListener(
                 frequency=frequency,
                 sample_rate=sample_rate,
                 fft_size=fft_size,
-                gain=gain
+                gain=selected_device['gain'],
+                device_id=device_id
             )
 
             logger.info(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate})")
@@ -309,6 +395,11 @@ class ListenerAgent:
             error_msg = f"Recording failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return (False, None, 0, error_msg)
+        finally:
+            # Release device for next recording
+            if selected_device:
+                selected_device['in_use'] = False
+                logger.debug(f"Released device {selected_device['model']}={selected_device['name']}")
 
     def notify_recording_started(self, challenge_id: str, transmission_id: int,
                                 frequency: int, sample_rate: int,
