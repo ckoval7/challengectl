@@ -45,18 +45,44 @@ server:
 
 **Note**: Challenges can be configured through the Web UI or in the YAML file. See [Challenge Management](Challenge-Management) for details on using the Web UI.
 
-To configure challenges in the YAML file, you can add them like this:
+To configure challenges in the YAML file, ChallengeCtl supports three ways to specify frequencies:
 
 ```yaml
 challenges:
+  # Option 1: Single frequency
   - name: NBFM_Example
-    frequency: 146550000
+    frequency: 146550000  # Hz (146.550 MHz)
     modulation: nbfm
     flag: challenges/example.wav
     min_delay: 60
     max_delay: 120
     enabled: true
+
+  # Option 2: Named frequency ranges (random selection)
+  - name: NBFM_Random
+    frequency_ranges:  # System picks random frequency from these ranges
+      - ham_144
+      - ham_440
+    modulation: nbfm
+    flag: challenges/example.wav
+    min_delay: 60
+    max_delay: 120
+    enabled: true
+
+  # Option 3: Manual frequency range (custom range)
+  - name: CW_CustomRange
+    manual_frequency_range:
+      min_hz: 146000000  # 146.000 MHz
+      max_hz: 146100000  # 146.100 MHz
+    modulation: cw
+    flag: "CQ CQ CQ DE RFCTF K"
+    speed: 35
+    min_delay: 60
+    max_delay: 120
+    enabled: true
 ```
+
+Named frequency ranges must be defined in the `frequency_ranges` section of your config. See [Configuration Reference](Configuration-Reference#frequency-ranges-section) for details.
 
 Place your challenge files (like `example.wav`) in the `challenges/` directory.
 
@@ -156,7 +182,10 @@ Now that the server and runner are connected, you can configure challenges throu
    - Fill in the form:
      - Name: `NBFM_TEST`
      - Modulation: `NBFM (Narrowband FM)`
-     - Frequency: `146550000` (146.55 MHz)
+     - Frequency Mode: Choose one of:
+       - **Single Frequency**: `146.550` MHz for a fixed frequency
+       - **Named Ranges**: Select from predefined frequency ranges (e.g., "2 Meter Ham Band")
+       - **Manual Range**: Specify custom min/max frequencies in MHz
      - Flag: Upload a WAV file or enter a path
      - Min Delay: `60` seconds
      - Max Delay: `120` seconds

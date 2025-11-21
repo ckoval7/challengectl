@@ -498,12 +498,13 @@ your_modulation:
 
 ### Example Challenge Configuration
 
-Add example challenges to the server configuration:
+Add example challenges to the server configuration. ChallengeCtl supports three ways to specify frequencies:
 
 ```yaml
 challenges:
+  # Option 1: Single frequency
   - name: YOUR_MOD_FLAG_1
-    frequency: 146550000
+    frequency: 146550000  # Hz (146.550 MHz)
     modulation: your_modulation
     flag: challenges/your_file.bin
     min_delay: 60
@@ -512,7 +513,35 @@ challenges:
     # Modulation-specific parameters
     custom_param: 42
     another_param: "value"
+
+  # Option 2: Named frequency ranges (random selection)
+  - name: YOUR_MOD_FLAG_2
+    frequency_ranges:  # System picks random frequency from these ranges
+      - ham_144
+      - ham_440
+    modulation: your_modulation
+    flag: challenges/your_file.bin
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    custom_param: 42
+    another_param: "value"
+
+  # Option 3: Manual frequency range (custom range)
+  - name: YOUR_MOD_FLAG_3
+    manual_frequency_range:
+      min_hz: 420000000  # 420.000 MHz
+      max_hz: 450000000  # 450.000 MHz
+    modulation: your_modulation
+    flag: challenges/your_file.bin
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    custom_param: 42
+    another_param: "value"
 ```
+
+Named frequency ranges must be defined in the `frequency_ranges` section. See [Configuration Reference](Configuration-Reference#frequency-ranges-section) for details.
 
 ## Testing
 
@@ -555,8 +584,21 @@ devices:
       - "144000000-148000000"
 
 challenges:
+  # Test with single frequency
   - name: TEST_YOUR_MOD
-    frequency: 146550000
+    frequency: 146550000  # Hz (146.550 MHz)
+    modulation: your_modulation
+    flag: challenges/test.bin
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+    custom_param: 42
+
+  # Test with manual frequency range
+  - name: TEST_YOUR_MOD_RANGE
+    manual_frequency_range:
+      min_hz: 146000000  # 146.000 MHz
+      max_hz: 146100000  # 146.100 MHz
     modulation: your_modulation
     flag: challenges/test.bin
     min_delay: 60
