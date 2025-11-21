@@ -1576,17 +1576,6 @@ radios:
       }
     }
 
-    const showAddListenerDialog = () => {
-      addListenerDialogVisible.value = true
-      listenerEnrollmentData.value = null
-      addListenerForm.value = {
-        listenerName: '',
-        expiresHours: 24,
-        deviceType: 'rtlsdr',
-        deviceId: 'rtlsdr=0'
-      }
-    }
-
     const generateListenerEnrollmentToken = async () => {
       if (!addListenerForm.value.listenerName) {
         ElMessage.error('Listener name is required')
