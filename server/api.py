@@ -24,6 +24,7 @@ import threading
 import secrets
 import bcrypt
 import pyotp
+import random
 
 from database import Database
 from crypto import encrypt_totp_secret
@@ -203,6 +204,34 @@ class ChallengeCtlAPI:
             List of frequency range dictionaries with name, description, min_hz, max_hz
         """
         return self.config.get('frequency_ranges', [])
+
+    def select_random_frequency(self, frequency_ranges: List[str]) -> Optional[float]:
+        """Select a random frequency from one or more named frequency ranges.
+
+        Args:
+            frequency_ranges: List of frequency range names (e.g., ["ham_144", "ham_220"])
+
+        Returns:
+            Random frequency in Hz as a float, or None if ranges not found
+        """
+        if not frequency_ranges:
+            return None
+
+        # Select a random range from the list
+        selected_range_name = random.choice(frequency_ranges)
+
+        # Find the range configuration
+        available_ranges = self.get_frequency_ranges()
+        for freq_range in available_ranges:
+            if freq_range.get('name') == selected_range_name:
+                min_hz = freq_range.get('min_hz')
+                max_hz = freq_range.get('max_hz')
+                if min_hz is not None and max_hz is not None:
+                    # Select random frequency within the range and return as float
+                    return float(random.randint(int(min_hz), int(max_hz)))
+
+        logger.warning(f"Frequency range '{selected_range_name}' not found in configuration")
+        return None
 
     def check_config_sync(self) -> Dict:
         """Check if database challenges are in sync with config file.
@@ -1761,6 +1790,26 @@ class ChallengeCtlAPI:
             challenge = self.db.assign_challenge(runner_id)
 
             if challenge:
+                # Process frequency_ranges if present
+                config = challenge['config'].copy()  # Make a copy to avoid modifying stored config
+                frequency_ranges = config.get('frequency_ranges')
+
+                if frequency_ranges:
+                    # Select random frequency from the ranges
+                    selected_frequency = self.select_random_frequency(frequency_ranges)
+                    if selected_frequency:
+                        # Replace frequency_ranges with selected frequency
+                        config['frequency'] = selected_frequency
+                        # Remove frequency_ranges from config sent to runner
+                        config.pop('frequency_ranges', None)
+                        logger.info(f"Selected random frequency {selected_frequency} Hz from ranges {frequency_ranges}")
+                    else:
+                        logger.error(f"Failed to select frequency from ranges: {frequency_ranges}")
+                        return jsonify({'error': 'Invalid frequency range configuration'}), 500
+                elif 'frequency' in config:
+                    # Ensure existing frequency is a float
+                    config['frequency'] = float(config['frequency'])
+
                 # Broadcast assignment event
                 self.broadcast_event('challenge_assigned', {
                     'runner_id': runner_id,
@@ -1773,7 +1822,7 @@ class ChallengeCtlAPI:
                     'task': {
                         'challenge_id': challenge['challenge_id'],
                         'name': challenge['name'],
-                        'config': challenge['config']
+                        'config': config
                     }
                 }), 200
             else:
