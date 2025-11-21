@@ -1795,6 +1795,8 @@ class ChallengeCtlAPI:
                 # Broadcast runner online event
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'status': 'online',
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
@@ -1821,6 +1823,8 @@ class ChallengeCtlAPI:
                 heartbeat_time = datetime.now(timezone.utc).isoformat()
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'status': 'online',
                     'last_heartbeat': heartbeat_time,
                     'timestamp': heartbeat_time
@@ -1845,6 +1849,8 @@ class ChallengeCtlAPI:
                 # Broadcast offline status
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'status': 'offline',
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
@@ -2622,18 +2628,34 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         def get_agents():
             """Get all agents (runners and listeners)."""
-            agent_type = request.args.get('type')  # Optional filter: 'runner' or 'listener'
-            agents = self.db.get_all_agents(agent_type=agent_type)
+            agent_type_filter = request.args.get('type')  # Optional filter: 'runner' or 'listener'
+
+            all_agents = []
+
+            # Get runners from runners table if not filtered for listeners only
+            if not agent_type_filter or agent_type_filter == 'runner':
+                runners = self.db.get_all_runners()
+                for runner in runners:
+                    # Add agent_type and agent_id fields for unified interface
+                    runner['agent_type'] = 'runner'
+                    runner['agent_id'] = runner['runner_id']
+                    runner['websocket_connected'] = False  # Runners don't use WebSocket
+                    all_agents.append(runner)
+
+            # Get listeners from agents table if not filtered for runners only
+            if not agent_type_filter or agent_type_filter == 'listener':
+                listeners = self.db.get_all_agents(agent_type='listener')
+                all_agents.extend(listeners)
 
             # Parse devices JSON for each agent
-            for agent in agents:
+            for agent in all_agents:
                 if agent.get('devices'):
                     try:
                         agent['devices'] = json.loads(agent['devices'])
                     except (json.JSONDecodeError, TypeError):
                         agent['devices'] = []
 
-            return jsonify({'agents': agents}), 200
+            return jsonify({'agents': all_agents}), 200
 
         @self.app.route('/api/agents/<agent_id>/enable', methods=['POST'])
         @self.require_admin_auth
@@ -2737,6 +2759,8 @@ class ChallengeCtlAPI:
             if success:
                 self.broadcast_event('runner_status', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'status': 'offline',
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
@@ -2754,6 +2778,8 @@ class ChallengeCtlAPI:
             if success:
                 self.broadcast_event('runner_enabled', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'enabled': True,
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
@@ -2771,6 +2797,8 @@ class ChallengeCtlAPI:
             if success:
                 self.broadcast_event('runner_enabled', {
                     'runner_id': runner_id,
+                    'agent_id': runner_id,
+                    'agent_type': 'runner',
                     'enabled': False,
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
