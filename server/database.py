@@ -611,6 +611,81 @@ class Database:
                 logger.info(f"Disabled runner: {runner_id}")
             return cursor.rowcount > 0
 
+    def _verify_host_identifiers(self, agent_id: str, table: str, status: str, stored_ip: str,
+                                  stored_hostname: str, stored_mac: Optional[str], stored_machine_id: Optional[str],
+                                  last_heartbeat: Optional[str], current_ip: str, current_hostname: str,
+                                  current_mac: Optional[str], current_machine_id: Optional[str],
+                                  conn) -> bool:
+        """Shared host validation logic for both runners and listeners.
+
+        Prevents credential reuse on different machines using multi-factor validation.
+        Requires at least 2 of: IP+hostname, MAC address, or machine ID to match.
+
+        Returns:
+            True if host validation passes, False otherwise
+        """
+        cursor = conn.cursor()
+
+        # Enhanced host validation: check multiple identifiers
+        # Prevent credential reuse on different machines
+        if status == 'online' and last_heartbeat:
+            # Check if agent is actively online (heartbeat within 90 seconds)
+            last_hb = datetime.fromisoformat(last_heartbeat)
+            time_since_heartbeat = (datetime.now(timezone.utc) - last_hb).total_seconds()
+
+            if time_since_heartbeat < 90:
+                # Agent is actively online - perform multi-factor host validation
+                # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
+                matches = []
+
+                # Check IP and hostname together
+                if stored_ip == current_ip and stored_hostname == current_hostname:
+                    matches.append("IP+hostname")
+
+                # Check MAC address (strong identifier)
+                # If stored_mac is None, accept any current_mac (backwards compatibility)
+                if stored_mac is None and current_mac:
+                    matches.append("MAC-upgrade")
+                    # Update the database with the new MAC address
+                    cursor.execute(f'''
+                        UPDATE {table}
+                        SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE {table[:-1]}_id = ?
+                    ''', (current_mac, agent_id))
+                    conn.commit()
+                    logger.info(f"Updated {table[:-1]} {agent_id} with MAC address: {current_mac}")
+                elif stored_mac and current_mac and stored_mac.lower() == current_mac.lower():
+                    matches.append("MAC")
+
+                # Check machine ID (strongest identifier)
+                # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
+                if stored_machine_id is None and current_machine_id:
+                    matches.append("machine-ID-upgrade")
+                    # Update the database with the new machine ID
+                    cursor.execute(f'''
+                        UPDATE {table}
+                        SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE {table[:-1]}_id = ?
+                    ''', (current_machine_id, agent_id))
+                    conn.commit()
+                    logger.info(f"Updated {table[:-1]} {agent_id} with machine ID: {current_machine_id}")
+                elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
+                    matches.append("machine-ID")
+
+                # Require at least 2 matching factors for security
+                if len(matches) < 2:
+                    logger.warning(
+                        f"SECURITY: {table[:-1].capitalize()} {agent_id} credential reuse attempt! "
+                        f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
+                        f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
+                        f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
+                    )
+                    return False
+                else:
+                    logger.debug(f"{table[:-1].capitalize()} {agent_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
+
+        return True
+
     def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str,
                              current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
         """Verify a runner's API key against the stored bcrypt hash.
@@ -653,70 +728,61 @@ class Database:
             if not api_key_valid:
                 return False
 
-            # Enhanced host validation: check multiple identifiers
-            # Prevent credential reuse on different machines
-            if row['status'] == 'online' and row['last_heartbeat']:
-                stored_ip = row['ip_address']
-                stored_hostname = row['hostname']
-                stored_mac = row['mac_address']
-                stored_machine_id = row['machine_id']
+            # Use shared host validation logic
+            return self._verify_host_identifiers(
+                runner_id, 'runners', row['status'], row['ip_address'], row['hostname'],
+                row['mac_address'], row['machine_id'], row['last_heartbeat'],
+                current_ip, current_hostname, current_mac, current_machine_id, conn
+            )
 
-                # Check if runner is actively online (heartbeat within 90 seconds)
-                last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
-                time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
+    def verify_agent_api_key(self, agent_id: str, api_key: str, current_ip: str, current_hostname: str,
+                             current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
+        """Verify an agent's API key against the stored bcrypt hash.
 
-                if time_since_heartbeat < 90:
-                    # Runner is actively online - perform multi-factor host validation
-                    # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
-                    matches = []
+        Also validates that the agent is not already active from a different host
+        to prevent credential reuse attacks. Uses multiple host identifiers for
+        robust validation.
 
-                    # Check IP and hostname together
-                    if stored_ip == current_ip and stored_hostname == current_hostname:
-                        matches.append("IP+hostname")
+        Args:
+            agent_id: The agent ID to verify
+            api_key: The plaintext API key to check
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
 
-                    # Check MAC address (strong identifier)
-                    # If stored_mac is None, accept any current_mac (backwards compatibility)
-                    if stored_mac is None and current_mac:
-                        matches.append("MAC-upgrade")
-                        # Update the database with the new MAC address
-                        cursor.execute('''
-                            UPDATE runners
-                            SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE runner_id = ?
-                        ''', (current_mac, runner_id))
-                        conn.commit()
-                        logger.info(f"Updated runner {runner_id} with MAC address: {current_mac}")
-                    elif stored_mac and current_mac and stored_mac == current_mac:
-                        matches.append("MAC")
+        Returns:
+            True if the API key is valid and host check passes, False otherwise
+        """
+        import bcrypt
 
-                    # Check machine ID (strongest identifier)
-                    # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
-                    if stored_machine_id is None and current_machine_id:
-                        matches.append("machine-ID-upgrade")
-                        # Update the database with the new machine ID
-                        cursor.execute('''
-                            UPDATE runners
-                            SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE runner_id = ?
-                        ''', (current_machine_id, runner_id))
-                        conn.commit()
-                        logger.info(f"Updated runner {runner_id} with machine ID: {current_machine_id}")
-                    elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
-                        matches.append("machine-ID")
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT api_key_hash, status, ip_address, hostname, mac_address, machine_id, last_heartbeat
+                FROM agents WHERE agent_id = ?
+            ''', (agent_id,))
+            row = cursor.fetchone()
 
-                    # Require at least 2 matching factors for security
-                    if len(matches) < 2:
-                        logger.warning(
-                            f"SECURITY: Runner {runner_id} credential reuse attempt! "
-                            f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
-                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
-                            f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
-                        )
-                        return False
-                    else:
-                        logger.debug(f"Runner {runner_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
+            if not row or not row['api_key_hash']:
+                return False
 
-            return True
+            # Verify the API key using bcrypt
+            try:
+                api_key_valid = bcrypt.checkpw(api_key.encode('utf-8'), row['api_key_hash'].encode('utf-8'))
+            except Exception as e:
+                logger.error(f"API key verification error for agent {agent_id}: {e}")
+                return False
+
+            if not api_key_valid:
+                return False
+
+            # Use shared host validation logic
+            return self._verify_host_identifiers(
+                agent_id, 'agents', row['status'], row['ip_address'], row['hostname'],
+                row['mac_address'], row['machine_id'], row['last_heartbeat'],
+                current_ip, current_hostname, current_mac, current_machine_id, conn
+            )
 
     def find_runner_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
                                current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
@@ -2003,42 +2069,21 @@ class Database:
         Returns:
             agent_id if found and verified, None otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Only fetch enabled agents with API keys set (optimized query)
             cursor.execute('''
-                SELECT agent_id, api_key_hash, mac_address, machine_id
+                SELECT agent_id
                 FROM agents
                 WHERE enabled = 1 AND api_key_hash IS NOT NULL
             ''')
 
             for row in cursor.fetchall():
                 agent_id = row['agent_id']
-                api_key_hash = row['api_key_hash']
-                stored_mac = row['mac_address']
-                stored_machine_id = row['machine_id']
-
-                # Verify API key hash
-                try:
-                    if not bcrypt.checkpw(api_key.encode('utf-8'), api_key_hash.encode('utf-8')):
-                        continue
-                except Exception:
-                    continue
-
-                # Verify MAC address if both are available
-                if stored_mac and current_mac:
-                    if stored_mac.lower() != current_mac.lower():
-                        continue
-
-                # Verify machine ID if both are available
-                if stored_machine_id and current_machine_id:
-                    if stored_machine_id != current_machine_id:
-                        continue
-
-                # All validations passed
-                return agent_id
+                # Use existing verify_agent_api_key method for consistent validation
+                if self.verify_agent_api_key(agent_id, api_key, current_ip, current_hostname,
+                                             current_mac, current_machine_id):
+                    return agent_id
 
             return None
 
