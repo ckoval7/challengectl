@@ -1,17 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired, hasPermission } from './auth'
 import { ElMessage } from 'element-plus'
-import Dashboard from './views/Dashboard.vue'
-import Runners from './views/Runners.vue'
-import ChallengeConfig from './views/ChallengeConfig.vue'
-import Logs from './views/Logs.vue'
-import Users from './views/Users.vue'
-import PublicDashboard from './views/PublicDashboard.vue'
-import Login from './views/Login.vue'
-import ChangePassword from './views/ChangePassword.vue'
-import InitialSetup from './views/InitialSetup.vue'
-import UserSetup from './views/UserSetup.vue'
-import NotFound from './views/NotFound.vue'
+
+// Lazy load all route components for better code splitting
+const Dashboard = () => import('./views/Dashboard.vue')
+const Runners = () => import('./views/Runners.vue')
+const ChallengeConfig = () => import('./views/ChallengeConfig.vue')
+const Logs = () => import('./views/Logs.vue')
+const Users = () => import('./views/Users.vue')
+const PublicDashboard = () => import('./views/PublicDashboard.vue')
+const Login = () => import('./views/Login.vue')
+const ChangePassword = () => import('./views/ChangePassword.vue')
+const InitialSetup = () => import('./views/InitialSetup.vue')
+const UserSetup = () => import('./views/UserSetup.vue')
+const NotFound = () => import('./views/NotFound.vue')
 
 const routes = [
   {

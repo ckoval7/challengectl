@@ -14,6 +14,21 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    assetsDir: 'assets'
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Separate node_modules into vendor chunk
+          if (id.includes('node_modules')) {
+            // Keep Element Plus separate as it's the largest dependency
+            if (id.includes('element-plus')) {
+              return 'element-plus'
+            }
+            // Group all other vendor dependencies together
+            return 'vendor'
+          }
+        }
+      }
+    }
   }
 })
