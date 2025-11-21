@@ -1945,13 +1945,35 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Field "success" must be a boolean'}), 400
 
             error_message = data.get('error_message')
-            # device_id and frequency are logged but not currently used
-            # device_id = data.get('device_id', '')
-            # frequency = data.get('frequency', 0)
+            device_id = data.get('device_id', '')
+            frequency = data.get('frequency', 0)
 
             # Get challenge info and requeue
             challenge = self.db.get_challenge(challenge_id)
             challenge_name = challenge['name'] if challenge else challenge_id
+
+            # Record transmission with actual frequency from runner
+            if frequency and frequency > 0:
+                # Use actual frequency from runner transmission
+                transmission_frequency = frequency
+            else:
+                # Fallback to config frequency if runner didn't report it
+                config = challenge.get('config', {}) if challenge else {}
+                if isinstance(config, str):
+                    import json
+                    config = json.loads(config)
+                transmission_frequency = config.get('frequency', 0)
+
+            # Record transmission in database
+            transmission_id = self.db.record_transmission_start(
+                challenge_id,
+                runner_id,
+                device_id,
+                int(transmission_frequency)
+            )
+
+            # Mark transmission as complete
+            self.db.record_transmission_complete(transmission_id, success, error_message)
 
             config = self.db.complete_challenge(challenge_id, runner_id, success, error_message)
             if not config:
@@ -1964,9 +1986,11 @@ class ChallengeCtlAPI:
                 'runner_id': runner_id,
                 'challenge_id': challenge_id,
                 'challenge_name': challenge_name,
-                'frequency': config.get('frequency', 0),
+                'frequency': transmission_frequency,
                 'status': 'success' if success else 'failed',
-                'error_message': error_message
+                'error_message': error_message,
+                'transmission_id': transmission_id,
+                'device_id': device_id
             }
 
             with self.transmission_lock:
@@ -1978,10 +2002,12 @@ class ChallengeCtlAPI:
                 'runner_id': runner_id,
                 'challenge_id': challenge_id,
                 'challenge_name': challenge_name,
-                'frequency': config.get('frequency', 0),
+                'frequency': transmission_frequency,
                 'status': 'success' if success else 'failed',
                 'error_message': error_message,
-                'timestamp': timestamp
+                'timestamp': timestamp,
+                'transmission_id': transmission_id,
+                'device_id': device_id
             })
 
             # Broadcast updated public challenges to public dashboard
@@ -2256,7 +2282,7 @@ class ChallengeCtlAPI:
                                 'expected_duration': expected_duration,
                                 'runner_id': agent_id,
                                 'timestamp': datetime.now(timezone.utc).isoformat()
-                            }, room=f'agent_{listener_id}')
+                            }, room=f'agent_{listener_id}', namespace='/agents')
 
                             logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
                         else:
