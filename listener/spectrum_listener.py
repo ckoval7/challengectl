@@ -12,13 +12,39 @@ import logging
 from typing import List, Optional
 
 # Try to import GNU Radio components
+HAS_GNURADIO = False
+HAS_OSMOSDR = False
+window = None
+
 try:
     from gnuradio import gr, blocks, fft as gr_fft
-    from osmosdr import source as osmo_source
     HAS_GNURADIO = True
-except ImportError:
-    HAS_GNURADIO = False
-    logging.warning("GNU Radio not available - using simulated data for testing")
+
+    # Import window functions (location varies by GNU Radio version)
+    try:
+        from gnuradio.fft import window as fft_window
+        window = fft_window
+    except (ImportError, AttributeError):
+        try:
+            from gnuradio import window
+        except ImportError:
+            # Fallback to numpy/scipy windows
+            import numpy as np
+            class WindowFallback:
+                @staticmethod
+                def blackmanharris(n):
+                    return np.blackman(n).tolist()
+            window = WindowFallback
+
+    # Import osmosdr (optional, might not be available in all installs)
+    try:
+        from osmosdr import source as osmo_source
+        HAS_OSMOSDR = True
+    except ImportError:
+        logging.warning("gr-osmosdr not available - hardware recording disabled, simulation mode only")
+
+except ImportError as e:
+    logging.warning(f"GNU Radio not available - using simulated data for testing: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +76,17 @@ class SpectrumListener:
         self.fft_frames = []
         self.recording = False
 
-        if HAS_GNURADIO and not simulate:
+        if HAS_GNURADIO and HAS_OSMOSDR and not simulate:
             self.tb = gr.top_block()
             self._build_flowgraph()
         else:
             self.tb = None
             if simulate:
                 logger.info("Simulation mode: Using simulated spectrum data")
+            elif not HAS_GNURADIO:
+                logger.warning("GNU Radio not available - using simulation mode")
+            elif not HAS_OSMOSDR:
+                logger.warning("gr-osmosdr not available - using simulation mode")
 
     def _build_flowgraph(self):
         """Build GNU Radio flowgraph for spectrum capture."""
@@ -75,16 +105,22 @@ class SpectrumListener:
         # Stream to Vector for FFT processing
         self.s2v = blocks.stream_to_vector(gr.sizeof_gr_complex, self.fft_size)
 
-        # FFT block (try new API first, fall back to old)
+        # FFT block (GNU Radio 3.9+ uses fft.fft_vcc, older uses blocks.fft_vcc)
+        window_fn = window.blackmanharris(self.fft_size) if window else []
         try:
-            from gnuradio import window
-            self.fft = gr_fft.fft_vcc(self.fft_size, True, window.blackmanharris(self.fft_size), True)
-        except AttributeError:
-            # Fallback for older GNU Radio versions
-            self.fft = blocks.fft_vcc(self.fft_size, True, window.blackmanharris(self.fft_size), True)
+            # Try GNU Radio 3.9+ API
+            self.fft = gr_fft.fft_vcc(self.fft_size, True, window_fn, True)
+        except (AttributeError, NameError):
+            # Fallback for GNU Radio 3.8
+            self.fft = blocks.fft_vcc(self.fft_size, True, window_fn, True)
 
-        # Complex to Mag^2 (power)
-        self.c2mag = blocks.complex_to_mag_squared(self.fft_size)
+        # Complex to Mag^2 (power) - try multiple APIs
+        try:
+            # GNU Radio 3.10+ API
+            self.c2mag = blocks.complex_to_mag_squared(self.fft_size)
+        except (AttributeError, TypeError):
+            # Fallback: use complex_to_mag and multiply
+            self.c2mag = blocks.complex_to_mag(self.fft_size)
 
         # Vector sink to collect FFT frames
         self.sink = blocks.vector_sink_f(self.fft_size)
@@ -105,12 +141,12 @@ class SpectrumListener:
         Returns:
             2D numpy array of FFT data [time, frequency]
         """
-        if not HAS_GNURADIO or self.simulate:
+        if not HAS_GNURADIO or not HAS_OSMOSDR or self.simulate or not self.tb:
             # Return simulated data for testing
             if self.simulate:
                 logger.info("Using simulated spectrum data (simulation mode enabled)")
             else:
-                logger.warning("Using simulated spectrum data (GNU Radio not available)")
+                logger.warning("Using simulated spectrum data (GNU Radio/osmosdr not available)")
             return self._generate_simulated_spectrum(duration, frame_rate)
 
         self.fft_frames = []
@@ -226,16 +262,3 @@ class SpectrumListener:
         self.recording = False
         if self.tb:
             self.tb.stop()
-
-
-# Note: window.blackmanharris needs to be imported properly if GNU Radio is available
-if HAS_GNURADIO:
-    try:
-        from gnuradio import window
-    except ImportError:
-        # Fallback for older GNU Radio versions
-        import scipy.signal
-        class window:
-            @staticmethod
-            def blackmanharris(n):
-                return scipy.signal.blackmanharris(n).tolist()
