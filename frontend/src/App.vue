@@ -133,6 +133,7 @@ import ConferenceCountdown from './components/ConferenceCountdown.vue'
 export default {
   name: 'App',
   components: {
+    House,
     Monitor,
     Connection,
     Notebook,
