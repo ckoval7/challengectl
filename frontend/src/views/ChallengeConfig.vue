@@ -38,7 +38,7 @@
                 </div>
                 <div v-else class="recordings-grid">
                   <div
-                    v-for="recording in recordings[props.row.challenge_id]"
+                    v-for="recording in getDisplayedRecordings(props.row.challenge_id)"
                     :key="recording.recording_id"
                     class="recording-card"
                   >
@@ -54,11 +54,11 @@
                     <div class="recording-info">
                       <div><strong>Listener:</strong> {{ recording.listener_id }}</div>
                       <div><strong>Frequency:</strong> {{ formatFrequency(recording.frequency) }}</div>
-                      <div><strong>Duration:</strong> {{ recording.duration }}s</div>
+                      <div><strong>Duration:</strong> {{ recording.duration_seconds }}s</div>
                       <div><strong>Started:</strong> {{ formatTimestamp(recording.started_at) }}</div>
                       <div v-if="recording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}</div>
                     </div>
-                    <div v-if="recording.image_file && recording.status === 'completed'" class="recording-image">
+                    <div v-if="recording.image_path && recording.status === 'completed'" class="recording-image">
                       <img
                         :src="`/api/recordings/${recording.recording_id}/image`"
                         :alt="`Waterfall for recording ${recording.recording_id}`"
@@ -71,6 +71,11 @@
                       </el-alert>
                     </div>
                   </div>
+                </div>
+                <div v-if="shouldShowViewAllLink(props.row.challenge_id)" class="view-all-link">
+                  <router-link :to="`/recordings/${props.row.challenge_id}`">
+                    View All {{ recordings[props.row.challenge_id].length }} Recordings →
+                  </router-link>
                 </div>
               </div>
             </template>
@@ -937,7 +942,7 @@ print(response.json())</code></pre>
           <p><strong>Challenge:</strong> {{ challenges.find(c => c.challenge_id === selectedRecording.challenge_id)?.name || 'Unknown' }}</p>
           <p><strong>Listener:</strong> {{ selectedRecording.listener_id }}</p>
           <p><strong>Frequency:</strong> {{ formatFrequency(selectedRecording.frequency) }}</p>
-          <p><strong>Duration:</strong> {{ selectedRecording.duration }}s</p>
+          <p><strong>Duration:</strong> {{ selectedRecording.duration_seconds }}s</p>
           <p><strong>Started:</strong> {{ formatTimestamp(selectedRecording.started_at) }}</p>
           <p v-if="selectedRecording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}</p>
         </div>
@@ -1441,6 +1446,34 @@ export default {
       }
     }
 
+    const getDisplayedRecordings = (challengeId) => {
+      const recordingList = recordings.value[challengeId]
+      if (!recordingList || recordingList.length === 0) {
+        return []
+      }
+
+      // Check if there's an in-progress recording
+      const hasInProgress = recordingList.some(r => r.status === 'in_progress')
+
+      // Show last 5, or last 6 if there's an in-progress recording
+      const limit = hasInProgress ? 6 : 5
+      return recordingList.slice(0, limit)
+    }
+
+    const shouldShowViewAllLink = (challengeId) => {
+      const recordingList = recordings.value[challengeId]
+      if (!recordingList) {
+        return false
+      }
+
+      // Check if there's an in-progress recording
+      const hasInProgress = recordingList.some(r => r.status === 'in_progress')
+
+      // Show link if more than 5 (or more than 6 if in-progress)
+      const threshold = hasInProgress ? 6 : 5
+      return recordingList.length > threshold
+    }
+
     const showImageModal = (recording) => {
       selectedRecording.value = recording
       imageModalVisible.value = true
@@ -1511,6 +1544,8 @@ export default {
       formatFrequency,
       formatFrequencyRanges,
       loadRecordings,
+      getDisplayedRecordings,
+      shouldShowViewAllLink,
       showImageModal,
       closeImageModal,
       handleExpandChange,
@@ -1640,6 +1675,26 @@ h3 {
   margin-top: 10px;
 }
 
+.view-all-link {
+  text-align: center;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #ebeef5;
+}
+
+.view-all-link a {
+  color: #409eff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.view-all-link a:hover {
+  color: #66b1ff;
+  text-decoration: underline;
+}
+
 .modal-content {
   display: flex;
   flex-direction: column;
@@ -1706,6 +1761,10 @@ html.dark .recording-info {
 
 html.dark .recording-info strong {
   color: var(--el-text-color-primary);
+}
+
+html.dark .view-all-link {
+  border-top-color: var(--el-border-color);
 }
 
 html.dark .modal-info {
