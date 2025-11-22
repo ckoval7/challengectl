@@ -1967,6 +1967,9 @@ class ChallengeCtlAPI:
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 
+                # Broadcast updated public challenges (challenge is now active)
+                self.broadcast_public_challenges()
+
                 # Check if we should assign a listener to record this transmission
                 if self.should_assign_listener(challenge):
                     # Find available listener agents with WebSocket connection
