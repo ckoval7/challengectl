@@ -1298,7 +1298,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Use UTC for consistent timezone handling
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             cursor.execute('''
                 DELETE FROM sessions
                 WHERE expires < ?
@@ -1445,7 +1445,7 @@ class Database:
             cursor.execute('''
                 DELETE FROM enrollment_tokens
                 WHERE expires_at < ? AND used = 0
-            ''', (datetime.now(timezone.utc),))
+            ''', (datetime.now(timezone.utc).isoformat(),))
             conn.commit()
             return cursor.rowcount
 
@@ -1667,7 +1667,7 @@ class Database:
                         devices = excluded.devices,
                         updated_at = CURRENT_TIMESTAMP
                 ''', (agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
-                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
+                     datetime.now(timezone.utc).isoformat(), json.dumps(devices), api_key_hash))
                 conn.commit()
                 logger.info(f"Registered {agent_type}: {agent_id} from {ip_address}")
                 return True
@@ -1694,7 +1694,7 @@ class Database:
                     UPDATE agents
                     SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
                     WHERE agent_id = ?
-                ''', (datetime.now(timezone.utc), agent_id))
+                ''', (datetime.now(timezone.utc).isoformat(), agent_id))
                 conn.commit()
                 return (cursor.rowcount > 0, previous_status)
             except Exception as e:
@@ -1815,7 +1815,7 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            timestamp = datetime.now(timezone.utc) if connected else None
+            timestamp = datetime.now(timezone.utc).isoformat() if connected else None
             cursor.execute('''
                 UPDATE agents
                 SET websocket_connected = ?,
