@@ -1926,6 +1926,31 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def update_recording_image(self, recording_id: int, image_path: str,
+                               image_width: int, image_height: int) -> bool:
+        """Update recording with image information after upload.
+
+        Args:
+            recording_id: Recording ID
+            image_path: Path to saved waterfall image
+            image_width: Width of image in pixels
+            image_height: Height of image in pixels
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE recordings
+                SET image_path = ?,
+                    image_width = ?,
+                    image_height = ?
+                WHERE recording_id = ?
+            ''', (image_path, image_width, image_height, recording_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def get_recording(self, recording_id: int) -> Optional[Dict]:
         """Get recording details."""
         with self.get_connection() as conn:

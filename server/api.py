@@ -2308,16 +2308,28 @@ class ChallengeCtlAPI:
                     width, height = img.size
 
                 # Update recording with image path and dimensions
-                self.db.update_recording_complete(
+                updated = self.db.update_recording_image(
                     recording_id=recording_id,
-                    success=True,
                     image_path=file_path,
                     image_width=width,
-                    image_height=height,
-                    duration=recording.get('duration_seconds')
+                    image_height=height
                 )
 
-                logger.info(f"Uploaded waterfall image for recording {recording_id}: {width}x{height}px")
+                if not updated:
+                    logger.error(f"Failed to update recording {recording_id} with image path")
+                    return jsonify({'error': 'Failed to update recording'}), 500
+
+                logger.info(f"Uploaded waterfall image for recording {recording_id}: {width}x{height}px at {file_path}")
+
+                # Broadcast image uploaded event
+                self.broadcast_event('recording_image_uploaded', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'challenge_id': recording['challenge_id'],
+                    'width': width,
+                    'height': height,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
 
                 return jsonify({
                     'status': 'uploaded',
