@@ -313,6 +313,9 @@ class ChallengeCtlAPI:
         # Get count of successful transmissions since last recording
         if last_recording:
             since_time = datetime.fromisoformat(last_recording['completed_at'])
+            # Ensure since_time is timezone-aware
+            if since_time.tzinfo is None:
+                since_time = since_time.replace(tzinfo=timezone.utc)
         else:
             since_time = None
 
@@ -325,6 +328,9 @@ class ChallengeCtlAPI:
         # Calculate time factor
         now = datetime.now(timezone.utc)
         completed_at = datetime.fromisoformat(last_recording['completed_at'])
+        # Ensure completed_at is timezone-aware
+        if completed_at.tzinfo is None:
+            completed_at = completed_at.replace(tzinfo=timezone.utc)
         minutes_since = (now - completed_at).total_seconds() / 60.0
 
         # Time multiplier: gradually increases up to 10x over hours
@@ -383,20 +389,15 @@ class ChallengeCtlAPI:
             current_mac = request.headers.get('X-Agent-MAC') or request.headers.get('X-Runner-MAC')
             current_machine_id = request.headers.get('X-Agent-Machine-ID') or request.headers.get('X-Runner-Machine-ID')
 
-            # Try to find agent (runner or listener) with enhanced host validation
-            # First try runners for backward compatibility
-            agent_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
-                                                      current_mac, current_machine_id)
-            agent_type = 'runner' if agent_id else None
-
-            # If not found as runner, try as agent (listener)
-            if not agent_id:
-                agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
-                                                         current_mac, current_machine_id)
-                if agent_id:
-                    # Get agent type from database
-                    agent_info = self.db.get_agent(agent_id)
-                    agent_type = agent_info.get('agent_type', 'listener') if agent_info else 'listener'
+            # Find agent (runner or listener) with enhanced host validation
+            agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
+                                                     current_mac, current_machine_id)
+            if agent_id:
+                # Get agent type from database
+                agent_info = self.db.get_agent(agent_id)
+                agent_type = agent_info.get('agent_type', 'runner') if agent_info else 'runner'
+            else:
+                agent_type = None
 
             if not agent_id:
                 return jsonify({'error': 'Invalid API key'}), 401
@@ -646,7 +647,7 @@ class ChallengeCtlAPI:
         """
         session_token = secrets.token_urlsafe(32)
         # Use UTC to prevent timezone manipulation
-        expires = datetime.utcnow() + timedelta(hours=24)
+        expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
         # Store session in database instead of memory
         self.db.create_session(
@@ -668,7 +669,7 @@ class ChallengeCtlAPI:
         SECURITY: Extends session by 24 hours from current time on activity.
         Uses UTC timestamps to prevent timezone manipulation.
         """
-        new_expires = datetime.utcnow() + timedelta(hours=24)
+        new_expires = datetime.now(timezone.utc) + timedelta(hours=24)
         return self.db.update_session_expires(session_token, new_expires.isoformat())
 
     def validate_and_renew_session(self):
@@ -696,7 +697,10 @@ class ChallengeCtlAPI:
         # Note: expires is stored as ISO format string in database
         # SECURITY: Use UTC for consistent timezone handling
         expires = datetime.fromisoformat(session['expires'])
-        if datetime.utcnow() > expires:
+        # Ensure timezone-aware comparison
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
             self.db.delete_session(session_token)
             return None, (jsonify({'error': 'Session expired'}), 401)
 
@@ -942,7 +946,10 @@ class ChallengeCtlAPI:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1024,7 +1031,10 @@ class ChallengeCtlAPI:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
 
@@ -1149,7 +1159,10 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1188,7 +1201,7 @@ class ChallengeCtlAPI:
             self._setup_pending[session_token] = {
                 'password_hash': password_hash,
                 'totp_secret': totp_secret,
-                'timestamp': datetime.utcnow()
+                'timestamp': datetime.now(timezone.utc)
             }
 
             self.log_security_event('User setup initiated (step 1)', username)
@@ -1222,7 +1235,10 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1239,7 +1255,7 @@ class ChallengeCtlAPI:
             pending = self._setup_pending[session_token]
 
             # Check if pending setup is too old (15 minutes)
-            if datetime.utcnow() - pending['timestamp'] > timedelta(minutes=15):
+            if datetime.now(timezone.utc) - pending['timestamp'] > timedelta(minutes=15):
                 del self._setup_pending[session_token]
                 return jsonify({'error': 'Setup session expired. Please restart setup process.'}), 400
 
@@ -2460,86 +2476,6 @@ class ChallengeCtlAPI:
                 'total': len(recent_logs)
             }), 200
 
-        @self.app.route('/api/runners', methods=['GET'])
-        @self.require_admin_auth
-        def get_runners():
-            """Get all registered runners."""
-            runners = self.db.get_all_runners()
-
-            # Parse devices JSON
-            runners = [self._parse_runner_devices(r) for r in runners]
-
-            return jsonify({'runners': runners}), 200
-
-        @self.app.route('/api/runners/<runner_id>', methods=['GET'])
-        @self.require_admin_auth
-        def get_runner_details(runner_id):
-            """Get details for a specific runner."""
-            runner = self.db.get_runner(runner_id)
-
-            if runner:
-                runner = self._parse_runner_devices(runner)
-                return jsonify(runner), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>', methods=['DELETE'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def kick_runner(runner_id):
-            """Remove/kick a runner."""
-            success = self.db.mark_runner_offline(runner_id)
-
-            if success:
-                self.broadcast_event('runner_status', {
-                    'runner_id': runner_id,
-                    'agent_id': runner_id,
-                    'agent_type': 'runner',
-                    'status': 'offline',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'removed'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>/enable', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def enable_runner(runner_id):
-            """Enable a runner to receive task assignments."""
-            success = self.db.enable_runner(runner_id)
-
-            if success:
-                self.broadcast_event('runner_enabled', {
-                    'runner_id': runner_id,
-                    'agent_id': runner_id,
-                    'agent_type': 'runner',
-                    'enabled': True,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'enabled'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>/disable', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def disable_runner(runner_id):
-            """Disable a runner from receiving task assignments."""
-            success = self.db.disable_runner(runner_id)
-
-            if success:
-                self.broadcast_event('runner_enabled', {
-                    'runner_id': runner_id,
-                    'agent_id': runner_id,
-                    'agent_type': 'runner',
-                    'enabled': False,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'disabled'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
         # Enrollment token endpoints
         @self.app.route('/api/enrollment/token', methods=['POST'])
         @self.require_admin_auth
@@ -2658,10 +2594,7 @@ class ChallengeCtlAPI:
             is_re_enrollment = token_details and token_details.get('re_enrollment_for')
 
             # Check if agent already exists
-            if agent_type == 'runner':
-                existing_agent = self.db.get_runner(agent_id)
-            else:
-                existing_agent = self.db.get_agent(agent_id)
+            existing_agent = self.db.get_agent(agent_id)
 
             if existing_agent and existing_agent.get('api_key_hash') and not is_re_enrollment:
                 return jsonify({'error': f'{agent_type.capitalize()} ID already enrolled'}), 409
@@ -2672,29 +2605,16 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Re-enrollment token does not match agent ID'}), 400
 
             # Register or update the agent with the API key and host identifiers
-            if agent_type == 'runner':
-                # Use register_runner for backward compatibility
-                success = self.db.register_runner(
-                    runner_id=agent_id,
-                    hostname=hostname,
-                    ip_address=request.remote_addr,
-                    mac_address=mac_address,
-                    machine_id=machine_id,
-                    devices=devices,
-                    api_key=api_key
-                )
-            else:
-                # Use register_agent for listeners
-                success = self.db.register_agent(
-                    agent_id=agent_id,
-                    agent_type=agent_type,
-                    hostname=hostname,
-                    ip_address=request.remote_addr,
-                    devices=devices,
-                    mac_address=mac_address,
-                    machine_id=machine_id,
-                    api_key=api_key
-                )
+            success = self.db.register_agent(
+                agent_id=agent_id,
+                agent_type=agent_type,
+                hostname=hostname,
+                ip_address=request.remote_addr,
+                devices=devices,
+                mac_address=mac_address,
+                machine_id=machine_id,
+                api_key=api_key
+            )
 
             if not success:
                 return jsonify({'error': f'Failed to register {agent_type}'}), 500
@@ -2787,10 +2707,10 @@ class ChallengeCtlAPI:
                 api_key: New API key
                 expires_at: Token expiration timestamp
             """
-            # Check if runner exists
-            existing_runner = self.db.get_runner(runner_id)
-            if not existing_runner:
-                return jsonify({'error': 'Runner not found'}), 404
+            # Check if agent exists
+            existing_agent = self.db.get_agent(runner_id)
+            if not existing_agent:
+                return jsonify({'error': 'Agent not found'}), 404
 
             data = request.json or {}
             expires_hours = data.get('expires_hours', 24)
@@ -3557,8 +3477,13 @@ radios:
                 auth_header = request.headers.get('Authorization')
                 if auth_header and auth_header.startswith('Bearer '):
                     api_key = auth_header[7:]
-                    runner = self.db.get_runner_by_api_key(api_key)
-                    if runner:
+                    current_ip = request.remote_addr
+                    current_hostname = request.headers.get('X-Agent-Hostname', 'unknown')
+                    current_mac = request.headers.get('X-Agent-MAC')
+                    current_machine_id = request.headers.get('X-Agent-Machine-ID')
+                    agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
+                                                              current_mac, current_machine_id)
+                    if agent_id:
                         auth_valid = True
 
             if not auth_valid:
@@ -3691,7 +3616,10 @@ radios:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 logger.warning(f"WebSocket connection rejected: Expired session from {request.remote_addr}")
                 return False  # Reject connection

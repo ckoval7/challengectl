@@ -75,23 +75,6 @@ class Database:
                 )
             ''')
 
-            # Legacy runners table (will be migrated to agents)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS runners (
-                    runner_id TEXT PRIMARY KEY,
-                    hostname TEXT,
-                    ip_address TEXT,
-                    mac_address TEXT,
-                    machine_id TEXT,
-                    status TEXT DEFAULT 'offline',
-                    enabled BOOLEAN DEFAULT 1,
-                    last_heartbeat TIMESTAMP,
-                    devices JSON,
-                    api_key_hash TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
 
             # Recordings table (for listener waterfall captures)
             cursor.execute('''
@@ -136,18 +119,6 @@ class Database:
                     FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
                 )
             ''')
-
-            # Migration: Add host identifier columns if they don't exist
-            cursor.execute("PRAGMA table_info(runners)")
-            columns = [col[1] for col in cursor.fetchall()]
-
-            if 'mac_address' not in columns:
-                logger.info("Adding mac_address column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN mac_address TEXT')
-
-            if 'machine_id' not in columns:
-                logger.info("Adding machine_id column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN machine_id TEXT')
 
             # Enrollment tokens table (for one-time runner registration)
             cursor.execute('''
@@ -351,44 +322,12 @@ class Database:
                 print("=" * 80 + "\n", flush=True)
 
             # Migrations for existing databases
-            # Add enabled column to runners table if it doesn't exist
-            cursor.execute("PRAGMA table_info(runners)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'enabled' not in columns:
-                logger.info("Adding 'enabled' column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
-            if 'api_key_hash' not in columns:
-                logger.info("Adding 'api_key_hash' column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN api_key_hash TEXT')
-
             # Migration: Add is_temporary column to users table if it doesn't exist
             cursor.execute("PRAGMA table_info(users)")
             user_columns = [row[1] for row in cursor.fetchall()]
             if 'is_temporary' not in user_columns:
                 logger.info("Adding 'is_temporary' column to users table")
                 cursor.execute('ALTER TABLE users ADD COLUMN is_temporary BOOLEAN DEFAULT 0')
-
-            # Migration: Migrate existing runners to agents table
-            cursor.execute("SELECT COUNT(*) as count FROM runners")
-            runners_count = cursor.fetchone()['count']
-            cursor.execute("SELECT COUNT(*) as count FROM agents")
-            agents_count = cursor.fetchone()['count']
-
-            if runners_count > 0 and agents_count == 0:
-                logger.info(f"Migrating {runners_count} existing runners to agents table")
-                cursor.execute('''
-                    INSERT INTO agents (
-                        agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
-                        status, enabled, last_heartbeat, devices, api_key_hash,
-                        created_at, updated_at
-                    )
-                    SELECT
-                        runner_id, 'runner', hostname, ip_address, mac_address, machine_id,
-                        status, enabled, last_heartbeat, devices, api_key_hash,
-                        created_at, updated_at
-                    FROM runners
-                ''')
-                logger.info(f"Successfully migrated {runners_count} runners to agents table")
 
             # Create indexes
             cursor.execute('''
@@ -397,24 +336,8 @@ class Database:
             ''')
 
             cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_status
-                ON runners(status, last_heartbeat)
-            ''')
-
-            cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_transmissions_time
                 ON transmissions(started_at DESC)
-            ''')
-
-            # Critical indexes for authentication performance
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_api_key
-                ON runners(api_key_hash)
-            ''')
-
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_enabled
-                ON runners(enabled, status)
             ''')
 
             cursor.execute('''
@@ -473,144 +396,6 @@ class Database:
             logger.info(f"Database initialized at {self.db_path}")
 
     # Runner management
-    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict],
-                       api_key: Optional[str] = None, mac_address: Optional[str] = None,
-                       machine_id: Optional[str] = None) -> bool:
-        """Register a new runner or update existing one.
-
-        Args:
-            runner_id: Unique identifier for the runner
-            hostname: Hostname of the runner
-            ip_address: IP address of the runner
-            devices: List of SDR devices available on this runner
-            api_key: Optional API key to set for this runner (will be bcrypt hashed)
-            mac_address: Optional MAC address of the runner's primary network interface
-            machine_id: Optional machine ID (e.g., from /etc/machine-id)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        import bcrypt
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                # Hash API key if provided
-                api_key_hash = None
-                if api_key:
-                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-                cursor.execute('''
-                    INSERT INTO runners (runner_id, hostname, ip_address, mac_address, machine_id,
-                                       status, last_heartbeat, devices, api_key_hash)
-                    VALUES (?, ?, ?, ?, ?, 'online', ?, ?, ?)
-                    ON CONFLICT(runner_id) DO UPDATE SET
-                        hostname = excluded.hostname,
-                        ip_address = excluded.ip_address,
-                        mac_address = CASE
-                            WHEN excluded.mac_address IS NOT NULL THEN excluded.mac_address
-                            ELSE runners.mac_address
-                        END,
-                        machine_id = CASE
-                            WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
-                            ELSE runners.machine_id
-                        END,
-                        status = 'online',
-                        last_heartbeat = excluded.last_heartbeat,
-                        devices = excluded.devices,
-                        updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, mac_address, machine_id,
-                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
-                conn.commit()
-                logger.info(f"Registered runner: {runner_id} from {ip_address} (MAC: {mac_address}, Machine ID: {machine_id})")
-                return True
-            except Exception as e:
-                logger.error(f"Error registering runner {runner_id}: {e}")
-                return False
-
-    def update_heartbeat(self, runner_id: str) -> tuple[bool, str]:
-        """Update runner heartbeat timestamp.
-
-        Returns:
-            tuple: (success: bool, previous_status: str)
-        """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                # Get previous status
-                cursor.execute('SELECT status FROM runners WHERE runner_id = ?', (runner_id,))
-                row = cursor.fetchone()
-                previous_status = row['status'] if row else 'offline'
-
-                # Update heartbeat and status
-                cursor.execute('''
-                    UPDATE runners
-                    SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
-                    WHERE runner_id = ?
-                ''', (datetime.now(timezone.utc), runner_id))
-                conn.commit()
-                return (cursor.rowcount > 0, previous_status)
-            except Exception as e:
-                logger.error(f"Error updating heartbeat for {runner_id}: {e}")
-                return (False, 'offline')
-
-    def get_runner(self, runner_id: str) -> Optional[Dict]:
-        """Get runner details."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM runners WHERE runner_id = ?', (runner_id,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
-
-    def get_all_runners(self) -> List[Dict]:
-        """Get all registered runners."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM runners ORDER BY runner_id')
-            return [dict(row) for row in cursor.fetchall()]
-
-    def mark_runner_offline(self, runner_id: str) -> bool:
-        """Mark a runner as offline."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET status = 'offline', updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def enable_runner(self, runner_id: str) -> bool:
-        """Enable a runner to receive task assignments."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            if cursor.rowcount > 0:
-                logger.info(f"Enabled runner: {runner_id}")
-            return cursor.rowcount > 0
-
-    def disable_runner(self, runner_id: str) -> bool:
-        """Disable a runner from receiving task assignments."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            if cursor.rowcount > 0:
-                logger.info(f"Disabled runner: {runner_id}")
-            return cursor.rowcount > 0
-
     def _verify_host_identifiers(self, agent_id: str, table: str, status: str, stored_ip: str,
                                   stored_hostname: str, stored_mac: Optional[str], stored_machine_id: Optional[str],
                                   last_heartbeat: Optional[str], current_ip: str, current_hostname: str,
@@ -686,55 +471,6 @@ class Database:
 
         return True
 
-    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str,
-                             current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
-        """Verify a runner's API key against the stored bcrypt hash.
-
-        Also validates that the runner is not already active from a different host
-        to prevent credential reuse attacks. Uses multiple host identifiers for
-        robust validation.
-
-        Args:
-            runner_id: The runner ID to verify
-            api_key: The plaintext API key to check
-            current_ip: IP address of the current authentication attempt
-            current_hostname: Hostname of the current authentication attempt
-            current_mac: Optional MAC address of the current authentication attempt
-            current_machine_id: Optional machine ID of the current authentication attempt
-
-        Returns:
-            True if the API key is valid and host check passes, False otherwise
-        """
-        import bcrypt
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT api_key_hash, status, ip_address, hostname, mac_address, machine_id, last_heartbeat
-                FROM runners WHERE runner_id = ?
-            ''', (runner_id,))
-            row = cursor.fetchone()
-
-            if not row or not row['api_key_hash']:
-                return False
-
-            # Verify the API key using bcrypt
-            try:
-                api_key_valid = bcrypt.checkpw(api_key.encode('utf-8'), row['api_key_hash'].encode('utf-8'))
-            except Exception as e:
-                logger.error(f"API key verification error for runner {runner_id}: {e}")
-                return False
-
-            if not api_key_valid:
-                return False
-
-            # Use shared host validation logic
-            return self._verify_host_identifiers(
-                runner_id, 'runners', row['status'], row['ip_address'], row['hostname'],
-                row['mac_address'], row['machine_id'], row['last_heartbeat'],
-                current_ip, current_hostname, current_mac, current_machine_id, conn
-            )
-
     def verify_agent_api_key(self, agent_id: str, api_key: str, current_ip: str, current_hostname: str,
                              current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
         """Verify an agent's API key against the stored bcrypt hash.
@@ -783,95 +519,6 @@ class Database:
                 row['mac_address'], row['machine_id'], row['last_heartbeat'],
                 current_ip, current_hostname, current_mac, current_machine_id, conn
             )
-
-    def find_runner_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
-                               current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
-        """Find a runner by verifying the API key without knowing the runner_id in advance.
-
-        This method efficiently searches for the runner matching the provided API key
-        by only checking enabled runners with API keys set.
-
-        Args:
-            api_key: The plaintext API key to verify
-            current_ip: IP address of the current authentication attempt
-            current_hostname: Hostname of the current authentication attempt
-            current_mac: Optional MAC address of the current authentication attempt
-            current_machine_id: Optional machine ID of the current authentication attempt
-
-        Returns:
-            runner_id if found and verified, None otherwise
-        """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # Only fetch enabled runners with API keys set (optimized query)
-            cursor.execute('''
-                SELECT runner_id
-                FROM runners
-                WHERE enabled = 1 AND api_key_hash IS NOT NULL
-            ''')
-
-            for row in cursor.fetchall():
-                runner_id = row['runner_id']
-                # Use existing verify_runner_api_key method for consistent validation
-                if self.verify_runner_api_key(runner_id, api_key, current_ip, current_hostname,
-                                             current_mac, current_machine_id):
-                    return runner_id
-
-            return None
-
-    def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
-        """Update a runner's bcrypt-hashed API key.
-
-        Args:
-            runner_id: The runner ID to update
-            api_key: The plaintext API key to hash and store
-
-        Returns:
-            True if successful, False otherwise
-        """
-        import bcrypt
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-            cursor.execute('''
-                UPDATE runners
-                SET api_key_hash = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (api_key_hash, runner_id))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
-        """Mark runners as offline if they haven't sent heartbeat within timeout.
-
-        Returns:
-            list: List of runner IDs that were marked offline
-        """
-        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # First get the IDs of runners that will be marked offline
-            cursor.execute('''
-                SELECT runner_id FROM runners
-                WHERE status = 'online'
-                  AND last_heartbeat < ?
-            ''', (threshold,))
-            offline_runners = [row['runner_id'] for row in cursor.fetchall()]
-
-            # Now mark them offline
-            if offline_runners:
-                cursor.execute('''
-                    UPDATE runners
-                    SET status = 'offline'
-                    WHERE status = 'online'
-                      AND last_heartbeat < ?
-                ''', (threshold,))
-                conn.commit()
-                logger.warning(f"Marked {len(offline_runners)} runner(s) as offline due to missed heartbeats")
-
-            return offline_runners
 
     # Challenge management
     def add_challenge(self, challenge_id: str, name: str, config: Dict) -> bool:
@@ -945,18 +592,13 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
-                # Check if runner/agent is enabled (try agents table first, then runners for backward compatibility)
+                # Check if agent is enabled
                 cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (runner_id,))
                 agent_row = cursor.fetchone()
 
-                if not agent_row:
-                    # Fallback to runners table for backward compatibility
-                    cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
-                    agent_row = cursor.fetchone()
-
                 if not agent_row or not agent_row['enabled']:
                     conn.rollback()
-                    logger.debug(f"Agent/Runner {runner_id} is disabled or not found, skipping task assignment")
+                    logger.debug(f"Agent {runner_id} is disabled or not found, skipping task assignment")
                     return None
 
                 # Find next available challenge (queued or waiting with expired delay)
@@ -1923,7 +1565,7 @@ class Database:
 
             stats = {}
 
-            # Agent stats (backward compatible with runners)
+            # Runner agent stats
             cursor.execute('''
                 SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online
                 FROM agents WHERE agent_type = 'runner'
@@ -1931,13 +1573,6 @@ class Database:
             row = cursor.fetchone()
             stats['runners_total'] = row['total'] if row else 0
             stats['runners_online'] = row['online'] if row else 0
-
-            # Fallback to old runners table if agents is empty
-            if stats['runners_total'] == 0:
-                cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online FROM runners')
-                row = cursor.fetchone()
-                stats['runners_total'] = row['total']
-                stats['runners_online'] = row['online']
 
             # Listener stats
             cursor.execute('''

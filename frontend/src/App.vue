@@ -102,6 +102,10 @@
               <el-icon><User /></el-icon>
               <span>Users</span>
             </el-menu-item>
+            <el-menu-item index="/public">
+              <el-icon><Monitor /></el-icon>
+              <span>Public Dashboard</span>
+            </el-menu-item>
           </el-menu>
         </el-aside>
 
