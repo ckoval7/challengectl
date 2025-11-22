@@ -13,7 +13,7 @@ from typing import List, Optional
 
 # Try to import GNU Radio components
 try:
-    from gnuradio import gr, blocks
+    from gnuradio import gr, blocks, fft as gr_fft
     from osmosdr import source as osmo_source
     HAS_GNURADIO = True
 except ImportError:
@@ -75,8 +75,13 @@ class SpectrumListener:
         # Stream to Vector for FFT processing
         self.s2v = blocks.stream_to_vector(gr.sizeof_gr_complex, self.fft_size)
 
-        # FFT block
-        self.fft = blocks.fft_vcc(self.fft_size, True, window.blackmanharris(self.fft_size), True)
+        # FFT block (try new API first, fall back to old)
+        try:
+            from gnuradio import window
+            self.fft = gr_fft.fft_vcc(self.fft_size, True, window.blackmanharris(self.fft_size), True)
+        except AttributeError:
+            # Fallback for older GNU Radio versions
+            self.fft = blocks.fft_vcc(self.fft_size, True, window.blackmanharris(self.fft_size), True)
 
         # Complex to Mag^2 (power)
         self.c2mag = blocks.complex_to_mag_squared(self.fft_size)
