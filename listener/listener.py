@@ -641,6 +641,14 @@ class ListenerAgent:
     def upload_waterfall_image(self, recording_id: int, image_path: str):
         """Upload waterfall PNG image to server."""
         try:
+            # Verify file exists
+            if not os.path.exists(image_path):
+                logger.error(f"Waterfall image file not found: {image_path}")
+                return
+
+            file_size = os.path.getsize(image_path)
+            logger.info(f"Uploading waterfall image for recording {recording_id}: {image_path} ({file_size} bytes)")
+
             with open(image_path, 'rb') as f:
                 files = {'file': (os.path.basename(image_path), f, 'image/png')}
                 response = self.session.post(
@@ -650,12 +658,15 @@ class ListenerAgent:
                 )
 
                 if response.status_code == 200:
-                    logger.info(f"Successfully uploaded waterfall image")
+                    logger.info(f"Successfully uploaded waterfall image for recording {recording_id}")
                 else:
-                    logger.error(f"Failed to upload waterfall: {response.status_code}")
+                    logger.error(f"Failed to upload waterfall for recording {recording_id}: HTTP {response.status_code}")
+                    logger.error(f"Response: {response.text}")
 
         except Exception as e:
-            logger.error(f"Error uploading waterfall image: {e}")
+            logger.error(f"Error uploading waterfall image for recording {recording_id}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def enroll(self) -> bool:
         """Enroll this listener with the server using enrollment token.
