@@ -2411,7 +2411,13 @@ class ChallengeCtlAPI:
         def get_dashboard():
             """Get dashboard statistics and data."""
             stats = self.db.get_dashboard_stats()
-            runners = self.db.get_all_runners()
+
+            # Get runners from agents table (with backward compatibility)
+            runners = self.db.get_all_agents(agent_type='runner')
+
+            # Add runner_id field for backward compatibility
+            for runner in runners:
+                runner['runner_id'] = runner.get('agent_id', runner.get('runner_id'))
 
             # Get recent transmissions from in-memory buffer
             with self.transmission_lock:

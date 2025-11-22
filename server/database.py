@@ -945,12 +945,18 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
-                # Check if runner is enabled
-                cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
-                runner_row = cursor.fetchone()
-                if not runner_row or not runner_row['enabled']:
+                # Check if runner/agent is enabled (try agents table first, then runners for backward compatibility)
+                cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (runner_id,))
+                agent_row = cursor.fetchone()
+
+                if not agent_row:
+                    # Fallback to runners table for backward compatibility
+                    cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
+                    agent_row = cursor.fetchone()
+
+                if not agent_row or not agent_row['enabled']:
                     conn.rollback()
-                    logger.debug(f"Runner {runner_id} is disabled, skipping task assignment")
+                    logger.debug(f"Agent/Runner {runner_id} is disabled or not found, skipping task assignment")
                     return None
 
                 # Find next available challenge (queued or waiting with expired delay)
