@@ -20,6 +20,9 @@
           >
             Add Runner
           </el-button>
+          <p class="info-text">
+            Runner agents poll the server for available challenges to transmit using TX capable SDR devices.
+          </p>
         </div>
 
         <el-table
@@ -1643,11 +1646,27 @@ ${addRunnerForm.value.devices.map(device => {
 
     const copyToClipboard = async (text, label) => {
       try {
+        // Check if clipboard API is available (requires HTTPS or localhost)
+        if (!navigator.clipboard) {
+          ElMessage({
+            message: 'Clipboard not available over HTTP. Please use HTTPS or download the file instead.',
+            type: 'warning',
+            duration: 5000,
+            showClose: true
+          })
+          return
+        }
+
         await navigator.clipboard.writeText(text)
         ElMessage.success(`${label} copied to clipboard`)
       } catch (error) {
         console.error('Failed to copy:', error)
-        ElMessage.error('Failed to copy to clipboard')
+        ElMessage({
+          message: 'Failed to copy to clipboard. Try downloading the file instead.',
+          type: 'error',
+          duration: 5000,
+          showClose: true
+        })
       }
     }
 
