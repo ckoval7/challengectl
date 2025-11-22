@@ -2971,7 +2971,7 @@ class ChallengeCtlAPI:
             logger.info(f"{agent_type.capitalize()} {agent_id} ({agent_name}) enrolled successfully from {request.remote_addr} "
                        f"(MAC: {mac_address}, Machine ID: {machine_id})")
 
-            # Broadcast event to WebUI
+            # Broadcast enrollment event to WebUI
             event_name = 'runner_enrolled' if agent_type == 'runner' else 'listener_enrolled'
             event_data = {
                 'agent_id': agent_id,
@@ -2991,6 +2991,21 @@ class ChallengeCtlAPI:
                 event_data['listener_name'] = agent_name
 
             self.broadcast_event(event_name, event_data)
+
+            # Also broadcast status event so UI immediately shows agent as online
+            status_event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+            status_event_data = {
+                'agent_id': agent_id,
+                'agent_type': agent_type,
+                'status': 'online',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            if agent_type == 'runner':
+                status_event_data['runner_id'] = agent_id
+            else:
+                status_event_data['listener_id'] = agent_id
+
+            self.broadcast_event(status_event_name, status_event_data)
 
             return jsonify({
                 'success': True,

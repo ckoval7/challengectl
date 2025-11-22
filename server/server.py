@@ -64,6 +64,8 @@ class ChallengeCtlServer:
                     for runner_id in offline_runners:
                         self.api.broadcast_event('runner_status', {
                             'runner_id': runner_id,
+                            'agent_id': runner_id,
+                            'agent_type': 'runner',
                             'status': 'offline',
                             'timestamp': datetime.now(timezone.utc).isoformat()
                         })
