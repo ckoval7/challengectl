@@ -16,8 +16,8 @@ The spectrum listener agent captures RF transmissions and generates waterfall im
 ### Software Dependencies
 
 ```bash
-# Python packages
-pip install pyyaml requests python-socketio matplotlib pillow numpy
+# Python packages (from repository root)
+pip install -r requirements-listener.txt
 
 # GNU Radio (version 3.8+) and gr-osmosdr
 sudo apt-get install gnuradio gr-osmosdr
