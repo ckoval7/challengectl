@@ -11,14 +11,14 @@
         label="Live Status"
         name="status"
       >
-        <div class="mb-xl">
+        <!-- <div class="mb-xl">
           <el-button
             type="primary"
             @click="reloadChallenges"
           >
             Reload from Config
           </el-button>
-        </div>
+        </div> -->
 
         <el-table
           :data="challenges"
@@ -1320,16 +1320,16 @@ export default {
       }
     }
 
-    const reloadChallenges = async () => {
-      try {
-        const response = await api.post('/challenges/reload')
-        ElMessage.success(`Reloaded challenges: ${response.data.added} added`)
-        loadChallenges()
-      } catch (error) {
-        console.error('Error reloading challenges:', error)
-        ElMessage.error('Failed to reload challenges')
-      }
-    }
+    // const reloadChallenges = async () => {
+    //   try {
+    //     const response = await api.post('/challenges/reload')
+    //     ElMessage.success(`Reloaded challenges: ${response.data.added} added`)
+    //     loadChallenges()
+    //   } catch (error) {
+    //     console.error('Error reloading challenges:', error)
+    //     ElMessage.error('Failed to reload challenges')
+    //   }
+    // }
 
     const toggleChallenge = async (challenge) => {
       try {
@@ -1533,7 +1533,6 @@ export default {
       loadChallenges,
       loadFrequencyRanges,
       reloadFrequencyRanges,
-      reloadChallenges,
       toggleChallenge,
       triggerChallenge,
       getStatusType,
