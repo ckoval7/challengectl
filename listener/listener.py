@@ -187,8 +187,8 @@ class ListenerAgent:
         self.sio = socketio.Client(
             reconnection=True,
             reconnection_delay=self.config['agent'].get('websocket_reconnect_delay', 5),
-            logger=False,
-            engineio_logger=False
+            logger=True,
+            engineio_logger=True
         )
 
         # Recording state
