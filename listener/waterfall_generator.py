@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
-                      fft_size: int, frame_rate: int, output_path: str):
+                      fft_size: int, frame_rate: int, output_path: str,
+                      reference_level_dbm: float = -10.0):
     """Generate waterfall PNG image from FFT data.
 
     Args:
@@ -27,17 +28,30 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         fft_size: FFT size used for capture
         frame_rate: Frame rate (fps) used for capture
         output_path: Path to save PNG image
+        reference_level_dbm: Reference level in dBm for full scale (default: -10 dBm)
+                            This converts linear power to absolute dBm values.
+                            Typical values: -10 dBm for RTL-SDR, 0 dBm for HackRF
     """
     logger.info(f"Generating waterfall: {fft_data.shape[0]} frames x {fft_data.shape[1]} bins")
 
-    # Convert power to dB scale
-    fft_data_db = 10 * np.log10(fft_data + 1e-10)  # Add epsilon to avoid log(0)
+    # Find the maximum power value across all data (for normalization)
+    max_power = np.max(fft_data)
+    if max_power <= 0:
+        max_power = 1.0  # Avoid division by zero for empty/zero data
+
+    # Convert power to dBFS (dB relative to full scale)
+    # Normalize to max value, so maximum signal is at 0 dBFS
+    fft_data_dbfs = 10 * np.log10(fft_data / max_power + 1e-10)
+
+    # Convert dBFS to dBm using reference level
+    # 0 dBFS corresponds to reference_level_dbm
+    fft_data_db = fft_data_dbfs + reference_level_dbm
 
     # Auto-scale: use 5th and 95th percentile for dynamic range
     vmin = np.percentile(fft_data_db, 5)
     vmax = np.percentile(fft_data_db, 95)
 
-    logger.debug(f"Dynamic range: {vmin:.1f} to {vmax:.1f} dB")
+    logger.debug(f"Power range: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
 
     # Create custom colormap (blue -> green -> yellow -> red)
     colors = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
@@ -71,7 +85,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
     )
 
     # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, label='Power (dB)')
+    cbar = plt.colorbar(im, ax=ax, label='Power (dBm)')
 
     # Set labels
     ax.set_xlabel('Frequency (MHz)')
@@ -96,7 +110,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
 
 def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample_rate: int,
                                    fft_size: int, frame_rate: int, output_path: str,
-                                   markers: list = None):
+                                   markers: list = None, reference_level_dbm: float = -10.0):
     """Generate waterfall with optional time/frequency markers.
 
     This is an enhanced version that can mark specific events or signals.
@@ -109,9 +123,11 @@ def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample
         frame_rate: Frame rate (fps) used for capture
         output_path: Path to save PNG image
         markers: List of marker dicts with keys: time, freq, label, color
+        reference_level_dbm: Reference level in dBm for full scale (default: -10 dBm)
     """
     # Generate base waterfall
-    generate_waterfall(fft_data, frequency, sample_rate, fft_size, frame_rate, output_path)
+    generate_waterfall(fft_data, frequency, sample_rate, fft_size, frame_rate, output_path,
+                      reference_level_dbm=reference_level_dbm)
 
     # If markers provided, add them
     if markers:
@@ -120,7 +136,12 @@ def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample
         ax = fig.gca()
 
         # Re-plot waterfall (could be optimized by saving/loading)
-        fft_data_db = 10 * np.log10(fft_data + 1e-10)
+        # Apply same power conversion as main function
+        max_power = np.max(fft_data)
+        if max_power <= 0:
+            max_power = 1.0
+        fft_data_dbfs = 10 * np.log10(fft_data / max_power + 1e-10)
+        fft_data_db = fft_data_dbfs + reference_level_dbm
         vmin = np.percentile(fft_data_db, 5)
         vmax = np.percentile(fft_data_db, 95)
 
@@ -154,7 +175,7 @@ def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample
                            xytext=(10, -10), textcoords='offset points',
                            bbox=dict(boxstyle='round,pad=0.5', fc='black', alpha=0.7))
 
-        plt.colorbar(im, ax=ax, label='Power (dB)')
+        plt.colorbar(im, ax=ax, label='Power (dBm)')
         ax.set_xlabel('Frequency (MHz)')
         ax.set_ylabel('Time (seconds)')
         ax.set_title(f'Spectrum Waterfall - {frequency / 1e6:.3f} MHz')

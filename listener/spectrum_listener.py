@@ -153,19 +153,28 @@ class SpectrumListener:
         self.recording = True
 
         try:
-            # Calculate number of frames to capture
-            num_frames = int(duration * frame_rate)
-            samples_per_frame = int(self.sample_rate / frame_rate)
+            # Calculate target number of frames (used for estimation only)
+            target_frames = int(duration * frame_rate)
+            frame_interval = 1.0 / frame_rate
 
-            logger.info(f"Capturing {num_frames} frames at {frame_rate} fps")
+            logger.info(f"Recording for {duration:.1f}s at {frame_rate} fps (target: ~{target_frames} frames)")
 
             # Start flowgraph
             self.tb.start()
 
             start_time = time.time()
+            next_frame_time = start_time
 
-            # Collect FFT frames
-            while len(self.fft_frames) < num_frames and self.recording:
+            # Collect FFT frames for exactly 'duration' seconds (time-based, not frame-count-based)
+            # This prevents extended recording if frames come in slowly
+            while self.recording:
+                current_time = time.time()
+                elapsed = current_time - start_time
+
+                # Stop when we've reached the target duration
+                if elapsed >= duration:
+                    break
+
                 # Get data from sink
                 data = self.sink.data()
 
@@ -181,13 +190,14 @@ class SpectrumListener:
                     # Clear consumed data
                     self.sink.reset()
 
-                    # Wait for next frame
-                    elapsed = time.time() - start_time
-                    expected_frames = int(elapsed * frame_rate)
-                    if len(self.fft_frames) < expected_frames:
-                        time.sleep(1.0 / frame_rate)
-
-                time.sleep(0.001)  # Small sleep to prevent busy waiting
+                    # Wait until it's time for the next frame
+                    next_frame_time += frame_interval
+                    sleep_time = next_frame_time - time.time()
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    # No data available yet, short sleep to prevent busy waiting
+                    time.sleep(0.001)
 
             # Stop flowgraph
             self.tb.stop()
@@ -195,8 +205,10 @@ class SpectrumListener:
 
             # Convert to 2D array
             fft_data = np.array(self.fft_frames)
+            actual_duration = time.time() - start_time
 
-            logger.info(f"Captured {fft_data.shape[0]} frames, shape: {fft_data.shape}")
+            logger.info(f"Captured {fft_data.shape[0]} frames in {actual_duration:.2f}s "
+                       f"(target: {target_frames} frames in {duration:.1f}s), shape: {fft_data.shape}")
 
             return fft_data
 

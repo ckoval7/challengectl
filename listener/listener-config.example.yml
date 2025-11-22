@@ -36,6 +36,15 @@ agent:
     pre_roll_seconds: 5
     post_roll_seconds: 5
 
+    # Power calibration: reference level in dBm for full-scale signal (0 dBFS)
+    # This converts relative power measurements to absolute dBm values
+    # Typical values:
+    #   RTL-SDR: -10 dBm (conservative estimate)
+    #   HackRF:   0 dBm
+    #   USRP:     Varies by model and gain settings
+    # Without proper calibration, this is an approximation
+    reference_level_dbm: -10.0
+
     # SDR device configuration (osmosdr format)
     device:
       # Device ID string (osmosdr format)

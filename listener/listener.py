@@ -30,9 +30,10 @@ import socketio
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Initial basic logging setup (will be reconfigured in main() after parsing args)
+# Initial basic logging setup with default INFO level
+# This will be reconfigured in main() after parsing CLI args to use the --log-level parameter
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # Default level, overridden by CLI args in main()
     format='%(asctime)s challengectl-listener[%(process)d]: %(levelname)s: %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S'
 )
@@ -132,12 +133,13 @@ def get_machine_id() -> Optional[str]:
 class ListenerAgent:
     """Spectrum listener agent that receives WebSocket recording assignments."""
 
-    def __init__(self, config_path: str, simulate: bool = False):
+    def __init__(self, config_path: str, simulate: bool = False, log_level: int = logging.INFO):
         """Initialize listener agent.
 
         Args:
             config_path: Path to listener configuration YAML file
             simulate: Force simulation mode (generate test data without SDR hardware)
+            log_level: Logging level (e.g., logging.DEBUG, logging.INFO)
         """
         self.config = self.load_config(config_path)
         self.agent_id = self.config['agent']['agent_id']
@@ -145,6 +147,7 @@ class ListenerAgent:
         self.api_key = self.config['agent']['api_key']
         self.heartbeat_interval = self.config['agent'].get('heartbeat_interval', 30)
         self.simulate = simulate
+        self.log_level = log_level
 
         # TLS configuration
         self.ca_cert = self.config['agent'].get('ca_cert')
@@ -192,10 +195,12 @@ class ListenerAgent:
 
         # WebSocket client
         # Note: reconnection=False because we handle reconnection manually with auth
+        # Enable verbose websocket logging only in DEBUG mode
+        enable_ws_logging = (self.log_level == logging.DEBUG)
         self.sio = socketio.Client(
             reconnection=False,
-            logger=True,
-            engineio_logger=True
+            logger=enable_ws_logging,
+            engineio_logger=enable_ws_logging
         )
 
         # Recording state
@@ -345,7 +350,7 @@ class ListenerAgent:
         def on_recording_assignment(data):
             """Handle recording assignment from server."""
             try:
-                print(f"[DEBUG] Handler called with data: {data}", flush=True)
+                logger.debug(f"Handler called with data: {data}")
                 logger.info(f"Received recording assignment: {data}")
 
                 assignment_id = data.get('assignment_id')
@@ -356,7 +361,7 @@ class ListenerAgent:
                 expected_start = data.get('expected_start')
                 expected_duration = data.get('expected_duration')
 
-                print(f"[DEBUG] Starting recording thread for {challenge_name}", flush=True)
+                logger.debug(f"Starting recording thread for {challenge_name}")
                 # Schedule recording
                 threading.Thread(
                     target=self.handle_recording_assignment,
@@ -364,10 +369,9 @@ class ListenerAgent:
                           frequency, expected_start, expected_duration),
                     daemon=True
                 ).start()
-                print(f"[DEBUG] Recording thread started", flush=True)
+                logger.debug(f"Recording thread started")
             except Exception as e:
-                print(f"[ERROR] Exception in recording_assignment handler: {e}", flush=True)
-                logger.error(f"Error in recording_assignment handler: {e}", exc_info=True)
+                logger.error(f"Exception in recording_assignment handler: {e}", exc_info=True)
 
         @self.sio.on('heartbeat_ack', namespace='/agents')
         def on_heartbeat_ack(data):
@@ -388,12 +392,11 @@ class ListenerAgent:
             expected_start: ISO format timestamp of expected transmission start
             expected_duration: Expected duration in seconds
         """
-        print(f"[DEBUG] handle_recording_assignment started for {challenge_name}", flush=True)
+        logger.debug(f"handle_recording_assignment started for {challenge_name}")
 
         with self.recording_lock:
             if self.current_recording:
                 logger.warning(f"Already recording, cannot start new recording for {challenge_name}")
-                print(f"[DEBUG] Already recording, skipping", flush=True)
                 return
 
             self.current_recording = {
@@ -406,26 +409,35 @@ class ListenerAgent:
                 'expected_duration': expected_duration
             }
 
-        print(f"[DEBUG] Current recording set, proceeding", flush=True)
+        logger.debug(f"Current recording set, proceeding")
 
         try:
+            # Get recording configuration for pre-roll
+            recording_config = self.config['agent'].get('recording', {})
+            pre_roll = recording_config.get('pre_roll_seconds', 5)
+
             # Parse expected start time
-            print(f"[DEBUG] Parsing expected_start: {expected_start}", flush=True)
+            logger.debug(f"Parsing expected_start: {expected_start}")
             start_time = datetime.fromisoformat(expected_start.replace('Z', '+00:00'))
             now = datetime.now(timezone.utc)
 
-            # Calculate delay until recording should start
-            delay_seconds = (start_time - now).total_seconds()
-            print(f"[DEBUG] Delay until start: {delay_seconds:.1f}s", flush=True)
+            # Calculate when to actually start recording (before transmission starts)
+            # Recording should start pre_roll seconds BEFORE the transmission
+            recording_start_time = start_time - timedelta(seconds=pre_roll)
+            delay_seconds = (recording_start_time - now).total_seconds()
+            logger.debug(f"Transmission starts at: {start_time.isoformat()}")
+            logger.debug(f"Recording will start at: {recording_start_time.isoformat()} (pre-roll: {pre_roll}s)")
+            logger.debug(f"Delay until recording start: {delay_seconds:.1f}s")
 
             if delay_seconds > 0:
-                logger.info(f"Waiting {delay_seconds:.1f}s until recording starts for {challenge_name}")
+                logger.info(f"Waiting {delay_seconds:.1f}s to start recording (pre-roll: {pre_roll}s) for {challenge_name}")
                 time.sleep(delay_seconds)
+            else:
+                logger.warning(f"Cannot achieve full pre-roll - starting immediately (late by {-delay_seconds:.1f}s)")
 
-            print(f"[DEBUG] Notifying server recording started", flush=True)
+            logger.debug(f"Notifying server recording started")
 
             # Notify server recording has started
-            recording_config = self.config['agent'].get('recording', {})
             sample_rate = recording_config.get('sample_rate', 2000000)
 
             recording_id = self.notify_recording_started(
@@ -436,19 +448,28 @@ class ListenerAgent:
                 expected_duration=expected_duration
             )
 
-            print(f"[DEBUG] Recording ID from server: {recording_id}", flush=True)
+            logger.debug(f"Recording ID from server: {recording_id}")
 
             if recording_id <= 0:
                 logger.error(f"Failed to create recording entry on server")
                 return
 
             # Perform the actual recording
+            recording_actual_start = datetime.now(timezone.utc)
             logger.info(f"Starting recording for {challenge_name} at {frequency} Hz")
+            logger.info(f"Recording timeline: pre-roll={pre_roll}s, transmission={expected_duration}s, "
+                       f"post-roll={recording_config.get('post_roll_seconds', 5)}s, "
+                       f"total={pre_roll + expected_duration + recording_config.get('post_roll_seconds', 5)}s")
+
             success, image_path, duration, error_message = self.record_transmission(
                 frequency=frequency,
                 duration=expected_duration,
                 challenge_name=challenge_name
             )
+
+            recording_actual_end = datetime.now(timezone.utc)
+            actual_recording_duration = (recording_actual_end - recording_actual_start).total_seconds()
+            logger.info(f"Recording completed in {actual_recording_duration:.2f}s (expected: {pre_roll + expected_duration + recording_config.get('post_roll_seconds', 5)}s)")
 
             # Notify server recording completed
             if success:
@@ -541,17 +562,23 @@ class ListenerAgent:
                 simulate=self.simulate
             )
 
-            logger.info(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate})")
+            logger.info(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate}, "
+                       f"pre-roll: {pre_roll}s, transmission: {duration}s, post-roll: {post_roll}s)")
 
             # Start recording
             start_time = time.time()
+            logger.debug(f"GNU Radio flowgraph starting for {total_duration}s capture...")
             fft_data = listener.record(duration=total_duration, frame_rate=frame_rate)
             actual_duration = time.time() - start_time
+            logger.debug(f"GNU Radio flowgraph completed - captured {len(fft_data)} frames in {actual_duration:.2f}s")
 
             # Generate waterfall image
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             image_filename = f"{challenge_name}_{timestamp}.png"
             image_path = os.path.join(output_dir, image_filename)
+
+            # Get reference level for power calibration (dBm at full scale)
+            reference_level = recording_config.get('reference_level_dbm', -10.0)
 
             logger.info(f"Generating waterfall image: {image_path}")
             generate_waterfall(
@@ -560,7 +587,8 @@ class ListenerAgent:
                 sample_rate=sample_rate,
                 fft_size=fft_size,
                 frame_rate=frame_rate,
-                output_path=image_path
+                output_path=image_path,
+                reference_level_dbm=reference_level
             )
 
             return (True, image_path, actual_duration, None)
@@ -1092,7 +1120,7 @@ def main():
     print(f"Logging to {log_file}")
 
     # Create and start listener
-    agent = ListenerAgent(args.config, simulate=args.simulate)
+    agent = ListenerAgent(args.config, simulate=args.simulate, log_level=log_level)
     sys.exit(agent.run())
 
 
