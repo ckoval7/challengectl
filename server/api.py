@@ -3503,14 +3503,13 @@ radios:
             """
             # Check authentication - accept either admin session or API key
             auth_valid = False
+            username = None
 
-            # Try admin session auth first
-            if 'session' in request.cookies:
-                session_token = request.cookies.get('session')
-                if session_token:
-                    user_data = self.db.get_session(session_token)
-                    if user_data:
-                        auth_valid = True
+            # Try admin session auth first using centralized validation
+            username, error_response = self.validate_and_renew_session()
+            if username:
+                auth_valid = True
+                request.admin_username = username
 
             # If not authenticated via session, try API key
             if not auth_valid:
