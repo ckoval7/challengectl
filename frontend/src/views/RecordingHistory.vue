@@ -56,7 +56,7 @@
             <div class="recording-info">
               <div><strong>Listener:</strong> {{ recording.listener_id }}</div>
               <div><strong>Frequency:</strong> {{ formatFrequency(recording.frequency) }}</div>
-              <div><strong>Duration:</strong> {{ recording.duration_seconds }}s</div>
+              <div><strong>Duration:</strong> {{ recording.duration_seconds ? recording.duration_seconds.toFixed(1) : '0.0' }}s</div>
               <div><strong>Started:</strong> {{ formatTimestamp(recording.started_at) }}</div>
               <div v-if="recording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}</div>
             </div>
@@ -89,7 +89,7 @@
           <p><strong>Challenge:</strong> {{ challenge?.name || 'Unknown' }}</p>
           <p><strong>Listener:</strong> {{ selectedRecording.listener_id }}</p>
           <p><strong>Frequency:</strong> {{ formatFrequency(selectedRecording.frequency) }}</p>
-          <p><strong>Duration:</strong> {{ selectedRecording.duration_seconds }}s</p>
+          <p><strong>Duration:</strong> {{ selectedRecording.duration_seconds ? selectedRecording.duration_seconds.toFixed(1) : '0.0' }}s</p>
           <p><strong>Started:</strong> {{ formatTimestamp(selectedRecording.started_at) }}</p>
           <p v-if="selectedRecording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}</p>
         </div>
