@@ -39,6 +39,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class ServerLogHandler(logging.Handler):
+    """Custom logging handler that forwards logs to the server."""
+
+    def __init__(self, listener_instance):
+        super().__init__()
+        self.listener = listener_instance
+        self.setLevel(logging.DEBUG)  # Forward all log levels
+
+    def emit(self, record):
+        """Send log record to server."""
+        if self.listener and hasattr(self.listener, 'send_log'):
+            try:
+                msg = record.getMessage()
+
+                # Don't forward logs about log sending failures (avoid recursion)
+                if 'Failed to send log to server' in msg:
+                    return
+
+                # Filter out noisy HTTP request logs from urllib3/requests
+                if record.name in ('urllib3.connectionpool', 'requests'):
+                    return
+
+                # Filter out debug logs from our own HTTP operations
+                if 'Starting new HTTPS connection' in msg or \
+                   'Starting new HTTP connection' in msg or \
+                   'Resetting dropped connection' in msg:
+                    return
+
+                self.listener.send_log(record.levelname, msg)
+            except Exception:
+                # Silently ignore errors to prevent recursion
+                pass
+
+
 def get_mac_address() -> Optional[str]:
     """Get the MAC address of the primary network interface.
 
@@ -743,6 +777,24 @@ class ListenerAgent:
             self.send_heartbeat_http()
             time.sleep(self.heartbeat_interval)
 
+    def send_log(self, level: str, message: str):
+        """Send log entry to server."""
+        try:
+            self.session.post(
+                f"{self.server_url}/api/agents/{self.agent_id}/log",
+                json={
+                    'log': {
+                        'level': level,
+                        'message': message,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                },
+                timeout=5
+            )
+        except Exception as e:
+            # Log at debug level to avoid recursion
+            logger.debug(f"Failed to send log to server: {e}")
+
     def run(self):
         """Main run loop for the listener agent."""
         self.running = True
@@ -781,6 +833,12 @@ class ListenerAgent:
                 return 1
         else:
             print("Registration successful")
+
+        # Add server log handler to forward logs
+        server_handler = ServerLogHandler(self)
+        logging.root.addHandler(server_handler)
+        print("Log forwarding to server enabled")
+        logger.info("Log forwarding to server enabled")
 
         # Connect WebSocket
         print("Connecting WebSocket to server...")
