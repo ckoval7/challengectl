@@ -88,7 +88,7 @@
               <span>Agents</span>
             </el-menu-item>
             <el-menu-item index="/challenge-config">
-              <el-icon><Setting /></el-icon>
+              <el-icon><Flag /></el-icon>
               <span>Challenges</span>
             </el-menu-item>
             <el-menu-item index="/logs">
@@ -123,7 +123,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
+import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
@@ -138,7 +138,7 @@ export default {
     Connection,
     Notebook,
     User,
-    Setting,
+    Flag,
     ConferenceCountdown
   },
   setup() {
