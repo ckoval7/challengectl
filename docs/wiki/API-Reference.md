@@ -44,7 +44,7 @@ The API uses three authentication methods depending on the endpoint:
 Runner endpoints require an API key passed in the `X-API-Key` header:
 
 ```http
-GET /api/runners/runner-1/task HTTP/1.1
+GET /api/agents/runner-1/task HTTP/1.1
 Host: challengectl.example.com
 X-API-Key: ck_abc123def456ghi789
 ```
@@ -660,155 +660,19 @@ Fields shown depend on challenge `public_view` configuration.
 
 ---
 
-### Runner Operations
+### Runner Operations (Deprecated)
 
-Requires runner API key authentication.
+**⚠️ DEPRECATED**: The `/api/runners/*` endpoints have been removed. Use the unified [Agent Operations](#agent-operations-unified) endpoints instead.
 
-#### POST /api/runners/register
+**Migration**:
+- `/api/runners/register` → `/api/agents/register` (with `agent_type: "runner"`)
+- `/api/runners/<id>/heartbeat` → `/api/agents/<id>/heartbeat`
+- `/api/runners/<id>/signout` → `/api/agents/<id>/signout`
+- `/api/runners/<id>/task` → `/api/agents/<id>/task`
+- `/api/runners/<id>/complete` → `/api/agents/<id>/complete`
+- `/api/runners/<id>/log` → `/api/agents/<id>/log`
 
-Register a new runner with the server.
-
-**Request:**
-```http
-POST /api/runners/register HTTP/1.1
-X-API-Key: ck_abc123...
-Content-Type: application/json
-
-{
-  "runner_id": "runner-1",
-  "frequency_limits": [
-    "144000000-148000000",
-    "420000000-450000000"
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Runner registered successfully",
-  "runner_id": "runner-1"
-}
-```
-
-#### POST /api/runners/\<runner_id\>/heartbeat
-
-Send heartbeat to indicate runner is alive.
-
-**Request:**
-```http
-POST /api/runners/runner-1/heartbeat HTTP/1.1
-X-API-Key: ck_abc123...
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Heartbeat received"
-}
-```
-
-#### POST /api/runners/\<runner_id\>/signout
-
-Gracefully sign out and unregister from server.
-
-**Request:**
-```http
-POST /api/runners/runner-1/signout HTTP/1.1
-X-API-Key: ck_abc123...
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Runner signed out successfully"
-}
-```
-
-#### GET /api/runners/\<runner_id\>/task
-
-Poll for a new task assignment.
-
-**Request:**
-```http
-GET /api/runners/runner-1/task HTTP/1.1
-X-API-Key: ck_abc123...
-```
-
-**Response (task available):**
-```json
-{
-  "task": {
-    "challenge_id": 1,
-    "name": "NBFM_FLAG_1",
-    "frequency": 146550000,
-    "modulation": "nbfm",
-    "flag_file": "challenges/voice.wav",
-    "flag_hash": "abc123def456...",
-    "parameters": {
-      "wav_samplerate": 48000
-    }
-  }
-}
-```
-
-**Response (no task):**
-```json
-{
-  "task": null
-}
-```
-
-#### POST /api/runners/\<runner_id\>/complete
-
-Report task completion.
-
-**Request:**
-```http
-POST /api/runners/runner-1/complete HTTP/1.1
-X-API-Key: ck_abc123...
-Content-Type: application/json
-
-{
-  "challenge_id": 1,
-  "status": "success",
-  "error": null
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Task completion recorded"
-}
-```
-
-#### POST /api/runners/\<runner_id\>/log
-
-Send log messages to server.
-
-**Request:**
-```http
-POST /api/runners/runner-1/log HTTP/1.1
-X-API-Key: ck_abc123...
-Content-Type: application/json
-
-{
-  "level": "INFO",
-  "message": "Challenge transmission completed successfully"
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success"
-}
-```
+See [Agent Operations (Unified)](#agent-operations-unified) below for full documentation.
 
 ---
 

@@ -49,28 +49,35 @@ class ServerLogHandler(logging.Handler):
 
     def emit(self, record):
         """Send log record to server."""
-        if self.listener and hasattr(self.listener, 'send_log'):
-            try:
-                msg = record.getMessage()
+        # Don't send logs if listener is shutting down
+        if not self.listener or not hasattr(self.listener, 'send_log') or not self.listener.running:
+            return
 
-                # Don't forward logs about log sending failures (avoid recursion)
-                if 'Failed to send log to server' in msg:
-                    return
+        try:
+            msg = record.getMessage()
 
-                # Filter out noisy HTTP request logs from urllib3/requests
-                if record.name in ('urllib3.connectionpool', 'requests'):
-                    return
+            # Don't forward logs about log sending failures (avoid recursion)
+            if 'Failed to send log to server' in msg:
+                return
 
-                # Filter out debug logs from our own HTTP operations
-                if 'Starting new HTTPS connection' in msg or \
-                   'Starting new HTTP connection' in msg or \
-                   'Resetting dropped connection' in msg:
-                    return
+            # Don't forward shutdown-related logs to avoid hanging during shutdown
+            if 'Received interrupt signal' in msg or 'shutting down' in msg.lower() or 'Signing out' in msg:
+                return
 
-                self.listener.send_log(record.levelname, msg)
-            except Exception:
-                # Silently ignore errors to prevent recursion
-                pass
+            # Filter out noisy HTTP request logs from urllib3/requests
+            if record.name in ('urllib3.connectionpool', 'requests'):
+                return
+
+            # Filter out debug logs from our own HTTP operations
+            if 'Starting new HTTPS connection' in msg or \
+               'Starting new HTTP connection' in msg or \
+               'Resetting dropped connection' in msg:
+                return
+
+            self.listener.send_log(record.levelname, msg)
+        except Exception:
+            # Silently ignore errors to prevent recursion
+            pass
 
 
 def get_mac_address() -> Optional[str]:
@@ -330,23 +337,30 @@ class ListenerAgent:
         @self.sio.on('recording_assignment', namespace='/agents')
         def on_recording_assignment(data):
             """Handle recording assignment from server."""
-            logger.info(f"Received recording assignment: {data}")
+            try:
+                print(f"[DEBUG] Handler called with data: {data}", flush=True)
+                logger.info(f"Received recording assignment: {data}")
 
-            assignment_id = data.get('assignment_id')
-            challenge_id = data.get('challenge_id')
-            challenge_name = data.get('challenge_name')
-            transmission_id = data.get('transmission_id')
-            frequency = data.get('frequency')
-            expected_start = data.get('expected_start')
-            expected_duration = data.get('expected_duration')
+                assignment_id = data.get('assignment_id')
+                challenge_id = data.get('challenge_id')
+                challenge_name = data.get('challenge_name')
+                transmission_id = data.get('transmission_id')
+                frequency = data.get('frequency')
+                expected_start = data.get('expected_start')
+                expected_duration = data.get('expected_duration')
 
-            # Schedule recording
-            threading.Thread(
-                target=self.handle_recording_assignment,
-                args=(assignment_id, challenge_id, challenge_name, transmission_id,
-                      frequency, expected_start, expected_duration),
-                daemon=True
-            ).start()
+                print(f"[DEBUG] Starting recording thread for {challenge_name}", flush=True)
+                # Schedule recording
+                threading.Thread(
+                    target=self.handle_recording_assignment,
+                    args=(assignment_id, challenge_id, challenge_name, transmission_id,
+                          frequency, expected_start, expected_duration),
+                    daemon=True
+                ).start()
+                print(f"[DEBUG] Recording thread started", flush=True)
+            except Exception as e:
+                print(f"[ERROR] Exception in recording_assignment handler: {e}", flush=True)
+                logger.error(f"Error in recording_assignment handler: {e}", exc_info=True)
 
         @self.sio.on('heartbeat_ack', namespace='/agents')
         def on_heartbeat_ack(data):
@@ -367,9 +381,12 @@ class ListenerAgent:
             expected_start: ISO format timestamp of expected transmission start
             expected_duration: Expected duration in seconds
         """
+        print(f"[DEBUG] handle_recording_assignment started for {challenge_name}", flush=True)
+
         with self.recording_lock:
             if self.current_recording:
                 logger.warning(f"Already recording, cannot start new recording for {challenge_name}")
+                print(f"[DEBUG] Already recording, skipping", flush=True)
                 return
 
             self.current_recording = {
@@ -382,17 +399,23 @@ class ListenerAgent:
                 'expected_duration': expected_duration
             }
 
+        print(f"[DEBUG] Current recording set, proceeding", flush=True)
+
         try:
             # Parse expected start time
+            print(f"[DEBUG] Parsing expected_start: {expected_start}", flush=True)
             start_time = datetime.fromisoformat(expected_start.replace('Z', '+00:00'))
             now = datetime.now(timezone.utc)
 
             # Calculate delay until recording should start
             delay_seconds = (start_time - now).total_seconds()
+            print(f"[DEBUG] Delay until start: {delay_seconds:.1f}s", flush=True)
 
             if delay_seconds > 0:
                 logger.info(f"Waiting {delay_seconds:.1f}s until recording starts for {challenge_name}")
                 time.sleep(delay_seconds)
+
+            print(f"[DEBUG] Notifying server recording started", flush=True)
 
             # Notify server recording has started
             recording_config = self.config['agent'].get('recording', {})
@@ -405,6 +428,8 @@ class ListenerAgent:
                 sample_rate=sample_rate,
                 expected_duration=expected_duration
             )
+
+            print(f"[DEBUG] Recording ID from server: {recording_id}", flush=True)
 
             if recording_id <= 0:
                 logger.error(f"Failed to create recording entry on server")
@@ -463,15 +488,25 @@ class ListenerAgent:
             from spectrum_listener import SpectrumListener
             from waterfall_generator import generate_waterfall
 
-            # Select appropriate device for this frequency
-            selected_device = self.select_device(frequency)
-            if not selected_device:
-                error_msg = f"No available device for frequency {frequency} Hz"
-                logger.error(error_msg)
-                return False, None, 0, error_msg
+            # In simulation mode, create a dummy device
+            if self.simulate:
+                logger.info(f"Simulation mode: Recording {frequency} Hz (frequency-independent)")
+                selected_device = {
+                    'name': 'simulated',
+                    'model': 'simulated',
+                    'gain': 40,
+                    'in_use': False
+                }
+            else:
+                # Select appropriate device for this frequency
+                selected_device = self.select_device(frequency)
+                if not selected_device:
+                    error_msg = f"No available device for frequency {frequency} Hz"
+                    logger.error(error_msg)
+                    return False, None, 0, error_msg
 
-            # Mark device as in use
-            selected_device['in_use'] = True
+                # Mark device as in use
+                selected_device['in_use'] = True
 
             recording_config = self.config['agent'].get('recording', {})
             output_dir = recording_config.get('output_dir', 'recordings')
@@ -528,8 +563,8 @@ class ListenerAgent:
             logger.error(error_msg, exc_info=True)
             return (False, None, 0, error_msg)
         finally:
-            # Release device for next recording
-            if selected_device:
+            # Release device for next recording (skip for simulated devices)
+            if selected_device and not self.simulate:
                 selected_device['in_use'] = False
                 logger.debug(f"Released device {selected_device['model']}={selected_device['name']}")
 
@@ -779,6 +814,10 @@ class ListenerAgent:
 
     def send_log(self, level: str, message: str):
         """Send log entry to server."""
+        # Don't try to send logs if shutting down
+        if not self.running:
+            return
+
         try:
             self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/log",
@@ -789,7 +828,7 @@ class ListenerAgent:
                         'timestamp': datetime.now().isoformat()
                     }
                 },
-                timeout=5
+                timeout=2  # Shorter timeout to avoid hanging during shutdown
             )
         except Exception as e:
             # Log at debug level to avoid recursion
@@ -864,14 +903,15 @@ class ListenerAgent:
 
         except KeyboardInterrupt:
             print("\nReceived interrupt signal, shutting down...", flush=True)
-            logger.info("Received interrupt signal, shutting down...")
+            # Set running=False BEFORE logging to prevent log forwarding during shutdown
+            self.running = False
             self.shutdown()
 
         return 0
 
     def shutdown(self):
         """Gracefully shutdown the listener agent."""
-        self.running = False
+        # Note: self.running is already set to False by caller
 
         # Disconnect WebSocket
         if self.sio.connected:
@@ -883,20 +923,17 @@ class ListenerAgent:
         try:
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/signout",
-                timeout=5
+                timeout=2  # Short timeout - don't hang if server is down
             )
             if response.status_code == 200:
                 print("Signed out successfully", flush=True)
-                logger.info("Signed out successfully")
             else:
                 print(f"Signout failed: {response.status_code}", flush=True)
-                logger.warning(f"Signout failed: {response.status_code}")
         except Exception as e:
-            print(f"Error during signout: {e}", flush=True)
-            logger.error(f"Error signing out: {e}")
+            # Server may be down, just print error and continue shutdown
+            print(f"Could not reach server: {e}", flush=True)
 
         print("Listener agent shut down", flush=True)
-        logger.info("Listener agent shut down")
 
 
 def get_agent_id_from_config(config_path: str) -> str:

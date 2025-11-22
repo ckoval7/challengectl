@@ -203,17 +203,17 @@ if self.spectrum_paint_before_challenge and modulation != 'paint':
 Runner Startup:
   1. Load config
   2. Enroll with server (one-time)
-  3. Send POST /api/runners/register
+  3. Send POST /api/agents/register
   4. Receive acknowledgment
   5. Start heartbeat loop
 
 Heartbeat Loop (every 30 seconds):
-  1. POST /api/runners/{id}/heartbeat
+  1. POST /api/agents/{id}/heartbeat
   2. Server updates last_heartbeat timestamp
   3. Continue until shutdown
 
 Shutdown:
-  1. Send POST /api/runners/{id}/signout
+  1. Send POST /api/agents/{id}/signout
   2. Server marks runner offline immediately
   3. Requeue any assigned tasks
 ```
@@ -222,7 +222,7 @@ Shutdown:
 
 ```
 Runner requests task:
-  GET /api/runners/{runner_id}/task
+  GET /api/agents/{runner_id}/task
 
 Server processes request:
   1. BEGIN IMMEDIATE transaction (locks database)
@@ -394,7 +394,7 @@ class WebSocketHandler(logging.Handler):
 ```python
 class ServerLogHandler(logging.Handler):
     - Runner sends logs to server
-    - POST /api/runners/{id}/log endpoint
+    - POST /api/agents/{id}/log endpoint
     - Server broadcasts to WebUI clients
 ```
 
@@ -624,7 +624,7 @@ T0: Challenge Definition
     └─ Stored in database with status='queued'
 
 T1: Runner Polling (every 10 seconds)
-    ├─ Runner sends: GET /api/runners/{id}/task
+    ├─ Runner sends: GET /api/agents/{id}/task
     └─ Server responds: Challenge details (or empty)
 
 T2: Task Assignment (10-30 second window)
@@ -652,7 +652,7 @@ T4: Challenge Execution
     └─ GNU Radio output to SDR device
 
 T5: Completion Report
-    ├─ Runner sends: POST /api/runners/{id}/complete
+    ├─ Runner sends: POST /api/agents/{id}/complete
     ├─ Includes: success/failure, device_id, frequency
     ├─ Server receives and logs
     └─ Database updated with transmission record

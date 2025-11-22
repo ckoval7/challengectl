@@ -1140,6 +1140,18 @@ class Database:
             conn.commit()
             return cursor.lastrowid
 
+    def update_transmission_details(self, transmission_id: int, device_id: str, frequency: int):
+        """Update transmission with actual device_id and frequency from runner."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE transmissions
+                SET device_id = ?,
+                    frequency = ?
+                WHERE transmission_id = ?
+            ''', (device_id, frequency, transmission_id))
+            conn.commit()
+
     def record_transmission_complete(self, transmission_id: int, success: bool,
                                      error_message: Optional[str] = None):
         """Record transmission completion."""

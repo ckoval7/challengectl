@@ -329,7 +329,7 @@ class ChallengeCtlRunner:
                 })
 
             response = self.session.post(
-                f"{self.server_url}/api/runners/register",
+                f"{self.server_url}/api/agents/register",
                 json={
                     'hostname': hostname,
                     'devices': devices_info
@@ -352,7 +352,7 @@ class ChallengeCtlRunner:
         """Send periodic heartbeat to server."""
         try:
             response = self.session.post(
-                f"{self.server_url}/api/runners/{self.runner_id}/heartbeat",
+                f"{self.server_url}/api/agents/{self.runner_id}/heartbeat",
                 timeout=5
             )
 
@@ -369,7 +369,7 @@ class ChallengeCtlRunner:
         try:
             logger.info(f"Signing out from server...")
             response = self.session.post(
-                f"{self.server_url}/api/runners/{self.runner_id}/signout",
+                f"{self.server_url}/api/agents/{self.runner_id}/signout",
                 timeout=5
             )
 
@@ -397,7 +397,7 @@ class ChallengeCtlRunner:
         """Request next task from server."""
         try:
             response = self.session.get(
-                f"{self.server_url}/api/runners/{self.runner_id}/task",
+                f"{self.server_url}/api/agents/{self.runner_id}/task",
                 timeout=10
             )
 
@@ -698,18 +698,23 @@ class ChallengeCtlRunner:
 
     def report_completion(self, challenge_id: str, success: bool,
                           device_id: int, frequency: int,
-                          error_message: Optional[str] = None):
+                          error_message: Optional[str] = None,
+                          transmission_id: Optional[int] = None):
         """Report task completion to server."""
         try:
+            payload = {
+                'challenge_id': challenge_id,
+                'success': success,
+                'error_message': error_message,
+                'device_id': device_id,
+                'frequency': frequency
+            }
+            if transmission_id is not None:
+                payload['transmission_id'] = transmission_id
+
             response = self.session.post(
-                f"{self.server_url}/api/runners/{self.runner_id}/complete",
-                json={
-                    'challenge_id': challenge_id,
-                    'success': success,
-                    'error_message': error_message,
-                    'device_id': device_id,
-                    'frequency': frequency
-                },
+                f"{self.server_url}/api/agents/{self.runner_id}/complete",
+                json=payload,
                 timeout=10
             )
 
@@ -725,7 +730,7 @@ class ChallengeCtlRunner:
         """Send log entry to server."""
         try:
             self.session.post(
-                f"{self.server_url}/api/runners/{self.runner_id}/log",
+                f"{self.server_url}/api/agents/{self.runner_id}/log",
                 json={
                     'log': {
                         'level': level,
@@ -751,13 +756,14 @@ class ChallengeCtlRunner:
                 if task:
                     self.current_task = task
                     challenge_id = task['challenge_id']
+                    transmission_id = task.get('transmission_id')
 
                     # Execute challenge
                     success, device_id, frequency = self.execute_challenge(task)
 
                     # Report completion
                     error_msg = None if success else "Execution failed"
-                    self.report_completion(challenge_id, success, device_id, frequency, error_msg)
+                    self.report_completion(challenge_id, success, device_id, frequency, error_msg, transmission_id)
 
                     self.current_task = None
 

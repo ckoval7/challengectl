@@ -293,19 +293,19 @@ START
   │  - API key stored in database
   │
   ├─ Register with server
-  │  POST /api/runners/register
+  │  POST /api/agents/register
   │  - Send device info
   │  - Receive acknowledgment
   │
   ├─ Start background thread: heartbeat_loop()
-  │  POST /api/runners/{id}/heartbeat (every 30s)
+  │  POST /api/agents/{id}/heartbeat (every 30s)
   │
   ├─ Main loop: while running:
   │
   │  ┌─ Sleep(poll_interval = 10s)
   │  │
   │  ├─ get_task()
-  │  │  GET /api/runners/{id}/task
+  │  │  GET /api/agents/{id}/task
   │  │
   │  ├─ IF task received:
   │  │  │
@@ -324,7 +324,7 @@ START
   │  │  │  - Wait for completion
   │  │  │
   │  │  └─ report_completion()
-  │  │     POST /api/runners/{id}/complete
+  │  │     POST /api/agents/{id}/complete
   │  │     (success/failure + error message)
   │  │
   │  ├─ ELSE: continue to next iteration
@@ -334,7 +334,7 @@ START
   ├─ [SIGINT/SIGTERM received]
   │
   ├─ signout()
-  │  POST /api/runners/{id}/signout
+  │  POST /api/agents/{id}/signout
   │  (graceful shutdown, clear assignment)
   │
   └─ EXIT

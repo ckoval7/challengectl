@@ -29,11 +29,11 @@ This document maps the important files to their functionality.
 - `WebSocketHandler` - Log broadcasting via Socket.IO
 
 **Key API Endpoints**:
-- `POST /api/runners/register` - Runner registration
-- `POST /api/runners/{id}/heartbeat` - Heartbeat
-- `GET /api/runners/{id}/task` - Task polling (CRITICAL - has mutual exclusion lock)
-- `POST /api/runners/{id}/complete` - Completion reporting
-- `POST /api/runners/{id}/log` - Log forwarding
+- `POST /api/agents/register` - Runner registration
+- `POST /api/agents/{id}/heartbeat` - Heartbeat
+- `GET /api/agents/{id}/task` - Task polling (CRITICAL - has mutual exclusion lock)
+- `POST /api/agents/{id}/complete` - Completion reporting
+- `POST /api/agents/{id}/log` - Log forwarding
 - `GET /api/dashboard` - Statistics
 - `GET /api/challenges` - List challenges
 - `POST /api/challenges/{id}/trigger` - Manual trigger
@@ -368,7 +368,7 @@ def assign_task(self, runner_id: str, frequency_limits: List = None) -> Optional
 ### Task Assignment Flow (from api.py)
 
 ```
-1. Runner: GET /api/runners/{id}/task
+1. Runner: GET /api/agents/{id}/task
 2. Server: db.assign_task(runner_id)
    a. BEGIN IMMEDIATE (lock database)
    b. Find queued challenge matching capabilities

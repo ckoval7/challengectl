@@ -270,18 +270,18 @@ POST /api/agents/register
       devices          # Array of device capabilities
     }
   - Response: {status: "success", message: "Registered"}
-  - Replaces: /api/runners/register and /api/listeners/register
+  - Replaces: /api/runners/register (removed) and /api/listeners/register (removed)
 
 POST /api/agents/{id}/heartbeat
   - Send periodic heartbeat (works for both types)
   - Request body: {status, timestamp}
   - Response: {status: "success"}
-  - Replaces: /api/runners/{id}/heartbeat and /api/listeners/{id}/heartbeat
+  - Replaces: /api/runners/{id}/heartbeat (removed) and /api/listeners/{id}/heartbeat (removed)
 
 POST /api/agents/{id}/signout
   - Graceful signout on shutdown (both types)
   - Response: {status: "success"}
-  - Replaces: /api/runners/{id}/signout
+  - Replaces: /api/runners/{id}/signout (removed)
 
 GET /api/agents/{id}/task
   - Poll for task assignment (runner agents only)
@@ -333,27 +333,27 @@ GET /api/agents
   - List all agents (runners + listeners)
   - Query params: type (optional: 'runner' or 'listener')
   - Response: {agents: [...]}
-  - Replaces: GET /api/runners
+  - Replaces: GET /api/runners (admin endpoint)
 
 GET /api/agents/{id}
   - Get detailed agent information
   - Response: {agent details, current_assignment, statistics}
-  - Replaces: GET /api/runners/{id}
+  - Replaces: GET /api/runners (admin endpoint)/{id}
 
 POST /api/agents/{id}/enable
   - Enable agent to receive assignments
   - Response: {status: "success"}
-  - Replaces: POST /api/runners/{id}/enable
+  - Replaces: POST /api/runners/{id}/enable (admin endpoint)
 
 POST /api/agents/{id}/disable
   - Disable agent from receiving tasks/assignments
   - Response: {status: "success"}
-  - Replaces: POST /api/runners/{id}/disable
+  - Replaces: POST /api/runners/{id}/disable (admin endpoint)
 
 DELETE /api/agents/{id}
   - Kick agent (forcefully disconnect)
   - Response: {status: "success"}
-  - Replaces: DELETE /api/runners/{id}
+  - Replaces: DELETE /api/runners/{id} (admin endpoint)
 
 GET /api/recordings
   - List all recordings with pagination

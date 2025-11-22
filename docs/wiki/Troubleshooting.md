@@ -1118,7 +1118,7 @@ SELECT * FROM transmission_log ORDER BY timestamp DESC LIMIT 10;
 curl -v http://server-ip:8443/api/health
 
 # Test runner authentication
-curl -v -H "X-API-Key: your-key" http://server-ip:8443/api/runners/runner-1/task
+curl -v -H "X-API-Key: your-key" http://server-ip:8443/api/agents/runner-1/task
 
 # Monitor network traffic
 sudo tcpdump -i any port 8443
