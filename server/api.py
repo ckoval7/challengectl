@@ -2367,30 +2367,21 @@ class ChallengeCtlAPI:
             """Get all agents (runners and listeners)."""
             agent_type_filter = request.args.get('type')  # Optional filter: 'runner' or 'listener'
 
-            all_agents = []
+            # Get all agents from unified agents table
+            all_agents = self.db.get_all_agents(agent_type=agent_type_filter)
 
-            # Get runners from runners table if not filtered for listeners only
-            if not agent_type_filter or agent_type_filter == 'runner':
-                runners = self.db.get_all_runners()
-                for runner in runners:
-                    # Add agent_type and agent_id fields for unified interface
-                    runner['agent_type'] = 'runner'
-                    runner['agent_id'] = runner['runner_id']
-                    runner['websocket_connected'] = False  # Runners don't use WebSocket
-                    all_agents.append(runner)
-
-            # Get listeners from agents table if not filtered for runners only
-            if not agent_type_filter or agent_type_filter == 'listener':
-                listeners = self.db.get_all_agents(agent_type='listener')
-                all_agents.extend(listeners)
-
-            # Parse devices JSON for each agent
+            # Parse devices JSON and add backward compatibility fields for each agent
             for agent in all_agents:
+                # Parse devices JSON
                 if agent.get('devices'):
                     try:
                         agent['devices'] = json.loads(agent['devices'])
                     except (json.JSONDecodeError, TypeError):
                         agent['devices'] = []
+
+                # Add backward compatibility: runners need runner_id field
+                if agent.get('agent_type') == 'runner':
+                    agent['runner_id'] = agent['agent_id']
 
             return jsonify({'agents': all_agents}), 200
 

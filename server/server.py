@@ -53,24 +53,28 @@ class ChallengeCtlServer:
     def setup_background_tasks(self):
         """Setup periodic background cleanup tasks."""
 
-        def cleanup_stale_runners():
-            """Cleanup task to mark offline runners."""
+        def cleanup_stale_agents():
+            """Cleanup task to mark offline agents (runners and listeners)."""
             try:
-                offline_runners = self.db.cleanup_stale_runners(timeout_seconds=90)
-                if offline_runners:
-                    logger.info(f"Cleanup: marked {len(offline_runners)} runner(s) as offline")
-                    # Broadcast WebSocket events for each runner marked offline
+                offline_agents = self.db.cleanup_stale_agents(timeout_seconds=90)
+                if offline_agents:
+                    logger.info(f"Cleanup: marked {len(offline_agents)} agent(s) as offline")
+                    # Broadcast WebSocket events for each agent marked offline
                     from datetime import timezone
-                    for runner_id in offline_runners:
+                    for agent_id in offline_agents:
+                        # Get agent details to determine type
+                        agent = self.db.get_agent(agent_id)
+                        agent_type = agent.get('agent_type', 'runner') if agent else 'runner'
+
                         self.api.broadcast_event('runner_status', {
-                            'runner_id': runner_id,
-                            'agent_id': runner_id,
-                            'agent_type': 'runner',
+                            'runner_id': agent_id,
+                            'agent_id': agent_id,
+                            'agent_type': agent_type,
                             'status': 'offline',
                             'timestamp': datetime.now(timezone.utc).isoformat()
                         })
             except Exception as e:
-                logger.error(f"Error in cleanup_stale_runners: {e}")
+                logger.error(f"Error in cleanup_stale_agents: {e}")
 
         def cleanup_stale_assignments():
             """Cleanup task to requeue timed-out challenge assignments."""
@@ -83,10 +87,10 @@ class ChallengeCtlServer:
 
         # Run cleanup tasks every 30 seconds
         self.scheduler.add_job(
-            cleanup_stale_runners,
+            cleanup_stale_agents,
             'interval',
             seconds=30,
-            id='cleanup_runners',
+            id='cleanup_agents',
             replace_existing=True
         )
 

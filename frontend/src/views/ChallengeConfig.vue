@@ -1463,8 +1463,8 @@ export default {
       loadFrequencyRanges()
 
       // Refresh periodically for live status
-      const interval = setInterval(loadChallenges, 15000)
-      onUnmounted(() => clearInterval(interval))
+      // const interval = setInterval(loadChallenges, 15000)
+      // onUnmounted(() => clearInterval(interval))
     })
 
     return {
