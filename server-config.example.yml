@@ -106,6 +106,16 @@ frequency_ranges:
 # You can also configure challenges in this file if preferred.
 # See https://github.com/ckoval7/challengectl/wiki/Challenge-Management for details.
 #
+# Duration Calculation (NEW):
+# The 'duration' field is now OPTIONAL. If not specified, duration will be automatically
+# calculated based on the modulation type and parameters:
+#   - Audio modulations (NBFM, SSB, FreeDV, FHSS): Read WAV file duration
+#   - CW (Morse): Calculate from message length and WPM (words per minute)
+#   - Spectrum Paint: Calculate from image file size and painting parameters
+#   - POCSAG/LRS Pagers: Estimate from message length and baud rate
+#   - ASK: Estimate from message length
+# You can still specify 'duration' explicitly to override auto-calculation.
+#
 # Example challenge configuration (commented out):
 # challenges:
 #   # NBFM Example with specific frequency

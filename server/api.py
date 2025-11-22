@@ -28,6 +28,7 @@ import random
 
 from database import Database
 from crypto import encrypt_totp_secret
+from challenge_duration import calculate_challenge_duration, get_pre_paint_duration
 
 logger = logging.getLogger(__name__)
 
@@ -1996,7 +1997,18 @@ class ChallengeCtlAPI:
 
                         # Calculate expected transmission timing
                         expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
-                        expected_duration = config.get('duration', 30.0) + 10.0  # Add 10s buffer (5s pre-roll + 5s post-roll)
+
+                        # Calculate challenge duration (automatically from file/params if not explicitly set)
+                        challenge_duration = calculate_challenge_duration(
+                            config=config,
+                            files_dir=self.files_dir,
+                            include_pre_paint=False,  # Pre-paint is handled by runner, not listener
+                            pre_paint_duration=0.0
+                        )
+                        # Add buffer for listener recording (5s pre-roll + 5s post-roll)
+                        expected_duration = challenge_duration + 10.0
+
+                        logger.debug(f"Challenge duration: {challenge_duration}s, listener recording duration: {expected_duration}s")
 
                         # Create listener assignment
                         assignment_id = self.db.create_listener_assignment(
