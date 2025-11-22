@@ -23,7 +23,58 @@
         <el-table
           :data="challenges"
           class="w-full"
+          @expand-change="handleExpandChange"
         >
+          <el-table-column type="expand">
+            <template #default="props">
+              <div class="recordings-section">
+                <h3>Recordings</h3>
+                <div v-if="loadingRecordings[props.row.challenge_id]" class="loading">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  Loading recordings...
+                </div>
+                <div v-else-if="!recordings[props.row.challenge_id] || recordings[props.row.challenge_id].length === 0" class="no-recordings">
+                  No recordings available for this challenge.
+                </div>
+                <div v-else class="recordings-grid">
+                  <div
+                    v-for="recording in recordings[props.row.challenge_id]"
+                    :key="recording.recording_id"
+                    class="recording-card"
+                  >
+                    <div class="recording-header">
+                      <span class="recording-title">Recording #{{ recording.recording_id }}</span>
+                      <el-tag
+                        :type="recording.status === 'completed' ? 'success' : recording.status === 'failed' ? 'danger' : 'warning'"
+                        size="small"
+                      >
+                        {{ recording.status }}
+                      </el-tag>
+                    </div>
+                    <div class="recording-info">
+                      <div><strong>Listener:</strong> {{ recording.listener_id }}</div>
+                      <div><strong>Frequency:</strong> {{ formatFrequency(recording.frequency) }}</div>
+                      <div><strong>Duration:</strong> {{ recording.duration }}s</div>
+                      <div><strong>Started:</strong> {{ formatTimestamp(recording.started_at) }}</div>
+                      <div v-if="recording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}</div>
+                    </div>
+                    <div v-if="recording.image_file && recording.status === 'completed'" class="recording-image">
+                      <img
+                        :src="`/api/recordings/${recording.recording_id}/image`"
+                        :alt="`Waterfall for recording ${recording.recording_id}`"
+                        @click="showImageModal(recording)"
+                      />
+                    </div>
+                    <div v-else-if="recording.error_message" class="recording-error">
+                      <el-alert type="error" :closable="false">
+                        {{ recording.error_message }}
+                      </el-alert>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column
             prop="name"
             label="Name"
@@ -873,6 +924,31 @@ print(response.json())</code></pre>
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- Recording Image Modal -->
+    <el-dialog
+      v-model="imageModalVisible"
+      :title="`Recording #${selectedRecording?.recording_id} - Waterfall`"
+      width="90%"
+      @close="closeImageModal"
+    >
+      <div v-if="selectedRecording" class="modal-content">
+        <div class="modal-info">
+          <p><strong>Challenge:</strong> {{ challenges.find(c => c.challenge_id === selectedRecording.challenge_id)?.name || 'Unknown' }}</p>
+          <p><strong>Listener:</strong> {{ selectedRecording.listener_id }}</p>
+          <p><strong>Frequency:</strong> {{ formatFrequency(selectedRecording.frequency) }}</p>
+          <p><strong>Duration:</strong> {{ selectedRecording.duration }}s</p>
+          <p><strong>Started:</strong> {{ formatTimestamp(selectedRecording.started_at) }}</p>
+          <p v-if="selectedRecording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}</p>
+        </div>
+        <div class="modal-image">
+          <img
+            :src="`/api/recordings/${selectedRecording.recording_id}/image`"
+            :alt="`Waterfall for recording ${selectedRecording.recording_id}`"
+          />
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -881,13 +957,23 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '../utils/time'
+import { Loading } from '@element-plus/icons-vue'
 
 export default {
   name: 'ChallengeConfig',
+  components: {
+    Loading
+  },
   setup() {
     const activeTab = ref('status')
     const challenges = ref([])
     const importing = ref(false)
+
+    // Recordings
+    const recordings = ref({})
+    const loadingRecordings = ref({})
+    const imageModalVisible = ref(false)
+    const selectedRecording = ref(null)
 
     // Frequency ranges
     const availableFrequencyRanges = ref([])
@@ -1336,6 +1422,42 @@ export default {
       return ranges.map(r => getDisplayNameForRange(r)).join(', ')
     }
 
+    const loadRecordings = async (challengeId) => {
+      if (recordings.value[challengeId]) {
+        // Already loaded
+        return
+      }
+
+      loadingRecordings.value[challengeId] = true
+      try {
+        const response = await api.get(`/challenges/${challengeId}/recordings`)
+        recordings.value[challengeId] = response.data.recordings || []
+      } catch (error) {
+        console.error('Error loading recordings:', error)
+        ElMessage.error('Failed to load recordings')
+        recordings.value[challengeId] = []
+      } finally {
+        loadingRecordings.value[challengeId] = false
+      }
+    }
+
+    const showImageModal = (recording) => {
+      selectedRecording.value = recording
+      imageModalVisible.value = true
+    }
+
+    const closeImageModal = () => {
+      imageModalVisible.value = false
+      selectedRecording.value = null
+    }
+
+    const handleExpandChange = (row, expandedRows) => {
+      // If row is in expanded rows, load its recordings
+      if (expandedRows.includes(row)) {
+        loadRecordings(row.challenge_id)
+      }
+    }
+
     onMounted(() => {
       loadChallenges()
       loadFrequencyRanges()
@@ -1349,6 +1471,10 @@ export default {
       activeTab,
       challenges,
       importing,
+      recordings,
+      loadingRecordings,
+      imageModalVisible,
+      selectedRecording,
       availableFrequencyRanges,
       frequencyMode,
       loadingRanges,
@@ -1384,6 +1510,10 @@ export default {
       deleteChallenge,
       formatFrequency,
       formatFrequencyRanges,
+      loadRecordings,
+      showImageModal,
+      closeImageModal,
+      handleExpandChange,
     }
   }
 }
@@ -1417,11 +1547,177 @@ h3 {
   color: var(--el-text-color-primary);
 }
 
+/* Recordings section */
+.recordings-section {
+  padding: 20px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+.recordings-section h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #303133;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+}
+
+.no-recordings {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+  font-style: italic;
+}
+
+.recordings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
+}
+
+.recording-card {
+  background: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 15px;
+  transition: box-shadow 0.3s;
+}
+
+.recording-card:hover {
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+.recording-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.recording-title {
+  font-weight: bold;
+  color: #303133;
+}
+
+.recording-info {
+  margin-bottom: 15px;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
+}
+
+.recording-info strong {
+  color: #303133;
+  margin-right: 5px;
+}
+
+.recording-image {
+  margin-top: 15px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.recording-image img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  transition: transform 0.2s;
+}
+
+.recording-image img:hover {
+  transform: scale(1.02);
+}
+
+.recording-error {
+  margin-top: 10px;
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.modal-info {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 15px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.modal-info p {
+  margin: 0;
+  font-size: 14px;
+  color: #606266;
+}
+
+.modal-info strong {
+  color: #303133;
+}
+
+.modal-image {
+  text-align: center;
+}
+
+.modal-image img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+}
+
 /* Dark mode adjustments */
 html.dark .code-example {
   background: #2d2d2d;
   color: var(--el-text-color-primary);
   border: 1px solid var(--el-border-color);
+}
+
+html.dark .recordings-section {
+  background-color: #1a1a1a;
+}
+
+html.dark .recordings-section h3 {
+  color: var(--el-text-color-primary);
+}
+
+html.dark .recording-card {
+  background: #2d2d2d;
+  border: 1px solid var(--el-border-color);
+}
+
+html.dark .recording-title {
+  color: var(--el-text-color-primary);
+}
+
+html.dark .recording-info {
+  color: var(--el-text-color-regular);
+}
+
+html.dark .recording-info strong {
+  color: var(--el-text-color-primary);
+}
+
+html.dark .modal-info {
+  background-color: #1a1a1a;
+}
+
+html.dark .modal-info p {
+  color: var(--el-text-color-regular);
+}
+
+html.dark .modal-info strong {
+  color: var(--el-text-color-primary);
 }
 </style>
 
