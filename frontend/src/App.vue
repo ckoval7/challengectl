@@ -123,7 +123,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
+import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
