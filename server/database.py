@@ -1662,6 +1662,10 @@ class Database:
                             WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
                             ELSE agents.machine_id
                         END,
+                        api_key_hash = CASE
+                            WHEN excluded.api_key_hash IS NOT NULL THEN excluded.api_key_hash
+                            ELSE agents.api_key_hash
+                        END,
                         status = 'online',
                         last_heartbeat = excluded.last_heartbeat,
                         devices = excluded.devices,
