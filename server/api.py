@@ -335,19 +335,20 @@ class ChallengeCtlAPI:
         # Multiply by time to gradually increase priority
         priority = transmissions_since * time_multiplier
 
-        # Apply challenge priority boost (0-10 scale, default 0 = 1.0x)
-        priority_boost = max(0.1, challenge_priority / 10.0)
+        # Apply challenge priority boost (0-10 scale, default 0 = 1.0x, higher = more frequent recording)
+        # Changed from max(0.1, ...) to max(1.0, ...) so priority=0 doesn't penalize
+        priority_boost = 1.0 + (challenge_priority / 10.0)
         priority *= priority_boost
 
         # Cap at 1000
         return min(1000.0, priority)
 
-    def should_assign_listener(self, challenge: Dict, threshold: float = 10.0) -> bool:
+    def should_assign_listener(self, challenge: Dict, threshold: float = 1.0) -> bool:
         """Determine if a listener should be assigned for this transmission.
 
         Args:
             challenge: Challenge dictionary
-            threshold: Minimum priority score to trigger recording (default 10)
+            threshold: Minimum priority score to trigger recording (default 1.0)
 
         Returns:
             True if priority exceeds threshold, False otherwise
@@ -2249,12 +2250,20 @@ class ChallengeCtlAPI:
                 if self.should_assign_listener(challenge):
                     # Find available listener agents with WebSocket connection
                     listener_agents = self.db.get_all_agents(agent_type='listener')
+                    logger.debug(f"Found {len(listener_agents)} total listener agents")
+
                     available_listeners = [
                         l for l in listener_agents
                         if l['status'] == 'online'
                         and l['enabled']
                         and l.get('websocket_connected')
                     ]
+
+                    logger.info(f"Available listeners for assignment: {len(available_listeners)} "
+                               f"(total: {len(listener_agents)}, "
+                               f"online: {len([l for l in listener_agents if l['status'] == 'online'])}, "
+                               f"enabled: {len([l for l in listener_agents if l['enabled']])}, "
+                               f"websocket: {len([l for l in listener_agents if l.get('websocket_connected')])})")
 
                     if available_listeners:
                         # Select first available listener (TODO: implement better selection)
@@ -2294,7 +2303,10 @@ class ChallengeCtlAPI:
                         else:
                             logger.error(f"Failed to create listener assignment for {challenge['name']}")
                     else:
-                        logger.warning(f"No available listeners for recording {challenge['name']} (priority score exceeded threshold)")
+                        logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
+                else:
+                    priority = self.calculate_recording_priority(challenge)
+                    logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold 1.0")
 
                 return jsonify({
                     'task': {
