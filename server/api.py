@@ -2287,7 +2287,7 @@ class ChallengeCtlAPI:
                         if assignment_id > 0:
                             # Push assignment to listener via WebSocket
                             # Note: This uses SocketIO rooms - listener must join 'agent_<id>' room
-                            self.socketio.emit('recording_assignment', {
+                            assignment_data = {
                                 'assignment_id': assignment_id,
                                 'challenge_id': challenge['challenge_id'],
                                 'challenge_name': challenge['name'],
@@ -2297,7 +2297,11 @@ class ChallengeCtlAPI:
                                 'expected_duration': expected_duration,
                                 'runner_id': agent_id,
                                 'timestamp': datetime.now(timezone.utc).isoformat()
-                            }, room=f'agent_{listener_id}', namespace='/agents')
+                            }
+
+                            logger.debug(f"Emitting recording_assignment to room 'agent_{listener_id}' on namespace '/agents': {assignment_data}")
+                            self.socketio.emit('recording_assignment', assignment_data,
+                                             room=f'agent_{listener_id}', namespace='/agents')
 
                             logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
                         else:
