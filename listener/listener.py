@@ -191,9 +191,9 @@ class ListenerAgent:
             logger.info("Using system CA certificates")
 
         # WebSocket client
+        # Note: reconnection=False because we handle reconnection manually with auth
         self.sio = socketio.Client(
-            reconnection=True,
-            reconnection_delay=self.config['agent'].get('websocket_reconnect_delay', 5),
+            reconnection=False,
             logger=True,
             engineio_logger=True
         )
@@ -205,6 +205,10 @@ class ListenerAgent:
         # Heartbeat thread
         self.heartbeat_thread = None
         self.running = False
+
+        # Reconnection state
+        self.reconnecting = False
+        self.reconnect_lock = threading.Lock()
 
         # Register WebSocket event handlers
         self.register_websocket_handlers()
@@ -329,6 +333,9 @@ class ListenerAgent:
         @self.sio.on('disconnect', namespace='/agents')
         def on_disconnect():
             logger.warning("WebSocket disconnected from server")
+            # Start reconnection attempt in background thread
+            if self.running:
+                threading.Thread(target=self.reconnect_websocket, daemon=True).start()
 
         @self.sio.on('connected', namespace='/agents')
         def on_connected_ack(data):
@@ -789,6 +796,64 @@ class ListenerAgent:
         except Exception as e:
             logger.error(f"Failed to connect WebSocket: {e}")
             return False
+
+    def reconnect_websocket(self):
+        """Attempt to reconnect WebSocket with exponential backoff."""
+        # Prevent multiple reconnection threads
+        if not self.reconnect_lock.acquire(blocking=False):
+            logger.debug("Reconnection already in progress, skipping")
+            return
+
+        try:
+            self.reconnecting = True
+            max_attempts = 10
+            base_delay = 2
+            max_delay = 60
+
+            for attempt in range(1, max_attempts + 1):
+                if not self.running:
+                    logger.info("Listener shutting down, aborting reconnection")
+                    return
+
+                # Calculate delay with exponential backoff
+                delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+
+                logger.info(f"WebSocket reconnection attempt {attempt}/{max_attempts} in {delay}s...")
+                time.sleep(delay)
+
+                try:
+                    # Disconnect first if still connected
+                    if self.sio.connected:
+                        try:
+                            self.sio.disconnect()
+                        except:
+                            pass
+
+                    # Reconnect with authentication
+                    auth_data = {
+                        'agent_id': self.agent_id,
+                        'api_key': self.api_key
+                    }
+
+                    self.sio.connect(
+                        self.server_url,
+                        auth=auth_data,
+                        namespaces=['/agents'],
+                        wait_timeout=10
+                    )
+
+                    logger.info(f"WebSocket reconnected successfully after {attempt} attempt(s)")
+                    return
+
+                except Exception as e:
+                    logger.warning(f"Reconnection attempt {attempt} failed: {e}")
+                    if attempt == max_attempts:
+                        logger.error("Max reconnection attempts reached, giving up")
+                        # Could optionally exit here or alert the user
+
+        finally:
+            self.reconnecting = False
+            self.reconnect_lock.release()
 
     def send_heartbeat_http(self):
         """Send heartbeat to server via HTTP."""
