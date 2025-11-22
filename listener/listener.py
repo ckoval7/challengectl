@@ -30,9 +30,11 @@ import socketio
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s challengectl-listener[%(process)d]: %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,10 @@ class ListenerAgent:
         self.heartbeat_interval = self.config['agent'].get('heartbeat_interval', 30)
         self.simulate = simulate
 
+        # TLS configuration
+        self.ca_cert = self.config['agent'].get('ca_cert')
+        self.verify_ssl = self.config['agent'].get('verify_ssl', True)
+
         if simulate:
             logger.info("Simulation mode enabled - will generate test data without SDR hardware")
 
@@ -126,10 +132,22 @@ class ListenerAgent:
         self.session.headers.update(headers)
         logger.debug(f"Session configured with host identifiers: MAC={mac_address}, Machine ID={machine_id}")
 
-        # Configure TLS verification (disable for now, could be made configurable)
-        self.session.verify = False
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        # Configure TLS verification
+        if self.ca_cert and os.path.exists(self.ca_cert):
+            # Use provided CA certificate
+            self.session.verify = self.ca_cert
+            logger.info(f"Using CA certificate: {self.ca_cert}")
+        elif not self.verify_ssl:
+            # Disable SSL verification (development only)
+            self.session.verify = False
+            logger.warning("SSL verification disabled - development mode only!")
+            # Disable SSL warnings if verification is disabled
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        else:
+            # Use default system CA certificates
+            self.session.verify = True
+            logger.info("Using system CA certificates")
 
         # WebSocket client
         self.sio = socketio.Client(
@@ -594,7 +612,14 @@ class ListenerAgent:
 
             # Create a session without authentication for enrollment
             enrollment_session = requests.Session()
-            enrollment_session.verify = False
+
+            # Configure TLS verification same as main session
+            if self.ca_cert and os.path.exists(self.ca_cert):
+                enrollment_session.verify = self.ca_cert
+            elif not self.verify_ssl:
+                enrollment_session.verify = False
+            else:
+                enrollment_session.verify = True
 
             response = enrollment_session.post(
                 f"{self.server_url}/api/enrollment/enroll",
@@ -722,41 +747,56 @@ class ListenerAgent:
         """Main run loop for the listener agent."""
         self.running = True
 
+        print("="*60)
+        print(f"ChallengeCtl Listener Starting")
+        print("="*60)
+        print(f"Listener ID: {self.agent_id}")
+        print(f"Server: {self.server_url}")
+        print("="*60)
+
         logger.info(f"Listener agent {self.agent_id} starting")
         logger.info(f"Server: {self.server_url}")
 
         # Try to register first (works if already enrolled with valid API key)
-        logger.info("Registering with server...")
+        print("Registering with server...")
         registered = self.register_with_server()
 
         if not registered:
             # Registration failed - check if we have an enrollment token to try
             enrollment_token = self.config['agent'].get('enrollment_token')
             if enrollment_token:
-                logger.info("Registration failed. Attempting enrollment with token...")
+                print("Registration failed. Attempting enrollment with token...")
                 if not self.enroll():
-                    logger.error("Failed to enroll with server. Exiting.")
+                    print("Failed to enroll with server. Exiting.", flush=True)
+                    logger.error("Failed to enroll with server")
                     return 1
-                logger.info("Enrollment successful!")
-                logger.info("")
-                logger.info("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
-                logger.info("It will be ignored on subsequent runs once enrolled.")
-                logger.info("")
+                print("Enrollment successful!")
+                print("")
+                print("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
+                print("It will be ignored on subsequent runs once enrolled.")
+                print("")
             else:
-                logger.error("Failed to register with server and no enrollment token found. Exiting.")
+                print("Failed to register with server and no enrollment token found. Exiting.", flush=True)
+                logger.error("Failed to register with server and no enrollment token found")
                 return 1
         else:
-            logger.info("Registration successful")
+            print("Registration successful")
 
         # Connect WebSocket
+        print("Connecting WebSocket to server...")
         if not self.connect_websocket():
-            logger.error("Failed to connect WebSocket, exiting")
+            print("Failed to connect WebSocket, exiting", flush=True)
+            logger.error("Failed to connect WebSocket")
             return 1
+
+        print("WebSocket connected successfully")
 
         # Start heartbeat thread
         self.heartbeat_thread = threading.Thread(target=self.heartbeat_loop, daemon=True)
         self.heartbeat_thread.start()
 
+        print(f"Listener agent {self.agent_id} running, waiting for assignments...")
+        print("Press Ctrl+C to stop")
         logger.info(f"Listener agent {self.agent_id} running, waiting for assignments...")
 
         try:
@@ -765,6 +805,7 @@ class ListenerAgent:
                 time.sleep(1)
 
         except KeyboardInterrupt:
+            print("\nReceived interrupt signal, shutting down...", flush=True)
             logger.info("Received interrupt signal, shutting down...")
             self.shutdown()
 
@@ -776,34 +817,110 @@ class ListenerAgent:
 
         # Disconnect WebSocket
         if self.sio.connected:
+            print("Disconnecting WebSocket...", flush=True)
             self.sio.disconnect()
 
         # Sign out from server
+        print("Signing out from server...", flush=True)
         try:
-            self.session.post(
+            response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/signout",
                 timeout=5
             )
+            if response.status_code == 200:
+                print("Signed out successfully", flush=True)
+                logger.info("Signed out successfully")
+            else:
+                print(f"Signout failed: {response.status_code}", flush=True)
+                logger.warning(f"Signout failed: {response.status_code}")
         except Exception as e:
+            print(f"Error during signout: {e}", flush=True)
             logger.error(f"Error signing out: {e}")
 
+        print("Listener agent shut down", flush=True)
         logger.info("Listener agent shut down")
 
 
+def get_agent_id_from_config(config_path: str) -> str:
+    """Load agent_id from config file."""
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            return config.get('agent', {}).get('agent_id', 'listener')
+    except Exception:
+        return 'listener'
+
+
 def main():
-    parser = argparse.ArgumentParser(description='ChallengeCtl Spectrum Listener Agent')
-    parser.add_argument('--config', '-c', required=True,
-                       help='Path to listener configuration YAML file')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                       help='Enable verbose logging')
-    parser.add_argument('--simulate', '-s', action='store_true',
-                       help='Force simulation mode (generate test data without SDR hardware)')
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="ChallengeCtl Listener - Spectrum recording agent for RF capture"
+    )
+
+    parser.add_argument(
+        '-c', '--config',
+        default='listener-config.yml',
+        help='Path to listener configuration file (default: listener-config.yml)'
+    )
+
+    parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='Set logging level (default: INFO)'
+    )
+
+    parser.add_argument(
+        '--simulate', '-s',
+        action='store_true',
+        help='Force simulation mode (generate test data without SDR hardware)'
+    )
 
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # Check if config exists
+    if not os.path.exists(args.config):
+        logger.error(f"Configuration file not found: {args.config}")
+        logger.info("Please create a configuration file (see listener/README.md)")
+        sys.exit(1)
 
+    # Get agent_id from config to use in log filename
+    agent_id = get_agent_id_from_config(args.config)
+    log_file = f'challengectl-{agent_id}.log'
+
+    # Configure logging with file output and rotation
+    # Rotate existing log file with timestamp before starting new log
+    if os.path.exists(log_file):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archived_log = f'challengectl-{agent_id}.{timestamp}.log'
+        os.rename(log_file, archived_log)
+
+    # Convert log level string to logging constant
+    log_level = getattr(logging, args.log_level)
+
+    # Reconfigure logging with both file and console output
+    # Clear existing handlers and reconfigure
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Create formatters
+    log_format = f'%(asctime)s challengectl-{agent_id}[%(process)d]: %(levelname)s: %(message)s'
+    date_format = '%Y-%m-%dT%H:%M:%S'
+    formatter = logging.Formatter(log_format, datefmt=date_format)
+
+    # File handler (only log to file, use print() for user-facing messages)
+    file_handler = logging.FileHandler(log_file, mode='w')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(formatter)
+    logging.root.addHandler(file_handler)
+
+    # Set root logger level
+    logging.root.setLevel(log_level)
+
+    logging.info(f"Logging initialized at {args.log_level} level")
+    print(f"Logging to {log_file}")
+
+    # Create and start listener
     agent = ListenerAgent(args.config, simulate=args.simulate)
     sys.exit(agent.run())
 
