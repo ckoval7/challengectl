@@ -318,8 +318,10 @@ h1 {
 }
 
 .recording-image img {
-  max-width: 100%;
-  height: auto;
+  width: 100%;
+  height: 400px;
+  object-fit: cover;
+  object-position: top;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   transition: transform 0.2s;
