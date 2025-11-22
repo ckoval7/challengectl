@@ -309,57 +309,93 @@
             v-else
             class="enrollment-data"
           >
-            <!-- Step 2: Display complete configuration -->
+            <!-- Step 2: Display credentials and configuration -->
             <el-alert
-              title="Important: Save this configuration now!"
-              type="warning"
-              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              title="Runner Enrollment Created"
+              type="success"
               :closable="false"
               show-icon
-              class="mb-xl"
-            />
+            >
+              <p>
+                Copy the API key and enrollment token below. They will only be shown once!
+              </p>
+            </el-alert>
 
-            <div class="mb-15">
-              <el-space>
-                <el-button
-                  type="primary"
-                  @click="copyToClipboard(generatedConfig, 'Configuration')"
-                >
-                  Copy Full Config
-                </el-button>
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Runner Name">
+                  <el-input
+                    :model-value="enrollmentData.runner_name"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="enrollmentData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(enrollmentData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="enrollmentData.enrollment_token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(enrollmentData.enrollment_token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(enrollmentData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Runner Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>runner-config.yml</code> on your runner machine:
+              </p>
+
+              <el-input
+                :model-value="generatedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
                 <el-button
                   type="success"
+                  @click="copyToClipboard(generatedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
                   @click="downloadConfig"
                 >
                   Download runner-config.yml
                 </el-button>
-              </el-space>
-            </div>
-
-            <div class="config-display">
-              <h4>Complete Runner Configuration:</h4>
-              <pre class="config-content">{{ generatedConfig }}</pre>
-            </div>
-
-            <el-divider />
-
-            <div class="setup-instructions">
-              <h4>Setup Instructions:</h4>
-              <ol>
-                <li>Download or copy the complete configuration above</li>
-                <li>On your runner machine, save as <code>runner-config.yml</code></li>
-                <li>Customize the <code>radios</code> section for your SDR devices</li>
-                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-                <li>After successful enrollment, remove the <code>enrollment_token</code> line from the config</li>
-              </ol>
-            </div>
-
-            <el-divider />
-
-            <div class="credential-block">
-              <h4>Token Expires:</h4>
-              <div class="credential-value">
-                <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
               </div>
             </div>
           </div>
@@ -411,62 +447,103 @@
             <p>This will generate new enrollment credentials. The old API key will remain valid until the runner re-enrolls with the new credentials.</p>
           </div>
 
-          <div
-            v-else
-            class="enrollment-data"
-          >
+          <div v-else>
             <el-alert
-              title="Important: Save this configuration now!"
-              type="warning"
-              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              type="success"
+              title="Re-enrollment Credentials Generated"
               :closable="false"
-              show-icon
-              class="mb-xl"
             />
 
-            <div class="mb-15">
-              <el-space>
-                <el-button
-                  type="primary"
-                  @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
-                >
-                  Copy Full Config
-                </el-button>
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Runner ID">
+                  <el-input
+                    :model-value="reEnrollData.runner_id"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="reEnrollData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="reEnrollData.token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollData.token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(reEnrollData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Runner Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>runner-config.yml</code> on your NEW runner machine:
+              </p>
+
+              <el-input
+                :model-value="reEnrollGeneratedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
                 <el-button
                   type="success"
+                  @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
                   @click="downloadReEnrollConfig"
                 >
                   Download runner-config.yml
                 </el-button>
-              </el-space>
-            </div>
-
-            <div class="config-display">
-              <h4>Complete Runner Configuration:</h4>
-              <pre class="config-content">{{ reEnrollGeneratedConfig }}</pre>
-            </div>
-
-            <el-divider />
-
-            <div class="setup-instructions">
-              <h4>Re-enrollment Instructions:</h4>
-              <ol>
-                <li>Download or copy the complete configuration above</li>
-                <li>On the NEW runner machine, save as <code>runner-config.yml</code></li>
-                <li>Customize the <code>radios</code> section for your SDR devices</li>
-                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-                <li>After successful re-enrollment, remove the <code>enrollment_token</code> line from the config</li>
-                <li>The old runner will be automatically kicked once the new one connects</li>
-              </ol>
-            </div>
-
-            <el-divider />
-
-            <div class="credential-block">
-              <h4>Token Expires:</h4>
-              <div class="credential-value">
-                <code>{{ formatTimestamp(reEnrollData.expires_at) }}</code>
               </div>
+
+              <el-alert
+                type="info"
+                :closable="false"
+                class="mt-15"
+              >
+                <p><strong>Next Steps:</strong></p>
+                <ol>
+                  <li>On the NEW runner machine, save the configuration as <code>runner-config.yml</code></li>
+                  <li>Customize the <code>radios</code> section for your SDR devices</li>
+                  <li>Start the runner: <code>python -m challengectl.runner.runner</code></li>
+                  <li>The old runner will be automatically kicked once the new one connects</li>
+                </ol>
+              </el-alert>
             </div>
           </div>
 
@@ -587,7 +664,7 @@
           </el-table-column>
           <el-table-column
             label="Actions"
-            width="250"
+            width="350"
           >
             <template #default="scope">
               <el-space>
@@ -606,6 +683,13 @@
                   @click="enableListener(scope.row.agent_id)"
                 >
                   Enable
+                </el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  @click="showReEnrollListenerDialog(scope.row.agent_id)"
+                >
+                  Re-enroll
                 </el-button>
                 <el-button
                   size="small"
@@ -810,7 +894,7 @@
                     :rows="2"
                   >
                     <template #append>
-                      <el-button @click="copyToClipboard(listenerEnrollmentData.api_key)">
+                      <el-button @click="copyToClipboard(listenerEnrollmentData.api_key, 'API Key')">
                         Copy
                       </el-button>
                     </template>
@@ -825,7 +909,7 @@
                     :rows="2"
                   >
                     <template #append>
-                      <el-button @click="copyToClipboard(listenerEnrollmentData.enrollment_token)">
+                      <el-button @click="copyToClipboard(listenerEnrollmentData.enrollment_token, 'Enrollment Token')">
                         Copy
                       </el-button>
                     </template>
@@ -857,14 +941,14 @@
               <div class="button-group">
                 <el-button
                   type="success"
-                  @click="copyToClipboard(listenerEnrollmentData.config_yaml)"
+                  @click="copyToClipboard(listenerEnrollmentData.config_yaml, 'Configuration')"
                 >
                   Copy Configuration
                 </el-button>
                 <el-button
                   @click="downloadConfig(listenerEnrollmentData.config_yaml, `${listenerEnrollmentData.listener_name}-config.yml`)"
                 >
-                  Download as File
+                  Download listener-config.yml
                 </el-button>
               </div>
             </div>
@@ -878,6 +962,151 @@
               </el-button>
             </div>
           </div>
+        </el-dialog>
+
+        <!-- Re-enroll Listener Dialog -->
+        <el-dialog
+          v-model="reEnrollListenerDialogVisible"
+          title="Re-enroll Listener"
+          width="700px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!reEnrollListenerData">
+            <el-alert
+              type="warning"
+              title="Warning"
+              description="Generate fresh credentials to migrate this listener to a different host or update compromised credentials."
+              :closable="false"
+            />
+
+            <p><strong>Listener ID:</strong> {{ reEnrollListenerId }}</p>
+            <p>This will generate new enrollment credentials. The old API key will remain valid until the listener re-enrolls with the new credentials.</p>
+          </div>
+
+          <div v-else>
+            <el-alert
+              type="success"
+              title="Re-enrollment Credentials Generated"
+              :closable="false"
+            />
+
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Listener ID">
+                  <el-input
+                    :model-value="reEnrollListenerData.listener_id"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="reEnrollListenerData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollListenerData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="reEnrollListenerData.token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollListenerData.token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(reEnrollListenerData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Listener Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>listener-config.yml</code> on your NEW listener machine:
+              </p>
+
+              <el-input
+                :model-value="reEnrollListenerGeneratedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
+                <el-button
+                  type="success"
+                  @click="copyToClipboard(reEnrollListenerGeneratedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
+                  @click="downloadReEnrollListenerConfig"
+                >
+                  Download listener-config.yml
+                </el-button>
+              </div>
+
+              <el-alert
+                type="info"
+                :closable="false"
+                class="mt-15"
+              >
+                <p><strong>Next Steps:</strong></p>
+                <ol>
+                  <li>On the NEW listener machine, save the configuration as <code>listener-config.yml</code></li>
+                  <li>Install dependencies: <code>pip install -r requirements-listener.txt</code></li>
+                  <li>Start the listener: <code>python listener/listener.py --config listener-config.yml</code></li>
+                  <li>The old listener will be automatically kicked once the new one connects</li>
+                </ol>
+              </el-alert>
+            </div>
+          </div>
+
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button
+                v-if="!reEnrollListenerData"
+                @click="reEnrollListenerDialogVisible = false"
+              >
+                Cancel
+              </el-button>
+              <el-button
+                v-if="!reEnrollListenerData"
+                type="primary"
+                @click="generateReEnrollListenerToken"
+              >
+                Generate Re-enrollment Credentials
+              </el-button>
+              <el-button
+                v-if="reEnrollListenerData"
+                type="primary"
+                @click="closeReEnrollListenerDialog"
+              >
+                Done
+              </el-button>
+            </span>
+          </template>
         </el-dialog>
       </el-tab-pane>
 
@@ -1127,10 +1356,15 @@ export default {
     const enrollmentData = ref(null)
     const serverUrl = ref(window.location.origin)
 
-    // Re-enrollment state
+    // Re-enrollment state (runners)
     const reEnrollDialogVisible = ref(false)
     const reEnrollRunnerId = ref('')
     const reEnrollData = ref(null)
+
+    // Re-enrollment state (listeners)
+    const reEnrollListenerDialogVisible = ref(false)
+    const reEnrollListenerId = ref('')
+    const reEnrollListenerData = ref(null)
 
     // Listener enrollment state
     // Note: Updated to support multiple devices like runners
@@ -1572,6 +1806,108 @@ radios:
       ElMessage.success('Configuration downloaded')
     }
 
+    // Listener re-enrollment functions
+    const showReEnrollListenerDialog = (listenerId) => {
+      reEnrollListenerDialogVisible.value = true
+      reEnrollListenerId.value = listenerId
+      reEnrollListenerData.value = null
+    }
+
+    const closeReEnrollListenerDialog = () => {
+      reEnrollListenerDialogVisible.value = false
+      reEnrollListenerId.value = ''
+      reEnrollListenerData.value = null
+    }
+
+    const generateReEnrollListenerToken = async () => {
+      if (!reEnrollListenerId.value) {
+        ElMessage.warning('No listener ID specified')
+        return
+      }
+
+      try {
+        const response = await api.post(`/enrollment/re-enroll/${reEnrollListenerId.value}`, {
+          expires_hours: 24
+        })
+
+        reEnrollListenerData.value = {
+          token: response.data.token,
+          api_key: response.data.api_key,
+          listener_id: response.data.listener_id || response.data.agent_id,
+          expires_at: response.data.expires_at
+        }
+
+        ElMessage.success('Re-enrollment credentials generated')
+      } catch (error) {
+        console.error('Error generating re-enrollment token:', error)
+        ElMessage.error('Failed to generate re-enrollment credentials')
+      }
+    }
+
+    const reEnrollListenerGeneratedConfig = computed(() => {
+      if (!reEnrollListenerData.value) return ''
+
+      const config = `---
+# ChallengeCtl Listener Configuration - RE-ENROLLMENT
+# Generated for listener: ${reEnrollListenerData.value.listener_id}
+
+agent:
+  # Agent type and identification
+  agent_type: listener
+  agent_id: "${reEnrollListenerData.value.listener_id}"
+
+  # Server URL
+  server_url: "${serverUrl.value}"
+
+  # Re-enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
+  enrollment_token: "${reEnrollListenerData.value.token}"
+  api_key: "${reEnrollListenerData.value.api_key}"
+
+  # TLS/SSL Configuration
+  ca_cert: ""
+  verify_ssl: true
+
+  # Heartbeat interval (seconds)
+  heartbeat_interval: 30
+
+  # WebSocket configuration
+  websocket_enabled: true
+  websocket_reconnect_delay: 5
+
+  # Recording configuration
+  recording:
+    output_dir: "recordings"
+    sample_rate: 2000000
+    fft_size: 1024
+    frame_rate: 20
+    gain: 40
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+    reference_level_dbm: -10.0
+
+    # SDR device configuration
+    device:
+      id: "rtlsdr=0"  # Customize for your device
+      type: "rtlsdr"  # rtlsdr, hackrf, usrp, etc.
+`
+      return config
+    })
+
+    const downloadReEnrollListenerConfig = () => {
+      if (!reEnrollListenerData.value) return
+
+      const blob = new Blob([reEnrollListenerGeneratedConfig.value], { type: 'text/yaml' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `listener-config-${reEnrollListenerData.value.listener_id}.yml`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      ElMessage.success('Configuration downloaded')
+    }
+
     const enableRunner = async (runnerId) => {
       try {
         await api.post(`/runners/${runnerId}/enable`)
@@ -1948,6 +2284,10 @@ curl -k \\
       reEnrollRunnerId,
       reEnrollData,
       reEnrollGeneratedConfig,
+      reEnrollListenerDialogVisible,
+      reEnrollListenerId,
+      reEnrollListenerData,
+      reEnrollListenerGeneratedConfig,
       showAddRunnerDialog,
       addDevice,
       removeDevice,
@@ -1959,6 +2299,10 @@ curl -k \\
       generateReEnrollToken,
       closeReEnrollDialog,
       downloadReEnrollConfig,
+      showReEnrollListenerDialog,
+      generateReEnrollListenerToken,
+      closeReEnrollListenerDialog,
+      downloadReEnrollListenerConfig,
       enableRunner,
       disableRunner,
       enableListener,

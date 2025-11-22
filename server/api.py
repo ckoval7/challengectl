@@ -2714,30 +2714,33 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Token not found'}), 404
 
-        @self.app.route('/api/enrollment/re-enroll/<runner_id>', methods=['POST'])
+        @self.app.route('/api/enrollment/re-enroll/<agent_id>', methods=['POST'])
         @self.require_admin_auth
         @self.require_csrf
-        def re_enroll_runner(runner_id):
-            """Generate a fresh enrollment token for an existing runner.
+        def re_enroll_agent(agent_id):
+            """Generate a fresh enrollment token for an existing runner or listener.
 
-            This allows re-enrollment of a runner on a different host or after
+            This allows re-enrollment of an agent on a different host or after
             the original credentials are compromised. Generates new enrollment
             token and API key.
 
             Args:
-                runner_id: The runner ID to re-enroll
+                agent_id: The agent ID (runner or listener) to re-enroll
             Request body:
                 expires_hours: Optional hours until token expires (default: 24)
 
             Returns:
                 token: New enrollment token
                 api_key: New API key
+                agent_type: Type of agent (runner or listener)
                 expires_at: Token expiration timestamp
             """
             # Check if agent exists
-            existing_agent = self.db.get_agent(runner_id)
+            existing_agent = self.db.get_agent(agent_id)
             if not existing_agent:
                 return jsonify({'error': 'Agent not found'}), 404
+
+            agent_type = existing_agent.get('agent_type', 'runner')
 
             data = request.json or {}
             expires_hours = data.get('expires_hours', 24)
@@ -2755,24 +2758,34 @@ class ChallengeCtlAPI:
             # Create enrollment token marked for re-enrollment
             success = self.db.create_enrollment_token(
                 token=enrollment_token,
-                runner_name=runner_id,  # Use runner_id as name for re-enrollment
+                runner_name=agent_id,  # Use agent_id as name for re-enrollment
                 created_by=username,
                 expires_at=expires_at,
-                re_enrollment_for=runner_id  # Mark this as a re-enrollment token
+                re_enrollment_for=agent_id  # Mark this as a re-enrollment token
             )
 
             if not success:
                 return jsonify({'error': 'Failed to create enrollment token'}), 500
 
-            logger.info(f"Re-enrollment token generated for runner {runner_id} by {username}")
+            logger.info(f"Re-enrollment token generated for {agent_type} {agent_id} by {username}")
 
-            return jsonify({
+            # Return response with appropriate ID field for backwards compatibility
+            response = {
                 'token': enrollment_token,
                 'api_key': new_api_key,
-                'runner_id': runner_id,
+                'agent_id': agent_id,
+                'agent_type': agent_type,
                 'expires_at': expires_at.isoformat(),
                 'expires_hours': expires_hours
-            }), 201
+            }
+
+            # Add backwards-compatible fields
+            if agent_type == 'runner':
+                response['runner_id'] = agent_id
+            elif agent_type == 'listener':
+                response['listener_id'] = agent_id
+
+            return jsonify(response), 201
 
         # Provisioning API key management endpoints (admin only)
         @self.app.route('/api/provisioning/keys', methods=['POST'])
