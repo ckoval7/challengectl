@@ -416,6 +416,9 @@ class Database:
         if status == 'online' and last_heartbeat:
             # Check if agent is actively online (heartbeat within 90 seconds)
             last_hb = datetime.fromisoformat(last_heartbeat)
+            # Ensure timezone-aware comparison
+            if last_hb.tzinfo is None:
+                last_hb = last_hb.replace(tzinfo=timezone.utc)
             time_since_heartbeat = (datetime.now(timezone.utc) - last_hb).total_seconds()
 
             if time_since_heartbeat < 90:
@@ -1373,6 +1376,9 @@ class Database:
 
         # Check if expired
         expires_at = datetime.fromisoformat(token_data['expires_at'])
+        # Ensure timezone-aware comparison
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires_at:
             logger.warning(f"Enrollment token expired")
             return (False, None)

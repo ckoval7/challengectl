@@ -80,7 +80,7 @@
             class="sidebar-menu"
           >
             <el-menu-item index="/admin">
-              <el-icon><Monitor /></el-icon>
+              <el-icon><House /></el-icon>
               <span>Dashboard</span>
             </el-menu-item>
             <el-menu-item index="/runners">
