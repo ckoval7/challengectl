@@ -85,11 +85,11 @@
             </el-menu-item>
             <el-menu-item index="/runners">
               <el-icon><Connection /></el-icon>
-              <span>Runners</span>
+              <span>Agents</span>
             </el-menu-item>
             <el-menu-item index="/challenge-config">
               <el-icon><Setting /></el-icon>
-              <span>Manage Challenges</span>
+              <span>Challenges</span>
             </el-menu-item>
             <el-menu-item index="/logs">
               <el-icon><Notebook /></el-icon>
