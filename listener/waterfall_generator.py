@@ -14,6 +14,7 @@ from matplotlib.colors import LinearSegmentedColormap
 import logging
 
 logger = logging.getLogger(__name__)
+COLORMAP = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
 
 
 def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
@@ -63,7 +64,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         logger.debug(f"Auto-scaling waterfall: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
 
     # Create custom colormap (blue -> green -> yellow -> red)
-    colors = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
+    colors = COLORMAP
     n_bins = 256
     cmap = LinearSegmentedColormap.from_list('spectrum', colors, N=n_bins)
 
@@ -158,7 +159,7 @@ def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample
         freq_min = frequency - sample_rate / 2
         freq_max = frequency + sample_rate / 2
 
-        colors = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
+        colors = COLORMAP
         cmap = LinearSegmentedColormap.from_list('spectrum', colors, N=256)
 
         im = ax.imshow(
