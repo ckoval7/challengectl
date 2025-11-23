@@ -59,16 +59,16 @@ class TestDatabaseInit:
 class TestRunnerOperations:
     """Test runner-related database operations."""
 
-    def test_register_runner(self, temp_db):
+    def test_register_agent(self, temp_db):
         """Test registering a new runner."""
-        result = temp_db.register_runner(
+        result = temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
         )
 
-        # register_runner returns True on success
+        # register_agent returns True on success
         assert result is True
 
         # Verify runner was registered
@@ -79,7 +79,7 @@ class TestRunnerOperations:
 
     def test_get_runner(self, temp_db):
         """Test getting runner information."""
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
@@ -93,7 +93,7 @@ class TestRunnerOperations:
 
     def test_update_heartbeat(self, temp_db):
         """Test updating runner heartbeat."""
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
@@ -110,7 +110,7 @@ class TestRunnerOperations:
 
     def test_enable_disable_runner(self, temp_db):
         """Test enabling and disabling runners."""
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
@@ -131,7 +131,7 @@ class TestRunnerOperations:
 
     def test_mark_runner_offline(self, temp_db):
         """Test marking runner as offline."""
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
@@ -298,7 +298,7 @@ class TestTransmissionOperations:
     def test_record_transmission_start(self, temp_db):
         """Test recording transmission start."""
         # Create a runner and challenge first
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
@@ -325,7 +325,7 @@ class TestTransmissionOperations:
     def test_get_recent_transmissions(self, temp_db):
         """Test getting recent transmissions."""
         # Create test data
-        temp_db.register_runner(
+        temp_db.register_agent(
             runner_id='test-runner',
             hostname='test-host',
             ip_address='127.0.0.1',
