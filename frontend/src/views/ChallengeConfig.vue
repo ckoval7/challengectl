@@ -958,8 +958,9 @@ print(response.json())</code></pre>
 </template>
 
 <script>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api } from '../api'
+import { websocket } from '../websocket'
 import { ElMessage } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 import { Loading } from '@element-plus/icons-vue'
@@ -1491,13 +1492,50 @@ export default {
       }
     }
 
+    // WebSocket event handlers
+    const handleChallengeUpdated = (event) => {
+      console.log('Challenge updated event:', event)
+      // Reload challenges to get latest data
+      loadChallenges()
+    }
+
+    const handleChallengeAssigned = (event) => {
+      console.log('Challenge assigned event:', event)
+      // Update the specific challenge status
+      const challenge = challenges.value.find(c => c.challenge_id === event.challenge_id)
+      if (challenge) {
+        challenge.status = 'assigned'
+        challenge.assigned_to = event.agent_id || event.runner_id
+      }
+    }
+
+    const handleTransmissionComplete = (event) => {
+      console.log('Transmission complete event:', event)
+      // Update the specific challenge - it should go back to waiting/queued
+      const challenge = challenges.value.find(c => c.challenge_id === event.challenge_id)
+      if (challenge) {
+        // The challenge will be in 'waiting' state after transmission
+        // Reload to get accurate status and timing
+        loadChallenges()
+      }
+    }
+
     onMounted(() => {
       loadChallenges()
       loadFrequencyRanges()
 
-      // Refresh periodically for live status
-      // const interval = setInterval(loadChallenges, 15000)
-      // onUnmounted(() => clearInterval(interval))
+      // Connect WebSocket for real-time updates
+      websocket.connect()
+      websocket.on('challenge_updated', handleChallengeUpdated)
+      websocket.on('challenge_assigned', handleChallengeAssigned)
+      websocket.on('transmission_complete', handleTransmissionComplete)
+    })
+
+    onUnmounted(() => {
+      // Clean up WebSocket listeners
+      websocket.off('challenge_updated', handleChallengeUpdated)
+      websocket.off('challenge_assigned', handleChallengeAssigned)
+      websocket.off('transmission_complete', handleTransmissionComplete)
     })
 
     return {

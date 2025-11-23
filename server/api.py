@@ -3330,6 +3330,13 @@ radios:
             success = self.db.add_challenge(challenge_id, name, config)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'created',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({
@@ -3379,6 +3386,13 @@ radios:
             success = self.db.update_challenge(challenge_id, config)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'updated',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({'status': 'updated'}), 200
@@ -3393,6 +3407,13 @@ radios:
             success = self.db.delete_challenge(challenge_id)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'deleted',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({'status': 'deleted'}), 200
@@ -3412,6 +3433,17 @@ radios:
 
             if success:
                 logger.info(f"Challenge {challenge_id} {'enabled' if enabled else 'disabled'} successfully")
+
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'enabled' if enabled else 'disabled',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+
                 return jsonify({'status': 'updated'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
