@@ -526,6 +526,10 @@ class ChallengeCtlRunner:
         flag = config.get('flag')
         frequency = config.get('frequency')
 
+        # Handle flag_file_hash if present (from file uploads)
+        if 'flag_file_hash' in config and config['flag_file_hash']:
+            flag = f"sha256:{config['flag_file_hash']}"
+
         logger.info(f"Executing challenge: {name} ({modulation}) on {frequency} Hz")
 
         # Select first available device (simple strategy for now)
