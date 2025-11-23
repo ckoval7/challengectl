@@ -763,6 +763,71 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 4. **Interference**
    **Solution**: Check for nearby transmitters, change frequency, or add filtering.
 
+### Challenges Stuck as Active on Public Dashboard
+
+**Symptoms**: Challenge shows as "active" on the public dashboard but transmission has completed or failed.
+
+**Cause**: The challenge transmission exceeded its expected duration without completing, or the runner crashed mid-transmission.
+
+**How the timeout works**:
+- When a challenge is assigned, the server calculates the expected transmission duration
+- A timeout is set to `expected_duration × transmission_timeout_multiplier` (default: 2.0)
+- If the transmission doesn't complete within this timeout, the challenge is automatically marked as inactive
+- A background cleanup task checks every 10 seconds for expired transmissions
+
+**Solutions**:
+
+1. **Wait for automatic timeout**
+   - Default timeout: 2× expected duration
+   - Example: 30-second challenge times out after 60 seconds
+   - Check server logs for timeout events:
+   ```bash
+   grep "Transmission timeout" challengectl.server.log
+   ```
+
+2. **Adjust timeout multiplier** (if timeouts are too aggressive or too lenient)
+
+   Edit `server-config.yml`:
+   ```yaml
+   server:
+     transmission_timeout_multiplier: 2.0  # Increase for slower transmissions
+   ```
+
+   Recommended values:
+   - `1.5` - Aggressive (faster cleanup, may timeout slow devices)
+   - `2.0` - Balanced (default, 100% buffer)
+   - `3.0` - Conservative (allows for very slow transmissions)
+
+   Restart server after changing:
+   ```bash
+   # Restart server to apply new configuration
+   sudo systemctl restart challengectl-server
+   ```
+
+3. **Check runner status**
+   - Verify runner is online and not crashed
+   - Check runner logs for transmission errors:
+   ```bash
+   tail -f challengectl.runner.log
+   ```
+
+4. **Verify challenge completed successfully**
+   - Check Logs page in web interface for transmission completion
+   - If runner reported success but challenge still shows active, wait for timeout
+   - Successful completions immediately clear active status
+
+**Expected behavior**:
+- Successful transmission: Challenge immediately marked inactive when runner reports completion
+- Failed transmission: Challenge marked inactive after timeout period
+- Crashed runner: Challenge marked inactive after timeout period
+
+**Note**: This timeout only affects the public dashboard active indicator. It does not affect:
+- Challenge assignment behavior (controlled by `assignment_timeout`)
+- Runner connectivity (controlled by `heartbeat_timeout`)
+- The actual transmission process
+
+See [Configuration Reference](Configuration-Reference#transmission-timeout) for detailed configuration options.
+
 ## Authentication Issues
 
 ### Cannot Log In to Web Interface

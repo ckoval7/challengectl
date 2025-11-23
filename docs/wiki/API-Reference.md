@@ -633,7 +633,7 @@ No authentication required.
 
 #### GET /api/public/challenges
 
-Get public information about challenges.
+Get public information about challenges for the participant-facing public dashboard.
 
 **Request:**
 ```http
@@ -645,18 +645,68 @@ GET /api/public/challenges HTTP/1.1
 {
   "challenges": [
     {
-      "name": "NBFM_FLAG_1",
+      "challenge_id": "NBFM_FLAG_1",
+      "name": "NBFM Flag 1",
       "modulation": "nbfm",
       "frequency": 146550000,
-      "enabled": true,
-      "state": "waiting",
-      "last_run": "2024-01-15T10:25:00Z"
+      "frequency_display": "146.550 MHz",
+      "last_tx_time": "2024-01-15T10:25:00Z",
+      "is_active": false
     }
-  ]
+  ],
+  "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
 
-Fields shown depend on challenge `public_view` configuration.
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `challenge_id` | string | Unique challenge identifier |
+| `name` | string | Challenge display name |
+| `modulation` | string | Modulation type (if `show_modulation` enabled) |
+| `frequency` | integer | Frequency in Hz (if `show_frequency` enabled) |
+| `frequency_display` | string | Human-readable frequency (e.g., "146.550 MHz") |
+| `last_tx_time` | string | ISO 8601 timestamp of last transmission (if `show_last_tx_time` enabled) |
+| `is_active` | boolean | Whether challenge is currently transmitting (if `show_active_status` enabled) |
+
+**Active Status Behavior:**
+
+The `is_active` field indicates whether a challenge is currently transmitting. This status automatically times out to prevent stuck indicators when runners fail:
+
+- **True**: Challenge is assigned and transmission is in progress
+- **False**: Challenge is not transmitting
+- **Timeout**: Automatically becomes `false` after `expected_duration × transmission_timeout_multiplier` seconds (default: 2.0)
+- **Update frequency**: Status checked every 10 seconds by background cleanup task
+
+Example: A 30-second challenge with default timeout (2.0) will show as active for up to 60 seconds, even if the runner crashes.
+
+See [Configuration Reference](Configuration-Reference#transmission-timeout) for timeout configuration.
+
+**Visibility Control:**
+
+Fields shown depend on the challenge `public_view` configuration. Administrators can control which information is visible to participants:
+
+```yaml
+challenges:
+  - name: "Example Challenge"
+    config:
+      public_view:
+        show_modulation: true      # Show modulation type
+        show_frequency: true        # Show frequency
+        show_last_tx_time: true     # Show last transmission time
+        show_active_status: true    # Show active indicator
+```
+
+**WebSocket Updates:**
+
+Subscribe to the `/public` WebSocket namespace to receive real-time updates when challenges change:
+
+```javascript
+socket.on('challenges_update', (data) => {
+  console.log('Updated challenges:', data.challenges);
+});
+```
 
 ---
 

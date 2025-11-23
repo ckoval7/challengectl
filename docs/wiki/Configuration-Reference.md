@@ -30,6 +30,7 @@ server:
   files_dir: "files"
   heartbeat_timeout: 90
   assignment_timeout: 300
+  transmission_timeout_multiplier: 2.0
 ```
 
 #### Parameters
@@ -42,6 +43,7 @@ server:
 | `files_dir` | string | `"files"` | Directory where challenge files are stored. Relative to server working directory. |
 | `heartbeat_timeout` | integer | `90` | Seconds before marking a runner offline due to missed heartbeats. Should be 3x heartbeat interval. |
 | `assignment_timeout` | integer | `300` | Seconds before requeuing a challenge that remains assigned. Prevents stuck assignments. |
+| `transmission_timeout_multiplier` | float | `2.0` | Multiplier for transmission timeout on public dashboard. Challenges remain "active" for `expected_duration * multiplier` seconds. Prevents stuck active indicators when runners fail. |
 
 #### CORS Origins
 
@@ -77,6 +79,44 @@ The enrollment process provides:
 - Enrollment token expiration for time-limited registration
 - Each runner has a unique, cryptographically random 32-character key
 - Re-enrollment process for legitimate host migration
+
+#### Transmission Timeout
+
+The `transmission_timeout_multiplier` controls how long challenges appear as "active" on the public dashboard. This prevents challenges from being stuck in an active state indefinitely when runners encounter errors and fail to complete transmissions.
+
+**How it works**:
+1. When a challenge is assigned, the server calculates the expected transmission duration based on the challenge configuration (file length, modulation parameters, pre-paint time, etc.)
+2. The timeout is set to: `expected_duration × transmission_timeout_multiplier`
+3. If the transmission doesn't complete within the timeout period, the challenge is automatically marked as inactive on the public dashboard
+4. A background cleanup task checks every 10 seconds for expired transmissions
+
+**Recommended values**:
+- **`1.5`**: Aggressive timeout (50% buffer) - faster cleanup, but may timeout slow devices
+- **`2.0`**: Balanced (100% buffer) - **default**, good for most scenarios
+- **`3.0`**: Conservative (200% buffer) - allows for very slow transmissions or high network latency
+
+**Example**:
+```yaml
+server:
+  transmission_timeout_multiplier: 2.0  # Default
+```
+
+With a 30-second challenge and multiplier of 2.0:
+- Expected duration: 30 seconds
+- Timeout: 60 seconds (30 × 2.0)
+- Challenge shows as "active" for up to 60 seconds after assignment
+- If runner completes successfully, challenge immediately marks as inactive
+- If runner crashes or fails, challenge automatically marks inactive after 60 seconds
+
+**Logging**: Timeout events are logged for monitoring:
+```
+Transmission timeout: challenge FM_FLAG_1 (transmission 12345) exceeded expected duration (30.0s * 2.0)
+```
+
+**Important**: This timeout only affects the public dashboard display. It does not affect:
+- Challenge assignment to runners (controlled by `assignment_timeout`)
+- Runner heartbeat detection (controlled by `heartbeat_timeout`)
+- Listener assignment timeouts (15-minute default)
 
 ### Frequency Ranges Section
 
