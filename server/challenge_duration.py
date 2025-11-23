@@ -165,9 +165,13 @@ def calculate_challenge_duration(config: Dict, files_dir: str = "files",
     if modulation in ['nbfm', 'ssb', 'freedv']:
         # Audio-based modulations
         flag = config.get('flag', '')
+        flag_file_hash = config.get('flag_file_hash')
 
-        # Check if flag is a file path
-        if flag.startswith('sha256:'):
+        # Check for flag_file_hash first (from uploaded files)
+        if flag_file_hash:
+            file_path = os.path.join(files_dir, flag_file_hash)
+        # Check if flag is a sha256: reference
+        elif flag.startswith('sha256:'):
             # It's a hash reference - construct file path
             file_hash = flag[7:]
             file_path = os.path.join(files_dir, file_hash)
@@ -197,9 +201,13 @@ def calculate_challenge_duration(config: Dict, files_dir: str = "files",
     elif modulation == 'paint':
         # Spectrum paint
         flag = config.get('flag', '')
+        flag_file_hash = config.get('flag_file_hash')
 
-        # Check if flag is a file path
-        if flag.startswith('sha256:'):
+        # Check for flag_file_hash first (from uploaded files)
+        if flag_file_hash:
+            file_path = os.path.join(files_dir, flag_file_hash)
+        # Check if flag is a sha256: reference
+        elif flag.startswith('sha256:'):
             file_hash = flag[7:]
             file_path = os.path.join(files_dir, file_hash)
         else:
@@ -222,8 +230,14 @@ def calculate_challenge_duration(config: Dict, files_dir: str = "files",
         hop_time = config.get('hop_time', 0.1)
         # Try to estimate from audio if available
         flag = config.get('flag', '')
-        if flag:
-            if flag.startswith('sha256:'):
+        flag_file_hash = config.get('flag_file_hash')
+
+        if flag_file_hash or flag:
+            # Check for flag_file_hash first (from uploaded files)
+            if flag_file_hash:
+                file_path = os.path.join(files_dir, flag_file_hash)
+            # Check if flag is a sha256: reference
+            elif flag.startswith('sha256:'):
                 file_hash = flag[7:]
                 file_path = os.path.join(files_dir, file_hash)
             else:
