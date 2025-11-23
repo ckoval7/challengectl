@@ -543,11 +543,21 @@ def main():
         logger.info("Please edit the configuration file and restart the server")
         sys.exit(1)
 
+    # Convert files_dir to absolute path to avoid working directory issues
+    # If it's already absolute, this is a no-op
+    # If it's relative, resolve it relative to the server script directory's parent (repo root)
+    if not os.path.isabs(args.files_dir):
+        server_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.dirname(server_dir)
+        files_dir = os.path.join(repo_root, args.files_dir)
+    else:
+        files_dir = args.files_dir
+
     # Create server
     server = ChallengeCtlServer(
         config_path=args.config,
         db_path=args.database,
-        files_dir=args.files_dir
+        files_dir=files_dir
     )
 
     # Start server
