@@ -11,7 +11,7 @@
       >
         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-right: 20px;">
           <h2 style="margin: 0; line-height: 1.3; font-size: 1.5em;">
-            ChallengeCtl Control Center<span v-if="conferenceName"> - {{ conferenceName }}</span>
+            Challengectlv2 Orchestrator<span v-if="conferenceName"> - {{ conferenceName }}</span>
           </h2>
           <div style="font-size: 0.9em; margin-top: 5px; opacity: 0.95;">
             <ConferenceCountdown />
