@@ -40,8 +40,9 @@ class TestEndToEndWorkflow:
     def test_runner_registration_workflow(self, integrated_db):
         """Test complete runner registration and heartbeat workflow."""
         # Register runner
-        result = integrated_db.register_runner(
-            runner_id='test-runner-1',
+        result = integrated_db.register_agent(
+            agent_id='test-runner-1',
+            agent_type='runner',
             hostname='test-host',
             ip_address='192.168.1.100',
             devices=[
@@ -53,19 +54,20 @@ class TestEndToEndWorkflow:
         assert result is True
 
         # Update heartbeat
-        success, message = integrated_db.update_heartbeat('test-runner-1')
+        success, message = integrated_db.update_agent_heartbeat('test-runner-1')
         assert success is True
 
         # Get runner status
-        runner = integrated_db.get_runner('test-runner-1')
+        runner = integrated_db.get_agent('test-runner-1')
         assert runner is not None
         assert runner['hostname'] == 'test-host'
 
     def test_challenge_transmission_workflow(self, integrated_db):
         """Test complete challenge creation and transmission workflow."""
         # Create a runner
-        integrated_db.register_runner(
-            runner_id='test-runner',
+        integrated_db.register_agent(
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
@@ -89,7 +91,7 @@ class TestEndToEndWorkflow:
         # Record transmission
         transmission_id = integrated_db.record_transmission_start(
             challenge_id='rf-challenge-1',
-            runner_id='test-runner',
+            agent_id='test-runner',
             device_id='rtlsdr',
             frequency=146520000
         )
@@ -110,7 +112,7 @@ class TestEndToEndWorkflow:
         ]
 
         for runner_id, hostname, ip in runners:
-            integrated_db.register_runner(
+            integrated_db.register_agent(
                 runner_id=runner_id,
                 hostname=hostname,
                 ip_address=ip,
@@ -118,28 +120,29 @@ class TestEndToEndWorkflow:
             )
 
         # Get all runners
-        all_runners = integrated_db.get_all_runners()
+        all_runners = integrated_db.get_all_agents(agent_type='runner')
         assert len(all_runners) == 3
 
         # Disable one runner
-        integrated_db.disable_runner('runner-2')
+        integrated_db.disable_agent('runner-2')
 
         # Verify runner is disabled
-        runner = integrated_db.get_runner('runner-2')
+        runner = integrated_db.get_agent('runner-2')
         assert runner['enabled'] == 0
 
     def test_challenge_assignment_workflow(self, integrated_db):
         """Test challenge assignment to runners."""
         # Create runner
-        integrated_db.register_runner(
-            runner_id='test-runner',
+        integrated_db.register_agent(
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
         )
 
         # Mark runner as online
-        integrated_db.update_heartbeat('test-runner')
+        integrated_db.update_agent_heartbeat('test-runner')
 
         # Create challenges
         for i in range(3):
@@ -163,8 +166,9 @@ class TestDataConsistency:
     def test_unique_runner_id(self, integrated_db):
         """Test that runner IDs must be unique."""
         # Register a runner
-        result1 = integrated_db.register_runner(
-            runner_id='unique-runner',
+        result1 = integrated_db.register_agent(
+            agent_id='unique-runner',
+            agent_type='runner',
             hostname='host1',
             ip_address='127.0.0.1',
             devices=[]
@@ -172,15 +176,16 @@ class TestDataConsistency:
         assert result1 is True
 
         # Registering with same ID should update, not fail
-        result2 = integrated_db.register_runner(
-            runner_id='unique-runner',
+        result2 = integrated_db.register_agent(
+            agent_id='unique-runner',
+            agent_type='runner',
             hostname='host2',
             ip_address='127.0.0.2',
             devices=[]
         )
 
         # Should have updated the runner
-        runner = integrated_db.get_runner('unique-runner')
+        runner = integrated_db.get_agent('unique-runner')
         assert runner is not None
         assert runner['hostname'] == 'host2'
 
@@ -208,8 +213,9 @@ class TestDataConsistency:
     def test_cascade_delete_behavior(self, integrated_db):
         """Test deletion behavior."""
         # Create a runner and challenge
-        integrated_db.register_runner(
-            runner_id='test-runner',
+        integrated_db.register_agent(
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
@@ -237,8 +243,9 @@ class TestPerformance:
     def test_many_transmissions(self, integrated_db):
         """Test handling many transmissions."""
         # Create a runner and challenge
-        integrated_db.register_runner(
-            runner_id='test-runner',
+        integrated_db.register_agent(
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
@@ -254,7 +261,7 @@ class TestPerformance:
         for i in range(50):
             integrated_db.record_transmission_start(
                 challenge_id='popular-challenge',
-                runner_id='test-runner',
+                agent_id='test-runner',
                 device_id='rtlsdr',
                 frequency=146520000 + i
             )
@@ -267,7 +274,7 @@ class TestPerformance:
         """Test handling many runners."""
         # Register many runners
         for i in range(20):
-            integrated_db.register_runner(
+            integrated_db.register_agent(
                 runner_id=f'runner-{i}',
                 hostname=f'host-{i}',
                 ip_address=f'192.168.1.{i}',
@@ -275,7 +282,7 @@ class TestPerformance:
             )
 
         # Get all runners
-        runners = integrated_db.get_all_runners()
+        runners = integrated_db.get_all_agents(agent_type='runner')
         assert len(runners) >= 20
 
     def test_many_challenges(self, integrated_db):

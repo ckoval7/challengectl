@@ -373,7 +373,7 @@ class TestTransmissionOperations:
         # Record transmission start
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-runner',
+            runner_id='test-runner',
             device_id='0',
             frequency=146520000
         )
@@ -401,7 +401,7 @@ class TestTransmissionOperations:
         # Record a transmission
         temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-runner',
+            runner_id='test-runner',
             device_id='0',
             frequency=146520000
         )
@@ -434,7 +434,7 @@ class TestListenerAssignments:
         # Create transmission first
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-listener',
+            runner_id='test-listener',
             device_id='0',
             frequency=146520000
         )
@@ -471,7 +471,7 @@ class TestListenerAssignments:
 
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-listener',
+            runner_id='test-listener',
             device_id='0',
             frequency=146520000
         )
@@ -512,7 +512,7 @@ class TestListenerAssignments:
 
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-listener',
+            runner_id='test-listener',
             device_id='0',
             frequency=146520000
         )
@@ -554,7 +554,7 @@ class TestListenerAssignments:
 
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            agent_id='test-listener',
+            runner_id='test-listener',
             device_id='0',
             frequency=146520000
         )
