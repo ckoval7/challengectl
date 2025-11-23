@@ -48,101 +48,159 @@ class TestDatabaseInit:
             tables = {row[0] for row in cursor.fetchall()}
 
             # Check that core tables exist
-            assert 'runners' in tables
+            assert 'agents' in tables
             assert 'users' in tables
             assert 'challenges' in tables
             assert 'transmissions' in tables
             assert 'sessions' in tables
             assert 'enrollment_tokens' in tables
+            assert 'listener_assignments' in tables
 
 
-class TestRunnerOperations:
-    """Test runner-related database operations."""
+class TestAgentOperations:
+    """Test agent-related database operations (runners and listeners)."""
 
-    def test_register_agent(self, temp_db):
-        """Test registering a new runner."""
+    def test_register_runner_agent(self, temp_db):
+        """Test registering a new runner agent."""
         result = temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
-            devices=[{'device_id': 'rtlsdr', 'type': 'rtl-sdr'}]
+            devices=[{'device_id': '0', 'model': 'rtl-sdr'}]
         )
 
         # register_agent returns True on success
         assert result is True
 
         # Verify runner was registered
-        runners = temp_db.get_all_runners()
-        assert len(runners) == 1
-        assert runners[0]['runner_id'] == 'test-runner'
-        assert runners[0]['hostname'] == 'test-host'
+        agents = temp_db.get_all_agents(agent_type='runner')
+        assert len(agents) == 1
+        assert agents[0]['agent_id'] == 'test-runner'
+        assert agents[0]['agent_type'] == 'runner'
+        assert agents[0]['hostname'] == 'test-host'
 
-    def test_get_runner(self, temp_db):
-        """Test getting runner information."""
+    def test_register_listener_agent(self, temp_db):
+        """Test registering a new listener agent."""
+        result = temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[{'device_id': '0', 'model': 'rtl-sdr'}]
+        )
+
+        assert result is True
+
+        # Verify listener was registered
+        agents = temp_db.get_all_agents(agent_type='listener')
+        assert len(agents) == 1
+        assert agents[0]['agent_id'] == 'test-listener'
+        assert agents[0]['agent_type'] == 'listener'
+
+    def test_get_agent(self, temp_db):
+        """Test getting agent information."""
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
         )
 
-        runner = temp_db.get_runner('test-runner')
-        assert runner is not None
-        assert runner['runner_id'] == 'test-runner'
-        assert runner['status'] == 'online'  # Runner is online when actively registering
+        agent = temp_db.get_agent('test-runner')
+        assert agent is not None
+        assert agent['agent_id'] == 'test-runner'
+        assert agent['agent_type'] == 'runner'
+        assert agent['status'] == 'online'  # Agent is online when actively registering
 
-    def test_update_heartbeat(self, temp_db):
-        """Test updating runner heartbeat."""
+    def test_update_agent_heartbeat(self, temp_db):
+        """Test updating agent heartbeat."""
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
         )
 
         # Update heartbeat
-        success, message = temp_db.update_heartbeat('test-runner')
+        success, message = temp_db.update_agent_heartbeat('test-runner')
         assert success is True
 
         # Verify heartbeat was updated
-        runner = temp_db.get_runner('test-runner')
-        assert runner['last_heartbeat'] is not None
+        agent = temp_db.get_agent('test-runner')
+        assert agent['last_heartbeat'] is not None
 
-    def test_enable_disable_runner(self, temp_db):
-        """Test enabling and disabling runners."""
+    def test_enable_disable_agent(self, temp_db):
+        """Test enabling and disabling agents."""
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
         )
 
-        # Disable runner
-        result = temp_db.disable_runner('test-runner')
+        # Disable agent
+        result = temp_db.disable_agent('test-runner')
         assert result is True
-        runner = temp_db.get_runner('test-runner')
-        assert runner['enabled'] == 0
+        agent = temp_db.get_agent('test-runner')
+        assert agent['enabled'] == 0
 
-        # Enable runner
-        result = temp_db.enable_runner('test-runner')
+        # Enable agent
+        result = temp_db.enable_agent('test-runner')
         assert result is True
-        runner = temp_db.get_runner('test-runner')
-        assert runner['enabled'] == 1
+        agent = temp_db.get_agent('test-runner')
+        assert agent['enabled'] == 1
 
-    def test_mark_runner_offline(self, temp_db):
-        """Test marking runner as offline."""
+    def test_mark_agent_offline(self, temp_db):
+        """Test marking agent as offline."""
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
         )
 
-        result = temp_db.mark_runner_offline('test-runner')
+        result = temp_db.mark_agent_offline('test-runner')
         assert result is True
 
-        runner = temp_db.get_runner('test-runner')
-        assert runner['status'] == 'offline'
+        agent = temp_db.get_agent('test-runner')
+        assert agent['status'] == 'offline'
+
+    def test_get_all_agents_filtered(self, temp_db):
+        """Test filtering agents by type."""
+        # Register a runner and a listener
+        temp_db.register_agent(
+            agent_id='test-runner',
+            agent_type='runner',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+        temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        # Get all agents
+        all_agents = temp_db.get_all_agents()
+        assert len(all_agents) == 2
+
+        # Get only runners
+        runners = temp_db.get_all_agents(agent_type='runner')
+        assert len(runners) == 1
+        assert runners[0]['agent_type'] == 'runner'
+
+        # Get only listeners
+        listeners = temp_db.get_all_agents(agent_type='listener')
+        assert len(listeners) == 1
+        assert listeners[0]['agent_type'] == 'listener'
 
 
 class TestChallengeOperations:
@@ -297,9 +355,10 @@ class TestTransmissionOperations:
 
     def test_record_transmission_start(self, temp_db):
         """Test recording transmission start."""
-        # Create a runner and challenge first
+        # Create a runner agent and challenge first
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
@@ -314,8 +373,8 @@ class TestTransmissionOperations:
         # Record transmission start
         transmission_id = temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            runner_id='test-runner',
-            device_id='rtlsdr',
+            agent_id='test-runner',
+            device_id='0',
             frequency=146520000
         )
 
@@ -326,7 +385,8 @@ class TestTransmissionOperations:
         """Test getting recent transmissions."""
         # Create test data
         temp_db.register_agent(
-            runner_id='test-runner',
+            agent_id='test-runner',
+            agent_type='runner',
             hostname='test-host',
             ip_address='127.0.0.1',
             devices=[]
@@ -341,14 +401,180 @@ class TestTransmissionOperations:
         # Record a transmission
         temp_db.record_transmission_start(
             challenge_id='test-challenge',
-            runner_id='test-runner',
-            device_id='rtlsdr',
+            agent_id='test-runner',
+            device_id='0',
             frequency=146520000
         )
 
         # Get recent transmissions
         transmissions = temp_db.get_recent_transmissions(limit=10)
         assert len(transmissions) > 0
+
+
+class TestListenerAssignments:
+    """Test listener assignment operations."""
+
+    def test_create_listener_assignment(self, temp_db):
+        """Test creating a listener assignment."""
+        # Create listener agent and challenge first
+        temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        temp_db.add_challenge(
+            challenge_id='test-challenge',
+            name='Test Challenge',
+            config={'type': 'fm', 'frequency': 146520000}
+        )
+
+        # Create transmission first
+        transmission_id = temp_db.record_transmission_start(
+            challenge_id='test-challenge',
+            agent_id='test-listener',
+            device_id='0',
+            frequency=146520000
+        )
+
+        # Create listener assignment
+        expected_start = datetime.now(timezone.utc)
+        assignment_id = temp_db.create_listener_assignment(
+            agent_id='test-listener',
+            challenge_id='test-challenge',
+            transmission_id=transmission_id,
+            frequency=146520000,
+            expected_start=expected_start,
+            expected_duration=30.0
+        )
+
+        assert assignment_id > 0
+
+    def test_get_active_listener_assignments(self, temp_db):
+        """Test getting active listener assignments."""
+        # Create listener and challenge
+        temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        temp_db.add_challenge(
+            challenge_id='test-challenge',
+            name='Test Challenge',
+            config={'type': 'fm', 'frequency': 146520000}
+        )
+
+        transmission_id = temp_db.record_transmission_start(
+            challenge_id='test-challenge',
+            agent_id='test-listener',
+            device_id='0',
+            frequency=146520000
+        )
+
+        # Create assignment
+        expected_start = datetime.now(timezone.utc)
+        temp_db.create_listener_assignment(
+            agent_id='test-listener',
+            challenge_id='test-challenge',
+            transmission_id=transmission_id,
+            frequency=146520000,
+            expected_start=expected_start,
+            expected_duration=30.0
+        )
+
+        # Get active assignments
+        assignments = temp_db.get_active_listener_assignments('test-listener')
+        assert len(assignments) == 1
+        assert assignments[0]['agent_id'] == 'test-listener'
+        assert assignments[0]['status'] == 'pending'
+
+    def test_update_listener_assignment_status(self, temp_db):
+        """Test updating listener assignment status."""
+        # Setup
+        temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        temp_db.add_challenge(
+            challenge_id='test-challenge',
+            name='Test Challenge',
+            config={'type': 'fm'}
+        )
+
+        transmission_id = temp_db.record_transmission_start(
+            challenge_id='test-challenge',
+            agent_id='test-listener',
+            device_id='0',
+            frequency=146520000
+        )
+
+        assignment_id = temp_db.create_listener_assignment(
+            agent_id='test-listener',
+            challenge_id='test-challenge',
+            transmission_id=transmission_id,
+            frequency=146520000,
+            expected_start=datetime.now(timezone.utc),
+            expected_duration=30.0
+        )
+
+        # Update status to completed
+        result = temp_db.update_listener_assignment_status(assignment_id, 'completed')
+        assert result is True
+
+        # Verify status was updated
+        assignment = temp_db.get_listener_assignment(assignment_id)
+        assert assignment['status'] == 'completed'
+        assert assignment['completed_at'] is not None
+
+    def test_cancel_listener_assignments_for_agent(self, temp_db):
+        """Test cancelling all assignments for an agent."""
+        # Setup
+        temp_db.register_agent(
+            agent_id='test-listener',
+            agent_type='listener',
+            hostname='test-host',
+            ip_address='127.0.0.1',
+            devices=[]
+        )
+
+        temp_db.add_challenge(
+            challenge_id='test-challenge',
+            name='Test Challenge',
+            config={'type': 'fm'}
+        )
+
+        transmission_id = temp_db.record_transmission_start(
+            challenge_id='test-challenge',
+            agent_id='test-listener',
+            device_id='0',
+            frequency=146520000
+        )
+
+        temp_db.create_listener_assignment(
+            agent_id='test-listener',
+            challenge_id='test-challenge',
+            transmission_id=transmission_id,
+            frequency=146520000,
+            expected_start=datetime.now(timezone.utc),
+            expected_duration=30.0
+        )
+
+        # Cancel all assignments
+        count = temp_db.cancel_listener_assignments_for_agent('test-listener')
+        assert count == 1
+
+        # Verify no active assignments
+        assignments = temp_db.get_active_listener_assignments('test-listener')
+        assert len(assignments) == 0
 
 
 class TestThreadSafety:
