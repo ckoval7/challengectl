@@ -31,6 +31,12 @@ agent:
     frame_rate: 20        # Waterfall frames per second
     gain: 40              # RF gain in dB
 
+    # Waterfall scale settings (optional)
+    # If not specified, the waterfall will auto-scale using 5th/95th percentile
+    # Manual settings provide consistent scale across recordings
+    # waterfall_min_dbm: -80  # Minimum power level in dBm (dark color)
+    # waterfall_max_dbm: -30  # Maximum power level in dBm (bright color)
+
     # Pre-roll and post-roll (seconds before/after transmission)
     # This ensures we capture the entire transmission even with timing variations
     pre_roll_seconds: 5

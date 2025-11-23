@@ -251,6 +251,8 @@ class ListenerAgent:
                     'model': device.get('model', 'rtlsdr'),
                     'gain': device.get('gain', 40),
                     'frequency_limits': device.get('frequency_limits', []),
+                    'waterfall_min_dbm': device.get('waterfall_min_dbm'),
+                    'waterfall_max_dbm': device.get('waterfall_max_dbm'),
                     'in_use': False  # Track device availability
                 }
                 devices.append(device_info)
@@ -376,6 +378,35 @@ class ListenerAgent:
         @self.sio.on('heartbeat_ack', namespace='/agents')
         def on_heartbeat_ack(data):
             logger.debug(f"Heartbeat acknowledged by server")
+
+        @self.sio.on('agent_devices_updated', namespace='/agents')
+        def on_devices_updated(data):
+            """Handle device configuration update from server."""
+            try:
+                agent_id = data.get('agent_id')
+                if agent_id == self.agent_id:
+                    logger.info("Received device configuration update from server")
+                    new_devices = data.get('devices', [])
+
+                    # Update device list in memory
+                    self.devices = []
+                    for device in new_devices:
+                        device_info = {
+                            'name': str(device.get('name', device.get('device_id', '0'))),
+                            'model': device.get('model', 'rtlsdr'),
+                            'gain': device.get('gain', 40),
+                            'frequency_limits': device.get('frequency_limits', []),
+                            'waterfall_min_dbm': device.get('waterfall_min_dbm'),
+                            'waterfall_max_dbm': device.get('waterfall_max_dbm'),
+                            'in_use': False
+                        }
+                        self.devices.append(device_info)
+                        logger.info(f"Updated device config: {device_info['model']}={device_info['name']} "
+                                  f"(gain: {device_info['gain']} dB, waterfall: {device_info['waterfall_min_dbm']} to {device_info['waterfall_max_dbm']} dBm)")
+
+                    logger.info(f"Device configuration reloaded: {len(self.devices)} devices")
+            except Exception as e:
+                logger.error(f"Error handling device configuration update: {e}", exc_info=True)
 
     def handle_recording_assignment(self, assignment_id: int, challenge_id: str,
                                    challenge_name: str, transmission_id: int,
@@ -580,6 +611,10 @@ class ListenerAgent:
             # Get reference level for power calibration (dBm at full scale)
             reference_level = recording_config.get('reference_level_dbm', -10.0)
 
+            # Get waterfall scale parameters from device config (optional)
+            waterfall_min_dbm = selected_device.get('waterfall_min_dbm')
+            waterfall_max_dbm = selected_device.get('waterfall_max_dbm')
+
             logger.info(f"Generating waterfall image: {image_path}")
             generate_waterfall(
                 fft_data=fft_data,
@@ -588,7 +623,9 @@ class ListenerAgent:
                 fft_size=fft_size,
                 frame_rate=frame_rate,
                 output_path=image_path,
-                reference_level_dbm=reference_level
+                reference_level_dbm=reference_level,
+                vmin_dbm=waterfall_min_dbm,
+                vmax_dbm=waterfall_max_dbm
             )
 
             return (True, image_path, actual_duration, None)

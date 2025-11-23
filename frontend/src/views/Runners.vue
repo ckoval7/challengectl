@@ -702,6 +702,13 @@
                 </el-button>
                 <el-button
                   size="small"
+                  type="info"
+                  @click="showEditListenerDevicesDialog(scope.row)"
+                >
+                  Edit Devices
+                </el-button>
+                <el-button
+                  size="small"
                   type="primary"
                   @click="showReEnrollListenerDialog(scope.row.agent_id)"
                 >
@@ -838,6 +845,30 @@
                   />
                   <div class="hint-text">
                     RF gain setting (0-100 dB, typical: 20-50)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Min (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_min_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Minimum power level for waterfall display (optional, default: auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Max (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_max_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Maximum power level for waterfall display (optional, default: auto-scale)
                   </div>
                 </el-form-item>
 
@@ -1124,6 +1155,148 @@
             </span>
           </template>
         </el-dialog>
+
+        <!-- Edit Listener Devices Dialog -->
+        <el-dialog
+          v-model="editListenerDevicesDialogVisible"
+          title="Edit Listener Devices"
+          width="700px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="editListenerForm">
+            <el-alert
+              type="info"
+              :closable="false"
+              class="mb-15"
+            >
+              <p>
+                Edit device configuration for listener <strong>{{ editListenerForm.agent_id }}</strong>.
+                Changes will be applied immediately and affect future recordings.
+              </p>
+            </el-alert>
+
+            <div
+              v-for="(device, index) in editListenerForm.devices"
+              :key="index"
+              class="device-config-item"
+            >
+              <div class="device-header">
+                <h4>Device {{ index + 1 }}</h4>
+                <el-button
+                  v-if="editListenerForm.devices.length > 1"
+                  size="small"
+                  type="danger"
+                  @click="editListenerForm.devices.splice(index, 1)"
+                >
+                  Remove
+                </el-button>
+              </div>
+
+              <el-form label-width="150px">
+                <el-form-item label="Device Name">
+                  <el-input
+                    v-model="device.name"
+                    placeholder="e.g., 0, 1, or serial number"
+                  />
+                  <div class="hint-text">
+                    Device index (0, 1, 2) or serial number
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Model">
+                  <el-select
+                    v-model="device.model"
+                    placeholder="Select SDR model"
+                  >
+                    <el-option
+                      label="RTL-SDR"
+                      value="rtlsdr"
+                    />
+                    <el-option
+                      label="HackRF"
+                      value="hackrf"
+                    />
+                    <el-option
+                      label="Simulated"
+                      value="simulated"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="Gain (dB)">
+                  <el-input-number
+                    v-model="device.gain"
+                    :min="0"
+                    :max="60"
+                    :step="1"
+                  />
+                  <div class="hint-text">
+                    RF gain in dB (typical: 20-50 for RTL-SDR, 0-40 for HackRF)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Min (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_min_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Minimum power level for waterfall display (optional, leave empty for auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Max (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_max_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Maximum power level for waterfall display (optional, leave empty for auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Frequency Limits">
+                  <el-input
+                    v-model="device.frequency_limits"
+                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                  />
+                  <div class="hint-text">
+                    Comma-separated ranges in Hz (optional). Leave blank for full range.
+                  </div>
+                </el-form-item>
+              </el-form>
+
+              <el-divider v-if="index < editListenerForm.devices.length - 1" />
+            </div>
+
+            <el-button
+              type="primary"
+              plain
+              class="mt-10 w-full"
+              @click="editListenerForm.devices.push({ name: String(editListenerForm.devices.length), model: 'rtlsdr', gain: 40, waterfall_min_dbm: null, waterfall_max_dbm: null, frequency_limits: '' })"
+            >
+              Add Another Device
+            </el-button>
+          </div>
+
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button @click="editListenerDevicesDialogVisible = false">
+                Cancel
+              </el-button>
+              <el-button
+                type="primary"
+                @click="saveListenerDevices"
+              >
+                Save Changes
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <!-- Provisioning Keys Tab -->
@@ -1393,11 +1566,17 @@ export default {
           name: '0',
           model: 'rtlsdr',
           gain: 40,
+          waterfall_min_dbm: null,  // null = auto-scale
+          waterfall_max_dbm: null,  // null = auto-scale
           frequency_limits: ''
         }
       ]
     })
     const listenerEnrollmentData = ref(null)
+
+    // Edit listener devices state
+    const editListenerDevicesDialogVisible = ref(false)
+    const editListenerForm = ref(null)
 
     const loadRunners = async () => {
       try {
@@ -1469,6 +1648,8 @@ export default {
             name: '0',
             model: 'rtlsdr',
             gain: 40,
+            waterfall_min_dbm: null,
+            waterfall_max_dbm: null,
             frequency_limits: ''
           }
         ]
@@ -1494,6 +1675,8 @@ export default {
         name: String(addListenerForm.value.devices.length),
         model: 'rtlsdr',
         gain: 40,
+        waterfall_min_dbm: null,
+        waterfall_max_dbm: null,
         frequency_limits: ''
       })
     }
@@ -1984,6 +2167,72 @@ agent:
       }
     }
 
+    const showEditListenerDevicesDialog = (listener) => {
+      // Parse devices from JSON if needed
+      let devices = listener.devices
+      if (typeof devices === 'string') {
+        devices = JSON.parse(devices)
+      }
+
+      // Create editable copy of devices with proper structure
+      editListenerForm.value = {
+        agent_id: listener.agent_id,
+        devices: devices.map(d => ({
+          name: d.name || d.device_id || '0',
+          model: d.model || 'rtlsdr',
+          gain: d.gain || 40,
+          waterfall_min_dbm: d.waterfall_min_dbm !== undefined ? d.waterfall_min_dbm : null,
+          waterfall_max_dbm: d.waterfall_max_dbm !== undefined ? d.waterfall_max_dbm : null,
+          frequency_limits: Array.isArray(d.frequency_limits)
+            ? d.frequency_limits.join(', ')
+            : (d.frequency_limits || '')
+        }))
+      }
+
+      editListenerDevicesDialogVisible.value = true
+    }
+
+    const saveListenerDevices = async () => {
+      try {
+        // Convert devices back to server format
+        const devices = editListenerForm.value.devices.map(d => {
+          const device = {
+            device_id: d.name,
+            name: d.name,
+            model: d.model,
+            gain: d.gain
+          }
+
+          // Only include waterfall params if they're set
+          if (d.waterfall_min_dbm !== null && d.waterfall_min_dbm !== undefined) {
+            device.waterfall_min_dbm = d.waterfall_min_dbm
+          }
+          if (d.waterfall_max_dbm !== null && d.waterfall_max_dbm !== undefined) {
+            device.waterfall_max_dbm = d.waterfall_max_dbm
+          }
+
+          // Parse frequency limits
+          if (d.frequency_limits) {
+            device.frequency_limits = d.frequency_limits
+              .split(',')
+              .map(f => f.trim())
+              .filter(f => f)
+          }
+
+          return device
+        })
+
+        await api.put(`/agents/${editListenerForm.value.agent_id}/devices`, { devices })
+
+        ElMessage.success('Device configuration updated')
+        editListenerDevicesDialogVisible.value = false
+        loadAgents()
+      } catch (error) {
+        console.error('Error updating listener devices:', error)
+        ElMessage.error('Failed to update device configuration')
+      }
+    }
+
     const kickRunner = async (runnerId) => {
       try {
         await ElMessageBox.confirm(
@@ -2051,6 +2300,14 @@ agent:
           let deviceYaml = `  - name: ${device.name}\n`
           deviceYaml += `    model: ${device.model}\n`
           deviceYaml += `    gain: ${device.gain}\n`
+
+          // Add waterfall scale parameters if set
+          if (device.waterfall_min_dbm !== null && device.waterfall_min_dbm !== undefined) {
+            deviceYaml += `    waterfall_min_dbm: ${device.waterfall_min_dbm}\n`
+          }
+          if (device.waterfall_max_dbm !== null && device.waterfall_max_dbm !== undefined) {
+            deviceYaml += `    waterfall_max_dbm: ${device.waterfall_max_dbm}\n`
+          }
 
           if (freqLimits.length > 0) {
             deviceYaml += `    frequency_limits:\n`
@@ -2364,6 +2621,10 @@ curl -k \\
       addListenerDialogVisible,
       addListenerForm,
       listenerEnrollmentData,
+      editListenerDevicesDialogVisible,
+      editListenerForm,
+      showEditListenerDevicesDialog,
+      saveListenerDevices,
       showAddListenerDialog,
       addListenerDevice,
       removeListenerDevice,

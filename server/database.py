@@ -1837,6 +1837,31 @@ class Database:
                 logger.info(f"Disabled agent: {agent_id}")
             return cursor.rowcount > 0
 
+    def update_agent_devices(self, agent_id: str, devices: List[Dict]) -> bool:
+        """Update device configuration for an agent.
+
+        Args:
+            agent_id: The agent ID to update
+            devices: List of device dictionaries
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import json
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET devices = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (json.dumps(devices), agent_id))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Updated devices for agent {agent_id}: {len(devices)} devices")
+                return True
+            return False
+
     def update_listener_websocket_status(self, agent_id: str, connected: bool) -> bool:
         """Update WebSocket connection status for a listener agent.
 

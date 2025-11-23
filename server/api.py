@@ -2634,6 +2634,39 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Agent not found'}), 404
 
+        @self.app.route('/api/agents/<agent_id>/devices', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_agent_devices(agent_id):
+            """Update device configuration for an agent."""
+            data = request.json
+            if not data or 'devices' not in data:
+                return jsonify({'error': 'Missing devices in request body'}), 400
+
+            devices = data['devices']
+            if not isinstance(devices, list):
+                return jsonify({'error': 'Devices must be a list'}), 400
+
+            # Update the agent's devices in the database
+            success = self.db.update_agent_devices(agent_id, devices)
+
+            if success:
+                # Broadcast device configuration update via WebSocket
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    agent_type = agent['agent_type']
+                    event_name = 'agent_devices_updated'
+                    self.broadcast_event(event_name, {
+                        'agent_id': agent_id,
+                        'agent_type': agent_type,
+                        'devices': devices,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+
+                return jsonify({'status': 'updated', 'devices': devices}), 200
+            else:
+                return jsonify({'error': 'Agent not found or update failed'}), 404
+
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
         @self.require_admin_auth

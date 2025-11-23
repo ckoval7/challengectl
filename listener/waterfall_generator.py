@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
                       fft_size: int, frame_rate: int, output_path: str,
-                      reference_level_dbm: float = -10.0):
+                      reference_level_dbm: float = -10.0,
+                      vmin_dbm: float = None,
+                      vmax_dbm: float = None):
     """Generate waterfall PNG image from FFT data.
 
     Args:
@@ -31,6 +33,8 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         reference_level_dbm: Reference level in dBm for full scale (default: -10 dBm)
                             This converts linear power to absolute dBm values.
                             Typical values: -10 dBm for RTL-SDR, 0 dBm for HackRF
+        vmin_dbm: Minimum power level for waterfall scale (dBm). If None, auto-scale.
+        vmax_dbm: Maximum power level for waterfall scale (dBm). If None, auto-scale.
     """
     logger.info(f"Generating waterfall: {fft_data.shape[0]} frames x {fft_data.shape[1]} bins")
 
@@ -47,11 +51,16 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
     # 0 dBFS corresponds to reference_level_dbm
     fft_data_db = fft_data_dbfs + reference_level_dbm
 
-    # Auto-scale: use 5th and 95th percentile for dynamic range
-    vmin = np.percentile(fft_data_db, 5)
-    vmax = np.percentile(fft_data_db, 95)
-
-    logger.debug(f"Power range: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
+    # Use manual scale if provided, otherwise auto-scale
+    if vmin_dbm is not None and vmax_dbm is not None:
+        vmin = vmin_dbm
+        vmax = vmax_dbm
+        logger.info(f"Using manual waterfall scale: {vmin:.1f} to {vmax:.1f} dBm")
+    else:
+        # Auto-scale: use 5th and 95th percentile for dynamic range
+        vmin = np.percentile(fft_data_db, 5)
+        vmax = np.percentile(fft_data_db, 95)
+        logger.debug(f"Auto-scaling waterfall: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
 
     # Create custom colormap (blue -> green -> yellow -> red)
     colors = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
