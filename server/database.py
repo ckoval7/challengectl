@@ -1679,8 +1679,12 @@ class Database:
                 logger.error(f"Error registering agent {agent_id}: {e}")
                 return False
 
-    def update_agent_heartbeat(self, agent_id: str) -> tuple[bool, str]:
-        """Update agent heartbeat timestamp.
+    def update_agent_heartbeat(self, agent_id: str, device_status: Optional[Dict[int, str]] = None) -> tuple[bool, str]:
+        """Update agent heartbeat timestamp and optionally device status.
+
+        Args:
+            agent_id: Agent identifier
+            device_status: Optional map of device_id -> status ('online', 'offline', 'busy')
 
         Returns:
             tuple: (success: bool, previous_status: str)
@@ -1688,17 +1692,43 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
-                # Get previous status
-                cursor.execute('SELECT status FROM agents WHERE agent_id = ?', (agent_id,))
+                # Get previous status and current devices
+                cursor.execute('SELECT status, devices FROM agents WHERE agent_id = ?', (agent_id,))
                 row = cursor.fetchone()
                 previous_status = row['status'] if row else 'offline'
 
-                # Update heartbeat and status
-                cursor.execute('''
-                    UPDATE agents
-                    SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
-                    WHERE agent_id = ?
-                ''', (datetime.now(timezone.utc).isoformat(), agent_id))
+                # Update device status if provided
+                if device_status and row:
+                    try:
+                        devices = json.loads(row['devices']) if row['devices'] else []
+                        # Update status for each device
+                        for device in devices:
+                            device_id = device.get('device_id')
+                            if device_id in device_status:
+                                device['status'] = device_status[device_id]
+
+                        # Update with new device status
+                        cursor.execute('''
+                            UPDATE agents
+                            SET last_heartbeat = ?, status = 'online', devices = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE agent_id = ?
+                        ''', (datetime.now(timezone.utc).isoformat(), json.dumps(devices), agent_id))
+                    except Exception as e:
+                        logger.error(f"Error updating device status for {agent_id}: {e}")
+                        # Fall back to just updating heartbeat
+                        cursor.execute('''
+                            UPDATE agents
+                            SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
+                            WHERE agent_id = ?
+                        ''', (datetime.now(timezone.utc).isoformat(), agent_id))
+                else:
+                    # Just update heartbeat
+                    cursor.execute('''
+                        UPDATE agents
+                        SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
+                        WHERE agent_id = ?
+                    ''', (datetime.now(timezone.utc).isoformat(), agent_id))
+
                 conn.commit()
                 return (cursor.rowcount > 0, previous_status)
             except Exception as e:

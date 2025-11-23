@@ -151,6 +151,8 @@ class ChallengeCtlRunner:
         self.device_lock = threading.Lock()
         self.busy_devices = set()  # Set of device_ids currently in use
         self.active_tasks = {}  # Map of challenge_id -> (thread, device_id)
+        self.offline_devices = set()  # Set of device_ids that have failed and are offline
+        self.device_failure_counts = {}  # Map of device_id -> consecutive failure count
 
         # HTTP session for connection pooling
         self.session = requests.Session()
@@ -354,10 +356,23 @@ class ChallengeCtlRunner:
             return False
 
     def send_heartbeat(self):
-        """Send periodic heartbeat to server."""
+        """Send periodic heartbeat to server with device status."""
         try:
+            # Collect device status
+            device_status = {}
+            with self.device_lock:
+                for device in self.devices:
+                    device_id = device['device_id']
+                    if device_id in self.offline_devices:
+                        device_status[device_id] = 'offline'
+                    elif device_id in self.busy_devices:
+                        device_status[device_id] = 'busy'
+                    else:
+                        device_status[device_id] = 'online'
+
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.runner_id}/heartbeat",
+                json={'device_status': device_status},
                 timeout=5
             )
 
@@ -517,14 +532,15 @@ class ChallengeCtlRunner:
             return False
 
     def get_available_device(self) -> Optional[Dict]:
-        """Get next available (non-busy) device.
+        """Get next available (non-busy, non-offline) device.
 
         Returns:
-            Device dict or None if all devices are busy
+            Device dict or None if all devices are busy or offline
         """
         with self.device_lock:
             for device in self.devices:
-                if device['device_id'] not in self.busy_devices:
+                device_id = device['device_id']
+                if device_id not in self.busy_devices and device_id not in self.offline_devices:
                     return device
             return None
 
@@ -539,9 +555,106 @@ class ChallengeCtlRunner:
             self.busy_devices.discard(device_id)
 
     def get_available_device_count(self) -> int:
-        """Get number of devices currently available."""
+        """Get number of devices currently available (not busy and not offline)."""
         with self.device_lock:
-            return len(self.devices) - len(self.busy_devices)
+            total = len(self.devices)
+            unavailable = len(self.busy_devices) + len(self.offline_devices)
+            return max(0, total - unavailable)
+
+    def mark_device_offline(self, device_id: int):
+        """Mark a device as offline due to hardware failure."""
+        with self.device_lock:
+            if device_id not in self.offline_devices:
+                self.offline_devices.add(device_id)
+                # Also ensure it's not marked as busy
+                self.busy_devices.discard(device_id)
+                logger.error(f"Device {device_id} marked as OFFLINE due to hardware failure")
+
+    def mark_device_online(self, device_id: int):
+        """Mark a previously offline device as online again."""
+        with self.device_lock:
+            if device_id in self.offline_devices:
+                self.offline_devices.remove(device_id)
+                self.device_failure_counts.pop(device_id, None)
+                logger.info(f"Device {device_id} marked as ONLINE")
+
+    def record_device_failure(self, device_id: int) -> int:
+        """Record a device failure and return consecutive failure count.
+
+        After 3 consecutive failures, device is marked offline.
+
+        Returns:
+            int: Number of consecutive failures
+        """
+        with self.device_lock:
+            count = self.device_failure_counts.get(device_id, 0) + 1
+            self.device_failure_counts[device_id] = count
+
+            if count >= 3:
+                self.mark_device_offline(device_id)
+
+            return count
+
+    def record_device_success(self, device_id: int):
+        """Record a successful device operation, resetting failure count."""
+        with self.device_lock:
+            self.device_failure_counts[device_id] = 0
+            # If device was offline, bring it back online
+            if device_id in self.offline_devices:
+                self.mark_device_online(device_id)
+
+    def check_device_available(self, device: Dict) -> bool:
+        """Check if a device is actually available by attempting to probe it.
+
+        Args:
+            device: Device dict with device_string
+
+        Returns:
+            bool: True if device responds, False otherwise
+        """
+        device_string = device['device_string']
+        device_id = device['device_id']
+
+        # For BladeRF, we can try to list devices
+        if 'bladerf' in device_string.lower():
+            try:
+                # Try to run bladeRF-cli to check device availability
+                result = subprocess.run(
+                    ['bladeRF-cli', '-p'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                # If the specific serial is in the device string, check for it
+                if 'serial=' in device_string:
+                    serial = device_string.split('serial=')[1].split(',')[0].split(':')[0]
+                    if serial not in result.stdout:
+                        logger.warning(f"Device {device_id}: BladeRF serial {serial} not found")
+                        return False
+
+                return result.returncode == 0
+
+            except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+                logger.debug(f"Device {device_id}: BladeRF probe failed: {e}")
+                return False
+
+        # For HackRF, check with hackrf_info
+        elif 'hackrf' in device_string.lower():
+            try:
+                result = subprocess.run(
+                    ['hackrf_info'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                return result.returncode == 0
+            except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+                logger.debug(f"Device {device_id}: HackRF probe failed: {e}")
+                return False
+
+        # For file sink or unknown devices, assume available
+        return True
 
     def execute_challenge(self, task: Dict, device: Optional[Dict] = None) -> tuple:
         """
@@ -801,17 +914,45 @@ class ChallengeCtlRunner:
             # Mark device as busy
             self.mark_device_busy(device_id)
 
+            # Validate device is still available before attempting transmission
+            if not self.check_device_available(device):
+                failure_count = self.record_device_failure(device_id)
+                error_msg = f"Device {device_id} not responding (failure {failure_count}/3)"
+                logger.error(error_msg)
+                self.report_completion(challenge_id, False, device_id, 0, error_msg, transmission_id)
+                return
+
             # Execute challenge on the specified device
             success, used_device_id, frequency = self.execute_challenge(task, device)
+
+            # Record success or failure
+            if success:
+                self.record_device_success(device_id)
+            else:
+                failure_count = self.record_device_failure(device_id)
+                logger.warning(f"Device {device_id} task failed (failure {failure_count}/3)")
 
             # Report completion
             error_msg = None if success else "Execution failed"
             self.report_completion(challenge_id, success, used_device_id, frequency, error_msg, transmission_id)
 
+        except RuntimeError as e:
+            # Hardware-specific errors (device disconnected, driver issues, etc.)
+            error_str = str(e)
+            if any(keyword in error_str.lower() for keyword in ['failed to open', 'no devices available', 'device not found', 'usb error']):
+                failure_count = self.record_device_failure(device_id)
+                error_msg = f"Hardware error on device {device_id} (failure {failure_count}/3): {error_str[:100]}"
+                logger.error(error_msg)
+            else:
+                error_msg = f"Runtime error: {error_str[:100]}"
+                logger.error(f"Error executing task {challenge_id}: {e}", exc_info=True)
+
+            self.report_completion(challenge_id, False, device_id, 0, error_msg, transmission_id)
+
         except Exception as e:
             logger.error(f"Error executing task {challenge_id}: {e}", exc_info=True)
             # Report failure
-            self.report_completion(challenge_id, False, device_id, 0, str(e), transmission_id)
+            self.report_completion(challenge_id, False, device_id, 0, str(e)[:100], transmission_id)
 
         finally:
             # Always mark device as available when done
@@ -825,8 +966,23 @@ class ChallengeCtlRunner:
         """Main task execution loop with parallel device support."""
         logger.debug("Task loop started")
 
+        # Track when we last logged offline device warning
+        last_offline_warning = 0
+
         while self.running:
             try:
+                # Periodically warn about offline devices (every 60 seconds)
+                now = time.time()
+                with self.device_lock:
+                    offline_count = len(self.offline_devices)
+
+                if offline_count > 0 and (now - last_offline_warning) > 60:
+                    with self.device_lock:
+                        offline_ids = list(self.offline_devices)
+                    logger.warning(f"{offline_count} device(s) offline: {offline_ids}")
+                    logger.warning("Reconnect devices or restart runner to bring them back online")
+                    last_offline_warning = now
+
                 # Check how many devices are available
                 available_count = self.get_available_device_count()
 
@@ -884,10 +1040,26 @@ class ChallengeCtlRunner:
         print(f"Runner ID: {self.runner_id}")
         print(f"Server: {self.server_url}")
         print(f"Devices: {len(self.devices)}")
+
+        # Perform initial device health check
+        print("\nChecking device availability...")
+        for device in self.devices:
+            device_id = device['device_id']
+            device_name = device.get('name', device['device_string'])
+            available = self.check_device_available(device)
+            status = "✓ ONLINE" if available else "✗ OFFLINE"
+            print(f"  Device {device_id} ({device_name}): {status}")
+
+            if not available:
+                self.mark_device_offline(device_id)
+
+        available_count = self.get_available_device_count()
+        print(f"\nDevices online: {available_count}/{len(self.devices)}")
         print("="*60)
 
         logger.info(f"Runner {self.runner_id} starting")
         logger.info(f"Server: {self.server_url}, Devices: {len(self.devices)}")
+        logger.info(f"Devices online: {available_count}/{len(self.devices)}")
 
         # Set up signal handlers for graceful shutdown
         def signal_handler(signum, frame):

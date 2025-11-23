@@ -1839,7 +1839,11 @@ class ChallengeCtlAPI:
             if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            success, previous_status = self.db.update_agent_heartbeat(agent_id)
+            # Get optional device status from request body
+            data = request.get_json(silent=True) or {}
+            device_status = data.get('device_status')  # Map of device_id -> status
+
+            success, previous_status = self.db.update_agent_heartbeat(agent_id, device_status)
 
             if success:
                 # Get agent details to determine type
@@ -3793,9 +3797,10 @@ radios:
             This allows for more frequent keepalive over the WebSocket.
             """
             agent_id = data.get('agent_id')
+            device_status = data.get('device_status')  # Optional device status
             if agent_id:
-                # Update heartbeat timestamp
-                self.db.update_agent_heartbeat(agent_id)
+                # Update heartbeat timestamp and device status
+                self.db.update_agent_heartbeat(agent_id, device_status)
 
                 # Confirm heartbeat
                 emit('heartbeat_ack', {

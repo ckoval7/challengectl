@@ -143,6 +143,19 @@
                     prop="name"
                     label="Name/Serial"
                   />
+                  <el-table-column
+                    label="Status"
+                    width="120"
+                  >
+                    <template #default="devScope">
+                      <el-tag
+                        :type="devScope.row.status === 'online' ? 'success' : devScope.row.status === 'busy' ? 'warning' : 'danger'"
+                        size="small"
+                      >
+                        {{ devScope.row.status || 'unknown' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="Frequency Limits">
                     <template #default="devScope">
                       {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}
