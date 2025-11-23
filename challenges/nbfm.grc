@@ -263,7 +263,7 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    ant0: ''
+    ant0: antenna
     ant1: ''
     ant10: ''
     ant11: ''
@@ -642,6 +642,23 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [1184, 4.0]
+    rotation: 0
+    state: true
+- name: antenna
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Antenna
+    short_id: ''
+    type: str
+    value: ''
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1304, 4.0]
     rotation: 0
     state: true
 
