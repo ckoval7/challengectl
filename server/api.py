@@ -164,6 +164,19 @@ class ChallengeCtlAPI:
         self.used_totp_codes = {}
         self.totp_codes_lock = threading.Lock()
 
+        # In-memory device status tracking
+        # Format: {(agent_id, device_id): {'status': str, 'model': str, 'last_update': str}}
+        self.device_status = {}
+        self.device_status_lock = threading.Lock()
+
+        # In-memory active transmission tracking with timeouts
+        # Format: {challenge_id: {'transmission_id': int, 'expected_end': datetime, 'assigned_to': str}}
+        self.active_transmissions = {}
+        self.active_transmissions_lock = threading.Lock()
+
+        # Timeout multiplier for transmission duration (default 2.0 = 200% of expected duration)
+        self.transmission_timeout_multiplier = 2.0
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -788,6 +801,30 @@ class ChallengeCtlAPI:
 
             if expired_keys:
                 logger.debug(f"Cleaned up {len(expired_keys)} expired TOTP code(s) from memory")
+
+    def cleanup_expired_transmissions(self):
+        """
+        Remove expired transmissions from active tracking.
+        This automatically marks challenges as no longer active after timeout.
+        Called periodically by the background scheduler.
+        """
+        with self.active_transmissions_lock:
+            now = datetime.now(timezone.utc)
+            expired_challenges = [
+                challenge_id for challenge_id, info in self.active_transmissions.items()
+                if now >= info['expected_end']
+            ]
+
+            for challenge_id in expired_challenges:
+                transmission_info = self.active_transmissions[challenge_id]
+                logger.info(f"Transmission timeout: challenge {challenge_id} (transmission {transmission_info['transmission_id']}) "
+                          f"exceeded expected duration ({transmission_info['expected_duration']:.1f}s * {self.transmission_timeout_multiplier})")
+                del self.active_transmissions[challenge_id]
+
+            if expired_challenges:
+                logger.debug(f"Cleaned up {len(expired_challenges)} expired transmission(s) from active tracking")
+                # Broadcast updated public challenges since active status changed
+                self.broadcast_public_challenges()
 
     def register_routes(self):
         """Register all API routes."""
@@ -1813,6 +1850,20 @@ class ChallengeCtlAPI:
                                             mac_address=mac_address, machine_id=machine_id)
 
             if success:
+                # Initialize device status in memory with 'unknown' status
+                timestamp = datetime.now(timezone.utc).isoformat()
+                with self.device_status_lock:
+                    for device in devices:
+                        device_id = device.get('device_id')
+                        if device_id is not None:
+                            key = (agent_id, device_id)
+                            self.device_status[key] = {
+                                'status': 'unknown',
+                                'model': device.get('model', 'unknown'),
+                                'name': device.get('name', ''),
+                                'last_update': timestamp
+                            }
+
                 # Broadcast agent online event
                 event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
                 self.broadcast_event(event_name, {
@@ -1820,7 +1871,7 @@ class ChallengeCtlAPI:
                     'runner_id': agent_id if agent_type == 'runner' else None,  # Backward compat
                     'listener_id': agent_id if agent_type == 'listener' else None,
                     'status': 'online',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+                    'timestamp': timestamp
                 })
 
                 return jsonify({
@@ -1843,7 +1894,8 @@ class ChallengeCtlAPI:
             data = request.get_json(silent=True) or {}
             device_status = data.get('device_status')  # Map of device_id -> status
 
-            success, previous_status = self.db.update_agent_heartbeat(agent_id, device_status)
+            # Update agent heartbeat in database (not device status)
+            success, previous_status = self.db.update_agent_heartbeat(agent_id, None)
 
             if success:
                 # Get agent details to determine type
@@ -1852,7 +1904,39 @@ class ChallengeCtlAPI:
                     agent_type = agent['agent_type']
                     heartbeat_time = datetime.now(timezone.utc).isoformat()
 
-                    # Broadcast with appropriate event name for backward compatibility
+                    # Update device status in memory if provided
+                    if device_status and agent.get('devices'):
+                        devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else agent['devices']
+                        with self.device_status_lock:
+                            for device in devices:
+                                device_id = device.get('device_id')
+                                if device_id in device_status:
+                                    key = (agent_id, device_id)
+                                    new_status = device_status[device_id]
+
+                                    # Get previous status
+                                    prev_device_status = self.device_status.get(key, {}).get('status', 'unknown')
+
+                                    # Update device status in memory
+                                    self.device_status[key] = {
+                                        'status': new_status,
+                                        'model': device.get('model', 'unknown'),
+                                        'name': device.get('name', ''),
+                                        'last_update': heartbeat_time
+                                    }
+
+                                    # Broadcast device status change if status changed
+                                    if prev_device_status != new_status:
+                                        self.broadcast_event('device_status', {
+                                            'agent_id': agent_id,
+                                            'device_id': device_id,
+                                            'status': new_status,
+                                            'model': device.get('model', 'unknown'),
+                                            'name': device.get('name', ''),
+                                            'timestamp': heartbeat_time
+                                        })
+
+                    # Broadcast agent status with appropriate event name for backward compatibility
                     event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
                     self.broadcast_event(event_name, {
                         'agent_id': agent_id,
@@ -1961,6 +2045,28 @@ class ChallengeCtlAPI:
                     int(config.get('frequency', 0))
                 )
 
+                # Calculate expected transmission duration
+                challenge_duration = calculate_challenge_duration(
+                    config=config,
+                    files_dir=self.files_dir,
+                    include_pre_paint=True,  # Include pre-paint for total duration
+                    pre_paint_duration=get_pre_paint_duration(config.get('modulation', ''))
+                )
+
+                # Track active transmission with timeout (expected_duration * multiplier)
+                expected_end = datetime.now(timezone.utc) + timedelta(
+                    seconds=challenge_duration * self.transmission_timeout_multiplier
+                )
+                with self.active_transmissions_lock:
+                    self.active_transmissions[challenge['challenge_id']] = {
+                        'transmission_id': transmission_id,
+                        'expected_end': expected_end,
+                        'assigned_to': agent_id,
+                        'expected_duration': challenge_duration
+                    }
+                logger.debug(f"Tracking transmission {transmission_id} for challenge {challenge['challenge_id']}, "
+                           f"expected duration: {challenge_duration:.1f}s, timeout at: {expected_end.isoformat()}")
+
                 # Broadcast assignment event
                 self.broadcast_event('challenge_assigned', {
                     'runner_id': agent_id,
@@ -1981,23 +2087,60 @@ class ChallengeCtlAPI:
                     listener_agents = self.db.get_all_agents(agent_type='listener')
                     logger.debug(f"Found {len(listener_agents)} total listener agents")
 
-                    available_listeners = [
+                    # Filter listeners by online/enabled/websocket status
+                    online_listeners = [
                         l for l in listener_agents
                         if l['status'] == 'online'
                         and l['enabled']
                         and l.get('websocket_connected')
                     ]
 
-                    logger.info(f"Available listeners for assignment: {len(available_listeners)} "
+                    logger.info(f"Online listeners: {len(online_listeners)} "
                                f"(total: {len(listener_agents)}, "
                                f"online: {len([l for l in listener_agents if l['status'] == 'online'])}, "
                                f"enabled: {len([l for l in listener_agents if l['enabled']])}, "
                                f"websocket: {len([l for l in listener_agents if l.get('websocket_connected')])})")
 
+                    # Check device availability for parallel recording support
+                    available_listeners = []
+                    for listener in online_listeners:
+                        # Parse devices JSON to get device count
+                        devices = listener.get('devices', '[]')
+                        if isinstance(devices, str):
+                            try:
+                                devices = json.loads(devices)
+                            except (json.JSONDecodeError, TypeError):
+                                devices = []
+
+                        device_count = len(devices) if devices else 1  # Default to 1 if no devices defined
+
+                        # Count active assignments for this listener
+                        active_count = self.db.get_listener_active_assignment_count(listener['agent_id'])
+
+                        # Listener is available if it has capacity (devices > active assignments)
+                        if active_count < device_count:
+                            available_listeners.append({
+                                'listener': listener,
+                                'device_count': device_count,
+                                'active_count': active_count,
+                                'available_devices': device_count - active_count
+                            })
+                            logger.debug(f"Listener {listener['agent_id']}: {active_count}/{device_count} devices busy, "
+                                       f"{device_count - active_count} available")
+                        else:
+                            logger.debug(f"Listener {listener['agent_id']}: all {device_count} device(s) busy "
+                                       f"({active_count} active assignments)")
+
+                    logger.info(f"Available listeners with capacity: {len(available_listeners)}")
+
                     if available_listeners:
-                        # Select first available listener (TODO: implement better selection)
-                        listener = available_listeners[0]
+                        # Select listener with most available devices (best parallelism)
+                        best_listener_info = max(available_listeners, key=lambda x: x['available_devices'])
+                        listener = best_listener_info['listener']
                         listener_id = listener['agent_id']
+
+                        logger.debug(f"Selected listener {listener_id} with {best_listener_info['available_devices']} "
+                                   f"available device(s)")
 
                         # Calculate expected transmission timing
                         expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
@@ -2122,6 +2265,12 @@ class ChallengeCtlAPI:
 
             with self.transmission_lock:
                 self.transmission_buffer.appendleft(transmission)
+
+            # Remove from active transmissions tracking (transmission complete)
+            with self.active_transmissions_lock:
+                if challenge_id in self.active_transmissions:
+                    del self.active_transmissions[challenge_id]
+                    logger.debug(f"Removed completed transmission for challenge {challenge_id} from active tracking")
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
@@ -2426,11 +2575,44 @@ class ChallengeCtlAPI:
                     except (json.JSONDecodeError, TypeError):
                         agent['devices'] = []
 
+                # Merge device status from memory
+                agent_id = agent['agent_id']
+                if agent.get('devices'):
+                    with self.device_status_lock:
+                        for device in agent['devices']:
+                            device_id = device.get('device_id')
+                            if device_id is not None:
+                                key = (agent_id, device_id)
+                                if key in self.device_status:
+                                    # Use status from memory
+                                    device['status'] = self.device_status[key]['status']
+                                else:
+                                    # Device not in memory yet, initialize with unknown
+                                    device['status'] = 'unknown'
+
                 # Add backward compatibility: runners need runner_id field
                 if agent.get('agent_type') == 'runner':
                     agent['runner_id'] = agent['agent_id']
 
             return jsonify({'agents': all_agents}), 200
+
+        @self.app.route('/api/device-status', methods=['GET'])
+        @self.require_admin_auth
+        def get_device_status():
+            """Get all device status from memory."""
+            with self.device_status_lock:
+                # Convert dict to list for JSON response
+                device_list = []
+                for (agent_id, device_id), status_info in self.device_status.items():
+                    device_list.append({
+                        'agent_id': agent_id,
+                        'device_id': device_id,
+                        'status': status_info['status'],
+                        'model': status_info.get('model', 'unknown'),
+                        'name': status_info.get('name', ''),
+                        'last_update': status_info['last_update']
+                    })
+                return jsonify({'devices': device_list}), 200
 
         @self.app.route('/api/agents/<agent_id>/enable', methods=['POST'])
         @self.require_admin_auth
@@ -3907,9 +4089,18 @@ radios:
 
             # Show active status if enabled (default: True)
             if public_view.get('show_active_status', True):
-                # Check if currently assigned (actively transmitting)
-                is_active = (challenge.get('status') == 'assigned' and
-                             challenge.get('assigned_to') is not None)
+                # Check if currently assigned and transmission hasn't timed out
+                challenge_id = challenge['challenge_id']
+                is_active = False
+
+                # Check if in active transmissions with timeout
+                with self.active_transmissions_lock:
+                    if challenge_id in self.active_transmissions:
+                        transmission_info = self.active_transmissions[challenge_id]
+                        expected_end = transmission_info['expected_end']
+                        # Only active if still within timeout window
+                        is_active = datetime.now(timezone.utc) < expected_end
+
                 public_challenge['is_active'] = is_active
 
             public_challenges.append(public_challenge)

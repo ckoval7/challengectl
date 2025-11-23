@@ -2180,6 +2180,23 @@ logging:
       }
     }
 
+    const handleDeviceStatusEvent = (event) => {
+      console.log('Agents page received device_status event:', event)
+
+      // Find agent (runner or listener) by agent_id
+      const allAgents = [...runners.value, ...listeners.value]
+      const agent = allAgents.find(a => a.agent_id === event.agent_id)
+
+      if (agent && agent.devices) {
+        // Find device by device_id and update status
+        const device = agent.devices.find(d => d.device_id === event.device_id)
+        if (device) {
+          console.log(`Updating device ${event.device_id} status to ${event.status} for agent ${event.agent_id}`)
+          device.status = event.status
+        }
+      }
+    }
+
     onMounted(() => {
       loadAgents()  // Load both runners and listeners
       loadProvisioningKeys()
@@ -2189,6 +2206,7 @@ logging:
       websocket.on('runner_status', handleRunnerStatusEvent)
       websocket.on('listener_status', handleListenerStatusEvent)
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
+      websocket.on('device_status', handleDeviceStatusEvent)
     })
 
     // Provisioning Keys state
@@ -2299,7 +2317,9 @@ curl -k \\
 
     onUnmounted(() => {
       websocket.off('runner_status', handleRunnerStatusEvent)
+      websocket.off('listener_status', handleListenerStatusEvent)
       websocket.off('runner_enabled', handleRunnerEnabledEvent)
+      websocket.off('device_status', handleDeviceStatusEvent)
     })
 
     return {

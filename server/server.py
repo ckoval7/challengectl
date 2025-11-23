@@ -66,6 +66,12 @@ class ChallengeCtlServer:
                         agent = self.db.get_agent(agent_id)
                         agent_type = agent.get('agent_type', 'runner') if agent else 'runner'
 
+                        # Cancel pending listener assignments for offline listeners
+                        if agent_type == 'listener':
+                            cancelled_count = self.db.cancel_listener_assignments_for_agent(agent_id)
+                            if cancelled_count > 0:
+                                logger.info(f"Cleanup: cancelled {cancelled_count} assignment(s) for offline listener {agent_id}")
+
                         self.api.broadcast_event('runner_status', {
                             'runner_id': agent_id,
                             'agent_id': agent_id,
@@ -85,6 +91,15 @@ class ChallengeCtlServer:
             except Exception as e:
                 logger.error(f"Error in cleanup_stale_assignments: {e}")
 
+        def cleanup_stale_listener_assignments():
+            """Cleanup task to cancel timed-out listener assignments."""
+            try:
+                count = self.db.cleanup_stale_listener_assignments(timeout_minutes=15)
+                if count > 0:
+                    logger.info(f"Cleanup: cancelled {count} stale listener assignment(s)")
+            except Exception as e:
+                logger.error(f"Error in cleanup_stale_listener_assignments: {e}")
+
         # Run cleanup tasks every 30 seconds
         self.scheduler.add_job(
             cleanup_stale_agents,
@@ -102,6 +117,14 @@ class ChallengeCtlServer:
             replace_existing=True
         )
 
+        self.scheduler.add_job(
+            cleanup_stale_listener_assignments,
+            'interval',
+            seconds=30,
+            id='cleanup_listener_assignments',
+            replace_existing=True
+        )
+
         def cleanup_expired_sessions():
             """Cleanup task to remove expired sessions from database."""
             try:
@@ -115,6 +138,13 @@ class ChallengeCtlServer:
                 self.api.cleanup_expired_totp_codes()
             except Exception as e:
                 logger.error(f"Error in cleanup_expired_totp_codes: {e}")
+
+        def cleanup_expired_transmissions():
+            """Cleanup task to remove timed-out active transmissions."""
+            try:
+                self.api.cleanup_expired_transmissions()
+            except Exception as e:
+                logger.error(f"Error in cleanup_expired_transmissions: {e}")
 
         # Run session and TOTP cleanup every minute
         self.scheduler.add_job(
@@ -130,6 +160,15 @@ class ChallengeCtlServer:
             'interval',
             seconds=60,
             id='cleanup_totp_codes',
+            replace_existing=True
+        )
+
+        # Run transmission timeout check every 10 seconds for responsive public dashboard
+        self.scheduler.add_job(
+            cleanup_expired_transmissions,
+            'interval',
+            seconds=10,
+            id='cleanup_transmissions',
             replace_existing=True
         )
 

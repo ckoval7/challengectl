@@ -2180,3 +2180,79 @@ class Database:
                     ORDER BY expected_start
                 ''')
             return [dict(row) for row in cursor.fetchall()]
+
+    def cleanup_stale_listener_assignments(self, timeout_minutes: int = 15) -> int:
+        """Cancel listener assignments that have exceeded their expected duration.
+
+        Args:
+            timeout_minutes: Minutes after expected_start + expected_duration to timeout
+
+        Returns:
+            Number of assignments cancelled
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Calculate timeout threshold
+                # Cancel if: expected_start + expected_duration + timeout < now
+                timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+
+                # Find stale assignments (pending or recording status, but past expected end time)
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+                    WHERE status IN ('pending', 'recording')
+                      AND datetime(expected_start, '+' || CAST(expected_duration AS TEXT) || ' seconds') < ?
+                ''', (timeout_threshold.isoformat(),))
+
+                count = cursor.rowcount
+                conn.commit()
+                return count
+            except Exception as e:
+                logger.error(f"Error cleaning up stale listener assignments: {e}")
+                return 0
+
+    def cancel_listener_assignments_for_agent(self, agent_id: str) -> int:
+        """Cancel all pending/recording assignments for a listener agent.
+
+        Used when a listener goes offline or disconnects.
+
+        Args:
+            agent_id: Listener agent ID
+
+        Returns:
+            Number of assignments cancelled
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+                    WHERE agent_id = ? AND status IN ('pending', 'recording')
+                ''', (agent_id,))
+
+                count = cursor.rowcount
+                conn.commit()
+                return count
+            except Exception as e:
+                logger.error(f"Error cancelling assignments for agent {agent_id}: {e}")
+                return 0
+
+    def get_listener_active_assignment_count(self, agent_id: str) -> int:
+        """Get count of active assignments for a listener.
+
+        Args:
+            agent_id: Listener agent ID
+
+        Returns:
+            Count of pending or recording assignments
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM listener_assignments
+                WHERE agent_id = ? AND status IN ('pending', 'recording')
+            ''', (agent_id,))
+            row = cursor.fetchone()
+            return row['count'] if row else 0
