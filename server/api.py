@@ -808,6 +808,8 @@ class ChallengeCtlAPI:
         This automatically marks challenges as no longer active after timeout.
         Called periodically by the background scheduler.
         """
+        expired_challenges = []
+
         with self.active_transmissions_lock:
             now = datetime.now(timezone.utc)
             expired_challenges = [
@@ -821,10 +823,15 @@ class ChallengeCtlAPI:
                           f"exceeded expected duration ({transmission_info['expected_duration']:.1f}s * {self.transmission_timeout_multiplier})")
                 del self.active_transmissions[challenge_id]
 
-            if expired_challenges:
-                logger.debug(f"Cleaned up {len(expired_challenges)} expired transmission(s) from active tracking")
-                # Broadcast updated public challenges since active status changed
+        # Broadcast outside the lock to avoid blocking
+        if expired_challenges:
+            logger.debug(f"Cleaned up {len(expired_challenges)} expired transmission(s) from active tracking")
+            # Broadcast updated public challenges since active status changed
+            # Wrap in try/except to handle shutdown gracefully
+            try:
                 self.broadcast_public_challenges()
+            except Exception as e:
+                logger.debug(f"Could not broadcast public challenges (likely shutting down): {e}")
 
     def register_routes(self):
         """Register all API routes."""

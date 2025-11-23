@@ -456,7 +456,7 @@ class ChallengeCtlServer:
 
         # Shutdown scheduler if it's running
         if self.scheduler.running:
-            self.scheduler.shutdown(wait=False)
+            self.scheduler.shutdown(wait=True)
             print("Background scheduler stopped", flush=True)
             logger.info("Background scheduler stopped")
 
