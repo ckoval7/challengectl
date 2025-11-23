@@ -648,7 +648,26 @@ class ChallengeCtlRunner:
                     text=True,
                     timeout=5
                 )
-                return result.returncode == 0
+
+                # Check if hackrf_info found any devices
+                if result.returncode == 0:
+                    # If using device index (hackrf=0, hackrf=1), check that many devices exist
+                    if '=' in device_string:
+                        device_index_str = device_string.split('=')[1].split(',')[0].split(':')[0]
+                        try:
+                            device_index = int(device_index_str)
+                            # Count how many "Serial number" lines appear in output
+                            device_count = result.stdout.lower().count('serial number')
+                            if device_index >= device_count:
+                                logger.warning(f"Device {device_id}: HackRF index {device_index} not available (only {device_count} devices found)")
+                                return False
+                        except ValueError:
+                            pass  # Not a numeric index, assume it's a serial or other identifier
+
+                    return True
+                else:
+                    return False
+
             except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
                 logger.debug(f"Device {device_id}: HackRF probe failed: {e}")
                 return False
@@ -939,7 +958,17 @@ class ChallengeCtlRunner:
         except RuntimeError as e:
             # Hardware-specific errors (device disconnected, driver issues, etc.)
             error_str = str(e)
-            if any(keyword in error_str.lower() for keyword in ['failed to open', 'no devices available', 'device not found', 'usb error']):
+            hardware_error_keywords = [
+                'failed to open',
+                'no devices available',
+                'not enough devices',  # HackRF specific
+                'device not found',
+                'usb error',
+                'failed to use',  # HackRF/BladeRF when device index invalid
+                'cannot open device'
+            ]
+
+            if any(keyword in error_str.lower() for keyword in hardware_error_keywords):
                 failure_count = self.record_device_failure(device_id)
                 error_msg = f"Hardware error on device {device_id} (failure {failure_count}/3): {error_str[:100]}"
                 logger.error(error_msg)
