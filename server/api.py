@@ -1917,9 +1917,12 @@ class ChallengeCtlAPI:
                         with self.device_status_lock:
                             for device in devices:
                                 device_id = device.get('device_id')
-                                if device_id in device_status:
+                                # JSON serialization converts int keys to strings, so check both
+                                device_id_str = str(device_id)
+                                if device_id in device_status or device_id_str in device_status:
                                     key = (agent_id, device_id)
-                                    new_status = device_status[device_id]
+                                    # Try both int and string keys
+                                    new_status = device_status.get(device_id) or device_status.get(device_id_str)
 
                                     # Get previous status
                                     prev_device_status = self.device_status.get(key, {}).get('status', 'unknown')

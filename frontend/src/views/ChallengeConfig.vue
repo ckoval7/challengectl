@@ -1502,22 +1502,22 @@ export default {
     const handleChallengeAssigned = (event) => {
       console.log('Challenge assigned event:', event)
       // Update the specific challenge status
-      const challenge = challenges.value.find(c => c.challenge_id === event.challenge_id)
-      if (challenge) {
-        challenge.status = 'assigned'
-        challenge.assigned_to = event.agent_id || event.runner_id
+      const index = challenges.value.findIndex(c => c.challenge_id === event.challenge_id)
+      if (index !== -1) {
+        // Create a new challenge object to ensure reactivity
+        challenges.value[index] = {
+          ...challenges.value[index],
+          status: 'assigned',
+          assigned_to: event.agent_id || event.runner_id
+        }
+        console.log(`Updated challenge ${event.challenge_id} status to assigned`)
       }
     }
 
     const handleTransmissionComplete = (event) => {
       console.log('Transmission complete event:', event)
-      // Update the specific challenge - it should go back to waiting/queued
-      const challenge = challenges.value.find(c => c.challenge_id === event.challenge_id)
-      if (challenge) {
-        // The challenge will be in 'waiting' state after transmission
-        // Reload to get accurate status and timing
-        loadChallenges()
-      }
+      // Reload to get accurate status, transmission count, and timing
+      loadChallenges()
     }
 
     onMounted(() => {
