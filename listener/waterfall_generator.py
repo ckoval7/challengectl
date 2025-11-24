@@ -59,7 +59,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         logger.info(f"Using manual waterfall scale: {vmin:.1f} to {vmax:.1f} dBm")
     else:
         # Auto-scale: use 5th and 95th percentile for dynamic range
-        vmin = np.percentile(fft_data_db, 5)
+        vmin = np.percentile(fft_data_db, 25)
         vmax = np.percentile(fft_data_db, 95)
         logger.debug(f"Auto-scaling waterfall: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
 

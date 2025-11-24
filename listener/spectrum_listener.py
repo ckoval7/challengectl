@@ -183,9 +183,10 @@ class SpectrumListener:
                     frame = np.array(data[:self.fft_size])
 
                     # Apply FFT shift (move DC to center)
-                    frame_shifted = np.fft.fftshift(frame)
+                    # frame_shifted = np.fft.fftshift(frame)
 
-                    self.fft_frames.append(frame_shifted)
+                    # self.fft_frames.append(frame_shifted)
+                    self.fft_frames.append(frame)
 
                     # Clear consumed data
                     self.sink.reset()

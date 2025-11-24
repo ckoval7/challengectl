@@ -353,7 +353,7 @@ class ListenerAgent:
             """Handle recording assignment from server."""
             try:
                 logger.debug(f"Handler called with data: {data}")
-                logger.info(f"Received recording assignment: {data}")
+                logger.debug(f"Received recording assignment: {data}")
 
                 assignment_id = data.get('assignment_id')
                 challenge_id = data.get('challenge_id')
@@ -363,7 +363,8 @@ class ListenerAgent:
                 expected_start = data.get('expected_start')
                 expected_duration = data.get('expected_duration')
 
-                logger.debug(f"Starting recording thread for {challenge_name}")
+                logger.debug(f"Recording assignment details: challenge={challenge_name}, freq={frequency} Hz ({frequency/1e6:.6f} MHz)")
+                logger.info(f"Starting recording thread for {challenge_name}")
                 # Schedule recording
                 threading.Thread(
                     target=self.handle_recording_assignment,
@@ -597,7 +598,10 @@ class ListenerAgent:
                 simulate=self.simulate
             )
 
-            logger.info(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate}, "
+            logger.info(f"Tuning SDR to {frequency} Hz ({frequency/1e6:.6f} MHz) with sample rate {sample_rate} Hz ({sample_rate/1e6:.3f} MHz)")
+            logger.debug(f"Frequency range: {frequency - sample_rate/2} to {frequency + sample_rate/2} Hz "
+                       f"({(frequency - sample_rate/2)/1e6:.6f} to {(frequency + sample_rate/2)/1e6:.6f} MHz)")
+            logger.debug(f"Capturing {total_duration}s at {frequency} Hz (SR: {sample_rate}, "
                        f"pre-roll: {pre_roll}s, transmission: {duration}s, post-roll: {post_roll}s)")
 
             # Start recording
