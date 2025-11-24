@@ -946,9 +946,9 @@ Transmits data using frequency hopping.
 
 **Flag format**: Path to WAV audio file.
 
-### LRS (LoRa)
+### LRS Pager
 
-Transmits using LoRa spread spectrum modulation.
+Transmits using LRS pager spread spectrum modulation.
 
 ```yaml
 - name: LRS_FLAG_1
@@ -962,7 +962,7 @@ Transmits using LoRa spread spectrum modulation.
 
 **Additional parameters**: None (parameters embedded in flag string)
 
-**Flag format**: Command-line arguments for LoRa transmitter. Common options:
+**Flag format**: Command-line arguments for LRS pager transmitter. Common options:
 - `-s` - Spreading factor
 - `-p` - Preamble length
 - `-pf` - Preamble format

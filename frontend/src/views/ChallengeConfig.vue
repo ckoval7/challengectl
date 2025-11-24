@@ -250,7 +250,7 @@
                 value="fhss"
               />
               <el-option
-                label="LoRa"
+                label="LRS Pager"
                 value="lrs"
               />
             </el-select>
@@ -584,7 +584,7 @@
             </el-form-item>
           </template>
 
-          <!-- LoRa settings -->
+          <!-- LRS Pager settings -->
           <template v-if="challengeForm.modulation === 'lrs'">
             <el-form-item label="Spreading Factor">
               <el-input-number
@@ -1006,9 +1006,9 @@ export default {
       hop_rate: 10, // FHSS
       hop_time: 60, // FHSS
       seed: '', // FHSS
-      spreading_factor: 7, // LoRa
-      bandwidth: 125000, // LoRa
-      coding_rate: '4/5', // LoRa
+      spreading_factor: 7, // LRS Pager
+      bandwidth: 125000, // LRS Pager
+      coding_rate: '4/5', // LRS Pager
     })
 
     const flagFile = ref(null)

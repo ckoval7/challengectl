@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ChallengeCtl is a distributed SDR (Software-Defined Radio) challenge management system for RF CTF competitions. It coordinates multiple SDR devices to transmit challenges across different frequencies and modulations while ensuring mutual exclusion (no duplicate transmissions).
 
-The system consists of three main components:
+The system consists of four main components:
 - **Server** (`server/`): Flask-based REST API with SQLite database and WebSocket broadcasting
 - **Runner** (`runner/`): Client that executes challenges on SDR hardware using GNU Radio
+- **Listener** (`listener/`): Spectrum recording client that captures RF transmissions and generates waterfall images
 - **Frontend** (`frontend/`): Vue.js 3 web interface for administration and monitoring
 
 ## Common Commands
@@ -73,6 +74,19 @@ npm run lint
 npm run lint:fix
 ```
 
+### Listener Development
+```bash
+# Install listener dependencies
+pip install -r requirements-listener.txt
+
+# Run listener
+cd listener
+python listener.py --config listener-config.yml
+
+# Test listener with verbose logging
+python listener.py --config listener-config.yml --verbose
+```
+
 ### User Management
 ```bash
 # Create admin user with TOTP 2FA
@@ -116,14 +130,17 @@ The system uses a polling-based architecture where runners periodically request 
 ### Database Schema (SQLite)
 
 **Key tables:**
-- `runners` - Registered runner nodes with status (online/offline/busy)
+- `agents` - Unified table for both runner and listener agents with `agent_type` field
+- `runners` - Legacy runner table (maintained for backward compatibility)
 - `challenges` - Challenge definitions stored as JSON in `config` column; assignment tracking via `assigned_to`, `assigned_at`, `assignment_expires` columns
 - `transmissions` - Historical log of all transmissions
+- `recordings` - Waterfall images and metadata from listener captures
+- `listener_assignments` - Recording assignments pushed to listeners via WebSocket
 - `files` - Content-addressed storage (SHA-256 hashed)
 - `users` - Admin accounts with bcrypt passwords and encrypted TOTP secrets
 - `sessions` - Web session management (24-hour expiry)
 
-**Important**: There is NO separate `assignments` table. Assignment state is tracked directly in the `challenges` table via `assigned_to`, `assigned_at`, and `assignment_expires` columns.
+**Important**: There is NO separate `assignments` table for runner tasks. Assignment state is tracked directly in the `challenges` table via `assigned_to`, `assigned_at`, and `assignment_expires` columns. However, listener recording assignments use a separate `listener_assignments` table for WebSocket-based coordination.
 
 ### Challenge State Machine
 
@@ -162,6 +179,45 @@ WebSocket events broadcast to all connected clients:
 - `challenge_assigned` - Challenge assigned to runner
 - `transmission_complete` - Transmission success/failure
 - `log` - Real-time log streaming
+
+### Listener Architecture (Spectrum Recording)
+
+Listeners are specialized agents that capture and record RF transmissions:
+
+**Communication model:**
+- **Runners**: Poll via HTTP (every 10s) for task assignments
+- **Listeners**: WebSocket push notifications for real-time recording coordination
+
+**Priority-based recording:**
+- Server calculates priority for each transmission based on:
+  - Number of transmissions since last recording
+  - Time elapsed since last recording (time multiplier: max 10x after 10 hours)
+  - Challenge priority boost (0-100 scale, converted to 1.0x-11.0x multiplier)
+- Recording threshold: **1.0** (transmissions with priority ≥ 1.0 are recorded)
+- Never-recorded challenges: priority = 1000.0 (always recorded first time)
+
+**Unified agent model:**
+- Both runners and listeners stored in `agents` table with `agent_type` field
+- Listeners have additional WebSocket tracking: `websocket_connected`, `websocket_last_connected`
+- Agent enrollment via web UI: Agents → Provisioning tab
+
+**Recording workflow:**
+1. Server assigns challenge to runner (HTTP polling)
+2. Server calculates recording priority for transmission
+3. If priority ≥ threshold: Server finds available listener (online + WebSocket connected)
+4. Server pushes `recording_assignment` event via WebSocket to listener
+5. Listener waits for `expected_start` time, then captures RF with 5s pre-roll
+6. Listener generates waterfall image from FFT data (matplotlib PNG)
+7. Listener uploads image to server via HTTP POST
+8. Recording visible in web UI under Recordings section
+
+**Key differences from architecture doc** (see `LISTENER_IMPLEMENTATION_NOTES.md`):
+- Priority threshold is 1.0 (not 10)
+- Time multiplier has minimum of 1.0x (prevents zero priority)
+- Priority boost is additive (1.0 + priority/10.0) not pure multiplication
+- API uses RESTful structure: `/api/agents/{id}/recording/{recording_id}/complete`
+
+See `listener/README.md` for setup and deployment details.
 
 ## Challenge Development
 
@@ -232,6 +288,12 @@ npm run test:coverage # With coverage report
 **Runner:**
 - `runner/runner.py` - Main runner implementation, challenge execution
 
+**Listener:**
+- `listener/listener.py` - Main listener client with WebSocket management
+- `listener/spectrum_listener.py` - GNU Radio flowgraph for spectrum capture
+- `listener/waterfall_generator.py` - Waterfall image generation from FFT data
+- `listener/listener-config.example.yml` - Example listener configuration
+
 **Frontend:**
 - `frontend/src/App.vue` - Root component with routing
 - `frontend/src/views/` - Page components (Dashboard, Runners, Challenges, Logs)
@@ -255,9 +317,24 @@ npm run test:coverage # With coverage report
 
 ## Important Implementation Details
 
+### Agent Enrollment & Provisioning
+
+Server supports secure agent enrollment via the web UI (Agents → Provisioning tab):
+- Generate enrollment tokens with configurable expiry and usage limits
+- Agents register using enrollment token (one-time use or limited use)
+- API key generated server-side and securely hashed (bcrypt) in database
+- Multi-factor host validation enforced on registration and authentication:
+  - Host identifiers collected: MAC address, machine ID, IP address, hostname
+  - At least ONE identifier must match for successful authentication
+  - Immediate enforcement (no grace period for host changes)
+  - Re-enrollment process required for legitimate host migration
+- Agent types: `runner` (transmit) or `listener` (receive/record)
+- All agents stored in unified `agents` table with `agent_type` field
+
 ### Background Tasks (APScheduler)
+
 Server runs periodic maintenance tasks:
-- Cleanup stale runners (every 30s) - marks offline after 90s heartbeat timeout
+- Cleanup stale agents (every 30s) - marks offline after 90s heartbeat timeout
 - Cleanup stale assignments (every 30s) - requeues after 5 minute timeout
 - Cleanup expired sessions (every 60s)
 - Cleanup expired TOTP codes (every 60s)
@@ -316,6 +393,14 @@ Server only assigns challenges within runner's frequency range.
 3. Verify communication with server
 4. Check logs for errors
 
+### Making Changes to Listener
+1. Modify code in `listener/`
+2. Test WebSocket connection: Check listener connects and receives assignments
+3. Test recording workflow: Verify waterfall generation and upload
+4. Check both listener logs and server logs for errors
+5. Validate recording priority calculations in server logs
+6. Test simulated mode (when GNU Radio not available): Listener includes fallback to simulated spectrum data
+
 ### Adding New Challenge Modulation
 1. Create flowgraph in GNU Radio Companion
 2. Generate Python code (F5)
@@ -355,3 +440,24 @@ Server only assigns challenges within runner's frequency range.
 - Delete `node_modules/` and run `npm ci` to reinstall
 - Check for circular dependencies in manual chunks configuration (see commit d73d2a4)
 - Ensure all imports use correct paths
+
+**Listener not connecting:**
+- Verify `server_url` in listener config matches server
+- Check WebSocket connectivity (firewall rules, proxy settings)
+- Ensure API key is correct and agent is registered
+- Review server logs for WebSocket connection rejections
+- Check `agent_type: listener` in listener config
+
+**Listener not receiving recording assignments:**
+- Verify listener shows "WebSocket: Connected" in web UI (Agents tab)
+- Check listener is enabled in web UI
+- Ensure recording priority threshold is met (priority ≥ 1.0)
+- Verify at least one runner is transmitting challenges
+- Check server logs for priority calculation details
+
+**Recording quality issues:**
+- Increase RF gain in listener config (e.g., `gain: 50`)
+- Verify antenna is appropriate for frequency range
+- Check for RF interference using `osmocom_fft`
+- Adjust sample_rate if needed (default: 2M samples/sec)
+- Ensure SDR device is not being used by another process

@@ -194,11 +194,11 @@ frequency_ranges:
 #     max_delay: 180
 #     enabled: true
 #
-#   # LoRa Example
-#   - name: LORA_FLAG_1
+#   # LRS Pager Example
+#   - name: LRS_FLAG_1
 #     frequency: 146900000
 #     modulation: lrs
-#     flag: challenges/lora_data.bin
+#     flag: challenges/lrs_data.bin
 #     spreading_factor: 7
 #     bandwidth: 125000
 #     coding_rate: '4/5'

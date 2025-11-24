@@ -271,7 +271,7 @@ ChallengeCtl supports the following modulation types:
 | `ssb` | Single Sideband | `.wav` |
 | `fhss` | Frequency Hopping Spread Spectrum | `.bin` |
 | `pocsag` | POCSAG Paging | `.txt` |
-| `lrs` | LoRa Spread Spectrum | `.bin` |
+| `lrs` | LRS Pager | `.bin` |
 | `freedv` | FreeDV Digital Voice | `.raw` |
 | `paint` | SSTV/Paint | `.png` or `.jpg` |
 

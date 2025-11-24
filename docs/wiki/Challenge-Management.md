@@ -89,7 +89,7 @@ The Create Challenge form provides a guided interface for configuring new challe
   - **ASK** (Amplitude Shift Keying) - Digital data
   - **POCSAG** (Pager) - Pager messages
   - **FHSS** (Frequency Hopping) - Frequency hopping challenges
-  - **LoRa** - Long-range low-power digital
+  - **LRS Pager** - Long-range spread spectrum pager
 - The form dynamically shows relevant fields based on modulation type
 
 **Frequency Mode** (required):
@@ -154,7 +154,7 @@ The challenge content section changes based on the selected modulation type.
 - Default: 35 WPM
 - Lower = easier to decode, higher = more challenging
 
-#### Binary File Modulations (LoRa)
+#### Binary File Modulations (LRS Pager)
 
 **Flag (Binary File)**:
 - Path to binary file or upload
@@ -209,16 +209,16 @@ The challenge content section changes based on the selected modulation type.
 - Used for synchronized hopping
 - Optional
 
-#### LoRa Settings
+#### LRS Pager Settings
 
 **Spreading Factor**:
-- LoRa spreading factor
+- LRS pager spreading factor
 - Range: 6-12
 - Default: 7
 - Higher = longer range, slower data rate
 
 **Bandwidth** (Hz):
-- LoRa bandwidth
+- LRS pager bandwidth
 - Options: 125 kHz, 250 kHz, 500 kHz
 - Default: 125000 (125 kHz)
 - Higher = faster data rate, shorter range
@@ -837,7 +837,7 @@ Runner will download file by hash from server.
 **Progressive difficulty**:
 1. Start with simple modulations (NBFM, CW at slow speed)
 2. Increase challenge (faster CW, FHSS, frequency offsets)
-3. Advanced challenges (LoRa, complex hopping patterns)
+3. Advanced challenges (LRS pager, complex hopping patterns)
 
 **File size considerations**:
 - Small files (< 1 MB): Fast transmission, quick to receive
