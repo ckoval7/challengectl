@@ -383,10 +383,12 @@ class ListenerAgent:
         def on_devices_updated(data):
             """Handle device configuration update from server."""
             try:
+                logger.debug(f"Received agent_devices_updated event: {data}")
                 agent_id = data.get('agent_id')
                 if agent_id == self.agent_id:
-                    logger.info("Received device configuration update from server")
+                    logger.info(f"Device configuration update for this agent ({self.agent_id})")
                     new_devices = data.get('devices', [])
+                    logger.debug(f"New devices data: {new_devices}")
 
                     # Update device list in memory
                     self.devices = []
@@ -405,6 +407,8 @@ class ListenerAgent:
                                   f"(gain: {device_info['gain']} dB, waterfall: {device_info['waterfall_min_dbm']} to {device_info['waterfall_max_dbm']} dBm)")
 
                     logger.info(f"Device configuration reloaded: {len(self.devices)} devices")
+                else:
+                    logger.debug(f"Device update for different agent: {agent_id} (this agent: {self.agent_id})")
             except Exception as e:
                 logger.error(f"Error handling device configuration update: {e}", exc_info=True)
 
@@ -616,6 +620,7 @@ class ListenerAgent:
             waterfall_max_dbm = selected_device.get('waterfall_max_dbm')
 
             logger.info(f"Generating waterfall image: {image_path}")
+            logger.info(f"Waterfall settings - min: {waterfall_min_dbm} dBm, max: {waterfall_max_dbm} dBm, reference: {reference_level} dBm")
             generate_waterfall(
                 fft_data=fft_data,
                 frequency=frequency,

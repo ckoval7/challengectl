@@ -2666,12 +2666,15 @@ class ChallengeCtlAPI:
                 if agent:
                     agent_type = agent['agent_type']
                     # Emit directly to /agents namespace for listener agents
-                    self.socketio.emit('agent_devices_updated', {
+                    event_data = {
                         'agent_id': agent_id,
                         'agent_type': agent_type,
                         'devices': devices,
                         'timestamp': datetime.now(timezone.utc).isoformat()
-                    }, namespace='/agents')
+                    }
+                    logger.info(f"Broadcasting agent_devices_updated to /agents namespace for {agent_id}: {len(devices)} devices")
+                    logger.debug(f"Device update payload: {event_data}")
+                    self.socketio.emit('agent_devices_updated', event_data, namespace='/agents')
 
                 return jsonify({'status': 'updated', 'devices': devices}), 200
             else:
