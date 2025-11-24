@@ -8,10 +8,11 @@ ChallengeCtl enables CTF organizers to manage radio frequency challenges by dist
 
 ## System Components
 
-ChallengeCtl consists of three main components:
+ChallengeCtl consists of four main components:
 
-- **Server**: A centralized controller that manages challenge scheduling, runner coordination, and provides a REST API and web interface
+- **Server**: A centralized controller that manages challenge scheduling, agent coordination, and provides a REST API and web interface
 - **Runner**: A client application that runs on devices with SDR hardware, executes transmission tasks, and reports status back to the server
+- **Listener**: A client application that captures RF transmissions using SDR receivers and generates waterfall images for spectrum visualization
 - **Frontend**: A Vue.js web application for monitoring system status, managing challenges, and viewing real-time logs
 
 ## Documentation
@@ -19,7 +20,8 @@ ChallengeCtl consists of three main components:
 ### Getting Started
 - **[Quick Start Guide](Quick-Start)** - Get up and running in minutes
 - **[Server Setup](Server-Setup)** - Complete guide to deploying the server
-- **[Runner Setup](Runner-Setup)** - Complete guide to configuring and running SDR clients
+- **[Runner Setup](Runner-Setup)** - Complete guide to configuring and running SDR transmitter clients
+- **[Listener Setup](Listener-Setup)** - Complete guide to setting up spectrum listener agents for RF capture
 
 ### Usage Guides
 - **[Web Interface Guide](Web-Interface-Guide)** - Managing ChallengeCtl through the web dashboard
@@ -37,10 +39,12 @@ ChallengeCtl consists of three main components:
 
 - **Mutual Exclusion**: Prevents duplicate transmissions through pessimistic database locking
 - **Automatic Failover**: Detects failed runners and automatically reassigns their tasks
+- **Spectrum Recording**: Listener agents capture RF transmissions and generate waterfall images
+- **Priority-Based Recording**: Intelligent recording selection to conserve resources
 - **File Synchronization**: Content-addressed file distribution with SHA-256 verification
 - **Real-Time Monitoring**: WebSocket-based live updates for challenge status and logs
 - **Multi-Modulation Support**: Supports CW, ASK, NBFM, SSB, FHSS, POCSAG, LRS, FreeDV, and Paint modulations
-- **Security**: API key authentication for runners and TOTP 2FA for admin users
+- **Security**: API key authentication for agents and TOTP 2FA for admin users
 
 ## Quick Links
 

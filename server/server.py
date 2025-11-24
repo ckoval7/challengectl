@@ -53,22 +53,34 @@ class ChallengeCtlServer:
     def setup_background_tasks(self):
         """Setup periodic background cleanup tasks."""
 
-        def cleanup_stale_runners():
-            """Cleanup task to mark offline runners."""
+        def cleanup_stale_agents():
+            """Cleanup task to mark offline agents (runners and listeners)."""
             try:
-                offline_runners = self.db.cleanup_stale_runners(timeout_seconds=90)
-                if offline_runners:
-                    logger.info(f"Cleanup: marked {len(offline_runners)} runner(s) as offline")
-                    # Broadcast WebSocket events for each runner marked offline
+                offline_agents = self.db.cleanup_stale_agents(timeout_seconds=90)
+                if offline_agents:
+                    logger.info(f"Cleanup: marked {len(offline_agents)} agent(s) as offline")
+                    # Broadcast WebSocket events for each agent marked offline
                     from datetime import timezone
-                    for runner_id in offline_runners:
+                    for agent_id in offline_agents:
+                        # Get agent details to determine type
+                        agent = self.db.get_agent(agent_id)
+                        agent_type = agent.get('agent_type', 'runner') if agent else 'runner'
+
+                        # Cancel pending listener assignments for offline listeners
+                        if agent_type == 'listener':
+                            cancelled_count = self.db.cancel_listener_assignments_for_agent(agent_id)
+                            if cancelled_count > 0:
+                                logger.info(f"Cleanup: cancelled {cancelled_count} assignment(s) for offline listener {agent_id}")
+
                         self.api.broadcast_event('runner_status', {
-                            'runner_id': runner_id,
+                            'runner_id': agent_id,
+                            'agent_id': agent_id,
+                            'agent_type': agent_type,
                             'status': 'offline',
                             'timestamp': datetime.now(timezone.utc).isoformat()
                         })
             except Exception as e:
-                logger.error(f"Error in cleanup_stale_runners: {e}")
+                logger.error(f"Error in cleanup_stale_agents: {e}")
 
         def cleanup_stale_assignments():
             """Cleanup task to requeue timed-out challenge assignments."""
@@ -79,12 +91,21 @@ class ChallengeCtlServer:
             except Exception as e:
                 logger.error(f"Error in cleanup_stale_assignments: {e}")
 
+        def cleanup_stale_listener_assignments():
+            """Cleanup task to cancel timed-out listener assignments."""
+            try:
+                count = self.db.cleanup_stale_listener_assignments(timeout_minutes=15)
+                if count > 0:
+                    logger.info(f"Cleanup: cancelled {count} stale listener assignment(s)")
+            except Exception as e:
+                logger.error(f"Error in cleanup_stale_listener_assignments: {e}")
+
         # Run cleanup tasks every 30 seconds
         self.scheduler.add_job(
-            cleanup_stale_runners,
+            cleanup_stale_agents,
             'interval',
             seconds=30,
-            id='cleanup_runners',
+            id='cleanup_agents',
             replace_existing=True
         )
 
@@ -93,6 +114,14 @@ class ChallengeCtlServer:
             'interval',
             seconds=30,
             id='cleanup_assignments',
+            replace_existing=True
+        )
+
+        self.scheduler.add_job(
+            cleanup_stale_listener_assignments,
+            'interval',
+            seconds=30,
+            id='cleanup_listener_assignments',
             replace_existing=True
         )
 
@@ -110,6 +139,13 @@ class ChallengeCtlServer:
             except Exception as e:
                 logger.error(f"Error in cleanup_expired_totp_codes: {e}")
 
+        def cleanup_expired_transmissions():
+            """Cleanup task to remove timed-out active transmissions."""
+            try:
+                self.api.cleanup_expired_transmissions()
+            except Exception as e:
+                logger.error(f"Error in cleanup_expired_transmissions: {e}")
+
         # Run session and TOTP cleanup every minute
         self.scheduler.add_job(
             cleanup_expired_sessions,
@@ -124,6 +160,15 @@ class ChallengeCtlServer:
             'interval',
             seconds=60,
             id='cleanup_totp_codes',
+            replace_existing=True
+        )
+
+        # Run transmission timeout check every 10 seconds for responsive public dashboard
+        self.scheduler.add_job(
+            cleanup_expired_transmissions,
+            'interval',
+            seconds=10,
+            id='cleanup_transmissions',
             replace_existing=True
         )
 
@@ -411,7 +456,7 @@ class ChallengeCtlServer:
 
         # Shutdown scheduler if it's running
         if self.scheduler.running:
-            self.scheduler.shutdown(wait=False)
+            self.scheduler.shutdown(wait=True)
             print("Background scheduler stopped", flush=True)
             logger.info("Background scheduler stopped")
 
@@ -537,11 +582,21 @@ def main():
         logger.info("Please edit the configuration file and restart the server")
         sys.exit(1)
 
+    # Convert files_dir to absolute path to avoid working directory issues
+    # If it's already absolute, this is a no-op
+    # If it's relative, resolve it relative to the server script directory's parent (repo root)
+    if not os.path.isabs(args.files_dir):
+        server_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.dirname(server_dir)
+        files_dir = os.path.join(repo_root, args.files_dir)
+    else:
+        files_dir = args.files_dir
+
     # Create server
     server = ChallengeCtlServer(
         config_path=args.config,
         db_path=args.database,
-        files_dir=args.files_dir
+        files_dir=files_dir
     )
 
     # Start server

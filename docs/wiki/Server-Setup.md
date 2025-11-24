@@ -478,7 +478,7 @@ sqlite3 /var/lib/challengectl/challengectl.db "VACUUM;"
 Monitor runner health through the web interface or via the API:
 
 ```bash
-curl -X GET http://localhost:8443/api/runners \
+curl -X GET http://localhost:8443/api/agents \
   -H "Content-Type: application/json"
 ```
 

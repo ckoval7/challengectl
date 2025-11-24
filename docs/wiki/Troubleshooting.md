@@ -6,6 +6,7 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 
 - [Server Issues](#server-issues)
 - [Runner Issues](#runner-issues)
+- [Listener Issues](#listener-issues)
 - [Challenge Transmission Issues](#challenge-transmission-issues)
 - [Authentication Issues](#authentication-issues)
 - [Network and Connectivity Issues](#network-and-connectivity-issues)
@@ -340,6 +341,314 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 4. **Other runners taking all tasks**
    **Solution**: Check runner priorities or add more challenges.
 
+## Listener Issues
+
+### Listener Won't Connect to Server
+
+**Symptoms**: Listener fails to register or connect to the server.
+
+**Possible Causes and Solutions**:
+
+1. **Invalid API key**
+   **Solution**: Verify API key in `listener-config.yml` matches the enrolled listener:
+   - Check web UI → Agents → Provisioning for the correct API key
+   - Re-enroll listener if API key is lost
+   - Ensure no extra spaces or line breaks in config file
+
+2. **Network connectivity**
+   **Solution**: Test network connection:
+   ```bash
+   # Test HTTP connectivity
+   curl http://your-server:8443/api/health
+
+   # Check for firewall blocks
+   telnet your-server 8443
+   ```
+
+3. **Incorrect server URL**
+   **Solution**: Verify `server_url` in config:
+   - Must be accessible from listener machine
+   - Check protocol (http vs https)
+   - Verify port number (default: 8443)
+
+4. **Enrollment token expired**
+   **Solution**: Enrollment tokens are single-use. If listener was enrolled successfully once, remove or ignore `enrollment_token` from config. API key is sufficient for subsequent connections.
+
+### WebSocket Connection Fails
+
+**Symptoms**: Listener shows "WebSocket: Disconnected" in web UI, no recording assignments received.
+
+**Possible Causes and Solutions**:
+
+1. **Firewall blocking WebSocket**
+   **Solution**: Ensure firewall allows outbound WebSocket connections:
+   ```bash
+   # Check if WebSocket port is accessible
+   nc -zv your-server 8443
+
+   # Check iptables rules (if applicable)
+   sudo iptables -L -n | grep 8443
+   ```
+
+2. **Server WebSocket not configured**
+   **Solution**: Verify server has Flask-SocketIO installed and running:
+   ```bash
+   pip show flask-socketio
+   ```
+
+3. **SSL/TLS certificate issues**
+   **Solution**: If using HTTPS with self-signed certificates:
+   ```yaml
+   # In listener-config.yml
+   agent:
+     server_url: "https://your-server:8443"
+     verify_ssl: false  # Only for testing!
+   ```
+
+4. **WebSocket namespace mismatch**
+   **Solution**: Listener must connect to `/agents` namespace. This is automatic in the listener client. Check server logs for namespace errors.
+
+### SDR Device Not Found
+
+**Symptoms**: `ERROR: osmosdr source failed to open device`
+
+**Possible Causes and Solutions**:
+
+1. **Device not connected**
+   **Solution**: Verify SDR is plugged in:
+   ```bash
+   # For RTL-SDR
+   lsusb | grep -i rtl
+
+   # For HackRF
+   lsusb | grep -i hackrf
+
+   # For USRP
+   uhd_find_devices
+   ```
+
+2. **Permission denied**
+   **Solution**: Add user to `plugdev` group:
+   ```bash
+   sudo usermod -a -G plugdev $USER
+   # Log out and log back in for changes to take effect
+   ```
+
+3. **Device ID incorrect**
+   **Solution**: List available devices and update config:
+   ```bash
+   # List osmosdr devices
+   osmocom_fft
+
+   # Update listener-config.yml with correct device ID
+   # Example: "rtlsdr=0", "hackrf=0", "uhd=0"
+   ```
+
+4. **Device already in use**
+   **Solution**: Only one process can use an SDR at a time:
+   ```bash
+   # Check for other processes using SDR
+   ps aux | grep -E "(osmo|rtl_|hackrf_|uhd)"
+
+   # Kill conflicting process if found
+   killall osmocom_fft  # or other process
+   ```
+
+5. **Driver not installed**
+   **Solution**: Install appropriate SDR drivers:
+   ```bash
+   # For RTL-SDR
+   sudo apt-get install rtl-sdr
+
+   # For HackRF
+   sudo apt-get install hackrf
+
+   # For USRP
+   sudo apt-get install uhd-host
+   ```
+
+### No Recordings Being Assigned
+
+**Symptoms**: Listener is online and WebSocket connected, but no recordings are assigned.
+
+**Possible Causes and Solutions**:
+
+1. **Listener disabled**
+   **Solution**: Check listener status in web UI:
+   - Navigate to Agents → Listeners
+   - Verify "Enabled" button shows listener is enabled
+   - Click "Enable" if disabled
+
+2. **Priority threshold not met**
+   **Solution**: Recording priority may be below threshold. Transmissions must meet priority criteria:
+   - Check [Architecture documentation](Architecture#recording-priority-algorithm) for priority algorithm
+   - Lower the priority threshold in server configuration (if customizable)
+   - Wait for more transmissions to occur (priority increases over time)
+
+3. **No active transmissions**
+   **Solution**: Verify runners are transmitting:
+   - Check Dashboard for recent transmissions
+   - Ensure challenges are enabled
+   - Ensure runners are online and enabled
+
+4. **Frequency mismatch**
+   **Solution**: Verify listener can receive the transmission frequency:
+   - Check challenge frequency in web UI
+   - Ensure listener's SDR supports that frequency
+   - Future enhancement: frequency-based listener selection
+
+### Poor Signal Quality in Recordings
+
+**Symptoms**: Waterfall images show weak or distorted signals, excessive noise.
+
+**Possible Causes and Solutions**:
+
+1. **RF gain too low**
+   **Solution**: Increase gain in `listener-config.yml`:
+   ```yaml
+   recording:
+     gain: 50  # Increase from default 40
+   ```
+
+2. **RF gain too high (saturation)**
+   **Solution**: Decrease gain to prevent overload:
+   ```yaml
+   recording:
+     gain: 30  # Decrease if seeing saturation
+   ```
+
+3. **Poor antenna**
+   **Solution**: Improve antenna setup:
+   - Use antenna appropriate for frequency range
+   - Check antenna connection (SMA connector tight)
+   - Position antenna with clear line of sight
+   - Move away from interference sources
+
+4. **RF interference**
+   **Solution**: Identify and eliminate interference:
+   - Move listener away from computers, power supplies
+   - Use ferrite chokes on USB cables
+   - Test at different times of day
+   - Use shielded cables
+
+5. **Sample rate too low**
+   **Solution**: Increase sample rate to capture full bandwidth:
+   ```yaml
+   recording:
+     sample_rate: 2000000  # 2 MHz for narrow signals
+     sample_rate: 4000000  # 4 MHz for wideband signals
+   ```
+
+6. **Distance from transmitter**
+   **Solution**: If possible, move listener closer to runner or increase runner TX power.
+
+### High CPU Usage During Recording
+
+**Symptoms**: Listener process consumes 100% CPU, system becomes slow.
+
+**Possible Causes and Solutions**:
+
+1. **Sample rate too high**
+   **Solution**: Reduce sample rate:
+   ```yaml
+   recording:
+     sample_rate: 1000000  # Reduce from 2 MHz to 1 MHz
+   ```
+
+2. **FFT size too large**
+   **Solution**: Reduce FFT size:
+   ```yaml
+   recording:
+     fft_size: 512  # Reduce from 1024
+   ```
+
+3. **Frame rate too high**
+   **Solution**: Reduce waterfall frame rate:
+   ```yaml
+   recording:
+     frame_rate: 10  # Reduce from 20 fps
+   ```
+
+4. **Insufficient hardware**
+   **Solution**: Move listener to more powerful hardware or use Raspberry Pi 4+ for better performance.
+
+### Images Not Uploading
+
+**Symptoms**: Recording completes but waterfall image doesn't appear in web UI.
+
+**Possible Causes and Solutions**:
+
+1. **File too large**
+   **Solution**: Reduce image size:
+   - Lower `frame_rate` (fewer time samples)
+   - Reduce transmission duration
+   - Check server max upload size settings
+
+2. **Network bandwidth**
+   **Solution**: Test upload speed:
+   ```bash
+   # Test upload to server
+   time curl -X POST http://your-server:8443/api/files/upload \
+     -F "file=@test_image.png" \
+     -H "X-API-Key: your-api-key"
+   ```
+
+3. **Server disk space**
+   **Solution**: Check server storage:
+   ```bash
+   # On server
+   df -h
+   du -sh recordings/
+   ```
+
+4. **Permission error**
+   **Solution**: Verify listener has write permission to `output_dir`:
+   ```bash
+   # On listener machine
+   ls -ld recordings/
+   mkdir -p recordings  # Create if missing
+   ```
+
+### Listener Stuck or Unresponsive
+
+**Symptoms**: Listener process appears hung, no heartbeats, won't respond to signals.
+
+**Possible Causes and Solutions**:
+
+1. **GNU Radio flowgraph deadlock**
+   **Solution**: Kill and restart listener:
+   ```bash
+   # Find listener process
+   ps aux | grep listener.py
+
+   # Kill process
+   kill <pid>
+
+   # Or force kill
+   kill -9 <pid>
+
+   # Restart listener
+   ./listener.py --config listener-config.yml
+   ```
+
+2. **SDR device hung**
+   **Solution**: Reset SDR device:
+   ```bash
+   # Unplug and replug SDR
+   # Or reset USB bus
+   sudo usbreset /dev/bus/usb/XXX/YYY
+   ```
+
+3. **Network timeout**
+   **Solution**: Check network connectivity and restart listener.
+
+4. **Memory exhaustion**
+   **Solution**: Check memory usage:
+   ```bash
+   free -h
+   top -p $(pgrep listener.py)
+   ```
+
 ## Challenge Transmission Issues
 
 ### Transmissions Failing
@@ -453,6 +762,71 @@ This guide covers common issues you might encounter when running ChallengeCtl an
 
 4. **Interference**
    **Solution**: Check for nearby transmitters, change frequency, or add filtering.
+
+### Challenges Stuck as Active on Public Dashboard
+
+**Symptoms**: Challenge shows as "active" on the public dashboard but transmission has completed or failed.
+
+**Cause**: The challenge transmission exceeded its expected duration without completing, or the runner crashed mid-transmission.
+
+**How the timeout works**:
+- When a challenge is assigned, the server calculates the expected transmission duration
+- A timeout is set to `expected_duration × transmission_timeout_multiplier` (default: 2.0)
+- If the transmission doesn't complete within this timeout, the challenge is automatically marked as inactive
+- A background cleanup task checks every 10 seconds for expired transmissions
+
+**Solutions**:
+
+1. **Wait for automatic timeout**
+   - Default timeout: 2× expected duration
+   - Example: 30-second challenge times out after 60 seconds
+   - Check server logs for timeout events:
+   ```bash
+   grep "Transmission timeout" challengectl.server.log
+   ```
+
+2. **Adjust timeout multiplier** (if timeouts are too aggressive or too lenient)
+
+   Edit `server-config.yml`:
+   ```yaml
+   server:
+     transmission_timeout_multiplier: 2.0  # Increase for slower transmissions
+   ```
+
+   Recommended values:
+   - `1.5` - Aggressive (faster cleanup, may timeout slow devices)
+   - `2.0` - Balanced (default, 100% buffer)
+   - `3.0` - Conservative (allows for very slow transmissions)
+
+   Restart server after changing:
+   ```bash
+   # Restart server to apply new configuration
+   sudo systemctl restart challengectl-server
+   ```
+
+3. **Check runner status**
+   - Verify runner is online and not crashed
+   - Check runner logs for transmission errors:
+   ```bash
+   tail -f challengectl.runner.log
+   ```
+
+4. **Verify challenge completed successfully**
+   - Check Logs page in web interface for transmission completion
+   - If runner reported success but challenge still shows active, wait for timeout
+   - Successful completions immediately clear active status
+
+**Expected behavior**:
+- Successful transmission: Challenge immediately marked inactive when runner reports completion
+- Failed transmission: Challenge marked inactive after timeout period
+- Crashed runner: Challenge marked inactive after timeout period
+
+**Note**: This timeout only affects the public dashboard active indicator. It does not affect:
+- Challenge assignment behavior (controlled by `assignment_timeout`)
+- Runner connectivity (controlled by `heartbeat_timeout`)
+- The actual transmission process
+
+See [Configuration Reference](Configuration-Reference#transmission-timeout) for detailed configuration options.
 
 ## Authentication Issues
 
@@ -809,7 +1183,7 @@ SELECT * FROM transmission_log ORDER BY timestamp DESC LIMIT 10;
 curl -v http://server-ip:8443/api/health
 
 # Test runner authentication
-curl -v -H "X-API-Key: your-key" http://server-ip:8443/api/runners/runner-1/task
+curl -v -H "X-API-Key: your-key" http://server-ip:8443/api/agents/runner-1/task
 
 # Monitor network traffic
 sudo tcpdump -i any port 8443

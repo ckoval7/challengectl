@@ -1,0 +1,24 @@
+# ChallengeCtl Listener Agent Dependencies
+
+# HTTP client
+requests>=2.31.0
+
+# WebSocket
+python-socketio>=5.10.0
+
+# Configuration
+PyYAML>=6.0
+
+# Image generation and processing
+matplotlib>=3.7.0
+pillow>=12.0.0
+numpy>=1.24.0
+
+# Note: GNU Radio and gr-osmosdr must be installed separately
+# These are typically installed via system package manager:
+#   sudo apt-get install gnuradio gr-osmosdr
+#
+# SDR device drivers also required (based on your hardware):
+#   sudo apt-get install rtl-sdr      # For RTL-SDR
+#   sudo apt-get install hackrf        # For HackRF
+#   sudo apt-get install uhd-host      # For USRP

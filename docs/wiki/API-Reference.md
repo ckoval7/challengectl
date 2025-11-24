@@ -13,6 +13,8 @@ This document provides a comprehensive reference for the ChallengeCtl REST API. 
   - [User Management](#user-management)
   - [Public Endpoints](#public-endpoints)
   - [Runner Operations](#runner-operations)
+  - [Agent Operations (Unified)](#agent-operations-unified)
+  - [Recording Management](#recording-management)
   - [Dashboard and Monitoring](#dashboard-and-monitoring)
   - [Runner Management](#runner-management)
   - [Runner Enrollment](#runner-enrollment)
@@ -27,7 +29,7 @@ This document provides a comprehensive reference for the ChallengeCtl REST API. 
 
 ## Overview
 
-The ChallengeCtl API is a RESTful API served over HTTP/HTTPS. All endpoints return JSON-formatted responses unless otherwise specified.
+The ChallengeCtl API is a RESTful API served over HTTP/HTTPS. All endpoints return JSON-formatted responses unless otherwise specified. The API enables programmatic access to challenge management, agent coordination (runners and listeners), and system monitoring.
 
 **Base URL**: `http://your-server:8443/api`
 
@@ -42,7 +44,7 @@ The API uses three authentication methods depending on the endpoint:
 Runner endpoints require an API key passed in the `X-API-Key` header:
 
 ```http
-GET /api/runners/runner-1/task HTTP/1.1
+GET /api/agents/runner-1/task HTTP/1.1
 Host: challengectl.example.com
 X-API-Key: ck_abc123def456ghi789
 ```
@@ -631,7 +633,7 @@ No authentication required.
 
 #### GET /api/public/challenges
 
-Get public information about challenges.
+Get public information about challenges for the participant-facing public dashboard.
 
 **Request:**
 ```http
@@ -643,60 +645,139 @@ GET /api/public/challenges HTTP/1.1
 {
   "challenges": [
     {
-      "name": "NBFM_FLAG_1",
+      "challenge_id": "NBFM_FLAG_1",
+      "name": "NBFM Flag 1",
       "modulation": "nbfm",
       "frequency": 146550000,
-      "enabled": true,
-      "state": "waiting",
-      "last_run": "2024-01-15T10:25:00Z"
+      "frequency_display": "146.550 MHz",
+      "last_tx_time": "2024-01-15T10:25:00Z",
+      "is_active": false
+    }
+  ],
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `challenge_id` | string | Unique challenge identifier |
+| `name` | string | Challenge display name |
+| `modulation` | string | Modulation type (if `show_modulation` enabled) |
+| `frequency` | integer | Frequency in Hz (if `show_frequency` enabled) |
+| `frequency_display` | string | Human-readable frequency (e.g., "146.550 MHz") |
+| `last_tx_time` | string | ISO 8601 timestamp of last transmission (if `show_last_tx_time` enabled) |
+| `is_active` | boolean | Whether challenge is currently transmitting (if `show_active_status` enabled) |
+
+**Active Status Behavior:**
+
+The `is_active` field indicates whether a challenge is currently transmitting. This status automatically times out to prevent stuck indicators when runners fail:
+
+- **True**: Challenge is assigned and transmission is in progress
+- **False**: Challenge is not transmitting
+- **Timeout**: Automatically becomes `false` after `expected_duration × transmission_timeout_multiplier` seconds (default: 2.0)
+- **Update frequency**: Status checked every 10 seconds by background cleanup task
+
+Example: A 30-second challenge with default timeout (2.0) will show as active for up to 60 seconds, even if the runner crashes.
+
+See [Configuration Reference](Configuration-Reference#transmission-timeout) for timeout configuration.
+
+**Visibility Control:**
+
+Fields shown depend on the challenge `public_view` configuration. Administrators can control which information is visible to participants:
+
+```yaml
+challenges:
+  - name: "Example Challenge"
+    config:
+      public_view:
+        show_modulation: true      # Show modulation type
+        show_frequency: true        # Show frequency
+        show_last_tx_time: true     # Show last transmission time
+        show_active_status: true    # Show active indicator
+```
+
+**WebSocket Updates:**
+
+Subscribe to the `/public` WebSocket namespace to receive real-time updates when challenges change:
+
+```javascript
+socket.on('challenges_update', (data) => {
+  console.log('Updated challenges:', data.challenges);
+});
+```
+
+---
+
+### Runner Operations (Deprecated)
+
+**⚠️ DEPRECATED**: The `/api/runners/*` endpoints have been removed. Use the unified [Agent Operations](#agent-operations-unified) endpoints instead.
+
+**Migration**:
+- `/api/runners/register` → `/api/agents/register` (with `agent_type: "runner"`)
+- `/api/runners/<id>/heartbeat` → `/api/agents/<id>/heartbeat`
+- `/api/runners/<id>/signout` → `/api/agents/<id>/signout`
+- `/api/runners/<id>/task` → `/api/agents/<id>/task`
+- `/api/runners/<id>/complete` → `/api/agents/<id>/complete`
+- `/api/runners/<id>/log` → `/api/agents/<id>/log`
+
+See [Agent Operations (Unified)](#agent-operations-unified) below for full documentation.
+
+---
+
+### Agent Operations (Unified)
+
+The unified agent API supports both runners and listeners. These endpoints replace the legacy `/api/runners/*` endpoints and add support for listener agents.
+
+Requires agent API key authentication.
+
+#### POST /api/agents/register
+
+Register a new agent (runner or listener) with the server.
+
+**Request:**
+```http
+POST /api/agents/register HTTP/1.1
+X-API-Key: ck_abc123...
+Content-Type: application/json
+
+{
+  "agent_id": "listener-1",
+  "agent_type": "listener",
+  "hostname": "sdr-listener-01",
+  "ip_address": "192.168.1.50",
+  "devices": [
+    {
+      "name": "0",
+      "model": "rtlsdr",
+      "frequency_limits": ["144000000-148000000"]
     }
   ]
 }
 ```
 
-Fields shown depend on challenge `public_view` configuration.
-
----
-
-### Runner Operations
-
-Requires runner API key authentication.
-
-#### POST /api/runners/register
-
-Register a new runner with the server.
-
-**Request:**
-```http
-POST /api/runners/register HTTP/1.1
-X-API-Key: ck_abc123...
-Content-Type: application/json
-
-{
-  "runner_id": "runner-1",
-  "frequency_limits": [
-    "144000000-148000000",
-    "420000000-450000000"
-  ]
-}
-```
+**Parameters**:
+- `agent_type`: "runner" or "listener" (required)
+- Other fields same as runner registration
 
 **Response:**
 ```json
 {
   "status": "success",
-  "message": "Runner registered successfully",
-  "runner_id": "runner-1"
+  "message": "Agent registered successfully",
+  "agent_id": "listener-1",
+  "agent_type": "listener"
 }
 ```
 
-#### POST /api/runners/\<runner_id\>/heartbeat
+#### POST /api/agents/\<agent_id\>/heartbeat
 
-Send heartbeat to indicate runner is alive.
+Send heartbeat to indicate agent is alive. Works for both runners and listeners.
 
 **Request:**
 ```http
-POST /api/runners/runner-1/heartbeat HTTP/1.1
+POST /api/agents/listener-1/heartbeat HTTP/1.1
 X-API-Key: ck_abc123...
 ```
 
@@ -708,13 +789,13 @@ X-API-Key: ck_abc123...
 }
 ```
 
-#### POST /api/runners/\<runner_id\>/signout
+#### POST /api/agents/\<agent_id\>/signout
 
 Gracefully sign out and unregister from server.
 
 **Request:**
 ```http
-POST /api/runners/runner-1/signout HTTP/1.1
+POST /api/agents/listener-1/signout HTTP/1.1
 X-API-Key: ck_abc123...
 ```
 
@@ -722,58 +803,109 @@ X-API-Key: ck_abc123...
 ```json
 {
   "status": "success",
-  "message": "Runner signed out successfully"
+  "message": "Agent signed out successfully"
 }
 ```
 
-#### GET /api/runners/\<runner_id\>/task
+#### GET /api/agents
 
-Poll for a new task assignment.
+List all registered agents (admin only).
 
 **Request:**
 ```http
-GET /api/runners/runner-1/task HTTP/1.1
-X-API-Key: ck_abc123...
+GET /api/agents HTTP/1.1
+Cookie: session=...
 ```
 
-**Response (task available):**
+**Query parameters**:
+- `type` (optional): Filter by agent type ("runner" or "listener")
+
+**Response:**
 ```json
 {
-  "task": {
-    "challenge_id": 1,
-    "name": "NBFM_FLAG_1",
-    "frequency": 146550000,
-    "modulation": "nbfm",
-    "flag_file": "challenges/voice.wav",
-    "flag_hash": "abc123def456...",
-    "parameters": {
-      "wav_samplerate": 48000
+  "agents": [
+    {
+      "agent_id": "runner-1",
+      "agent_type": "runner",
+      "status": "online",
+      "enabled": true,
+      "last_heartbeat": "2024-01-15T10:30:00Z",
+      "devices": [...]
+    },
+    {
+      "agent_id": "listener-1",
+      "agent_type": "listener",
+      "status": "online",
+      "enabled": true,
+      "websocket_connected": true,
+      "websocket_last_connected": "2024-01-15T10:28:00Z",
+      "last_heartbeat": "2024-01-15T10:30:00Z",
+      "devices": [...]
     }
-  }
+  ]
 }
 ```
 
-**Response (no task):**
-```json
-{
-  "task": null
-}
-```
+#### POST /api/agents/\<agent_id\>/enable
 
-#### POST /api/runners/\<runner_id\>/complete
-
-Report task completion.
+Enable an agent to receive tasks/assignments.
 
 **Request:**
 ```http
-POST /api/runners/runner-1/complete HTTP/1.1
+POST /api/agents/listener-1/enable HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Agent enabled"
+}
+```
+
+#### POST /api/agents/\<agent_id\>/disable
+
+Disable an agent from receiving new tasks/assignments.
+
+**Request:**
+```http
+POST /api/agents/listener-1/disable HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Agent disabled"
+}
+```
+
+---
+
+### Recording Management
+
+Endpoints for listener agents to manage spectrum recordings and waterfall uploads.
+
+Requires agent API key authentication for recording operations. Admin authentication for querying recordings.
+
+#### POST /api/agents/\<agent_id\>/recording/start
+
+Listener reports that recording has started.
+
+**Request:**
+```http
+POST /api/agents/listener-1/recording/start HTTP/1.1
 X-API-Key: ck_abc123...
 Content-Type: application/json
 
 {
-  "challenge_id": 1,
-  "status": "success",
-  "error": null
+  "challenge_id": "NBFM_TEST",
+  "transmission_id": 152,
+  "frequency": 146550000,
+  "sample_rate": 2000000,
+  "expected_duration": 10.0
 }
 ```
 
@@ -781,32 +913,141 @@ Content-Type: application/json
 ```json
 {
   "status": "success",
-  "message": "Task completion recorded"
+  "recording_id": 42
 }
 ```
 
-#### POST /api/runners/\<runner_id\>/log
+#### POST /api/agents/\<agent_id\>/recording/\<recording_id\>/complete
 
-Send log messages to server.
+Listener reports recording completion.
 
 **Request:**
 ```http
-POST /api/runners/runner-1/log HTTP/1.1
+POST /api/agents/listener-1/recording/42/complete HTTP/1.1
 X-API-Key: ck_abc123...
 Content-Type: application/json
 
 {
-  "level": "INFO",
-  "message": "Challenge transmission completed successfully"
+  "success": true,
+  "duration": 15.2,
+  "image_width": 1200,
+  "image_height": 800
 }
 ```
 
 **Response:**
 ```json
 {
-  "status": "success"
+  "status": "success",
+  "message": "Recording completion recorded"
 }
 ```
+
+**Error Response (failure)**:
+```json
+{
+  "success": false,
+  "error_message": "SDR device timeout"
+}
+```
+
+#### POST /api/agents/\<agent_id\>/recording/\<recording_id\>/upload
+
+Upload waterfall image for a recording.
+
+**Request:**
+```http
+POST /api/agents/listener-1/recording/42/upload HTTP/1.1
+X-API-Key: ck_abc123...
+Content-Type: multipart/form-data
+
+file=<PNG image data>
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Waterfall image uploaded",
+  "image_path": "recordings/NBFM_TEST_20240115_103000.png"
+}
+```
+
+#### GET /api/recordings
+
+Get recent recordings across all challenges (admin only).
+
+**Request:**
+```http
+GET /api/recordings HTTP/1.1
+Cookie: session=...
+```
+
+**Query parameters**:
+- `limit` (integer): Maximum number to return (default: 100)
+
+**Response:**
+```json
+{
+  "recordings": [
+    {
+      "recording_id": 42,
+      "challenge_id": "NBFM_TEST",
+      "challenge_name": "NBFM Test Signal",
+      "agent_id": "listener-1",
+      "frequency": 146550000,
+      "started_at": "2024-01-15T10:30:00Z",
+      "completed_at": "2024-01-15T10:30:15Z",
+      "status": "completed",
+      "image_path": "recordings/NBFM_TEST_20240115_103000.png",
+      "duration_seconds": 15.2
+    }
+  ]
+}
+```
+
+#### GET /api/challenges/\<challenge_id\>/recordings
+
+Get recordings for a specific challenge (admin only).
+
+**Request:**
+```http
+GET /api/challenges/NBFM_TEST/recordings HTTP/1.1
+Cookie: session=...
+```
+
+**Query parameters**:
+- `limit` (integer): Maximum number to return (default: 50)
+
+**Response:**
+```json
+{
+  "recordings": [
+    {
+      "recording_id": 42,
+      "agent_id": "listener-1",
+      "frequency": 146550000,
+      "started_at": "2024-01-15T10:30:00Z",
+      "completed_at": "2024-01-15T10:30:15Z",
+      "status": "completed",
+      "image_path": "recordings/NBFM_TEST_20240115_103000.png"
+    }
+  ]
+}
+```
+
+#### GET /api/recordings/\<recording_id\>/image
+
+Retrieve waterfall image for a recording.
+
+**Request:**
+```http
+GET /api/recordings/42/image HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+PNG image file with appropriate `Content-Type: image/png` header.
 
 ---
 
@@ -1755,6 +1996,82 @@ All events are sent with this structure:
   "challenge_name": "NBFM_FLAG_1",
   "runner_id": "runner-1",
   "status": "success",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+#### Listener Status Change
+
+```json
+{
+  "type": "listener_status",
+  "agent_id": "listener-1",
+  "status": "online",
+  "websocket_connected": true,
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Listener WebSocket Namespace (/agents)
+
+Listeners connect to a separate WebSocket namespace `/agents` for real-time recording assignments.
+
+**Connection URL**: `ws://your-server:8443/socket.io/?namespace=/agents`
+
+**Authentication**: Requires `agent_id` and `api_key` in connection auth:
+
+```javascript
+io.connect('http://your-server:8443', {
+  auth: {
+    agent_id: 'listener-1',
+    api_key: 'ck_abc123...'
+  }
+}, namespaces=['/agents'])
+```
+
+#### Events Received by Listeners
+
+**connected**: Connection acknowledgment
+
+```json
+{
+  "status": "connected",
+  "agent_id": "listener-1",
+  "room": "agent_listener-1"
+}
+```
+
+**recording_assignment**: New recording task
+
+```json
+{
+  "assignment_id": 42,
+  "challenge_id": "NBFM_TEST",
+  "challenge_name": "NBFM Test Signal",
+  "transmission_id": 152,
+  "frequency": 146550000,
+  "expected_start": "2024-01-15T10:30:00.000Z",
+  "expected_duration": 10.0,
+  "sample_rate": 2000000
+}
+```
+
+**assignment_cancelled**: Recording assignment cancelled
+
+```json
+{
+  "assignment_id": 42,
+  "reason": "Transmission failed"
+}
+```
+
+#### Events Sent by Listeners
+
+**heartbeat**: Optional WebSocket heartbeat
+
+```json
+{
+  "agent_id": "listener-1",
   "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```

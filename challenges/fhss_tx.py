@@ -35,7 +35,7 @@ import time
 
 class fhss_tx(gr.top_block):
 
-    def __init__(self, bb_gain=20, channel_spacing=100e3, dev='bladerf=0', file='./test.wav', freq=int(449e6), hop_rate=10, hop_time=60, if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, seed='RFHS', wav_rate=48000):
+    def __init__(self, bb_gain=20, channel_spacing=100e3, dev='bladerf=0', file='./test.wav', freq=int(449e6), hop_rate=10, hop_time=60, if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, seed='RFHS', wav_rate=48000, antenna=''):
         gr.top_block.__init__(self, "Freq Hopper", catch_exceptions=True)
 
         ##################################################
@@ -54,6 +54,7 @@ class fhss_tx(gr.top_block):
         self.rf_samp_rate = rf_samp_rate
         self.seed = seed
         self.wav_rate = wav_rate
+        self.antenna = antenna
 
         ##################################################
         # Variables
@@ -90,7 +91,7 @@ class fhss_tx(gr.top_block):
         self.osmosdr_sink_0.set_gain(rf_gain, 0)
         self.osmosdr_sink_0.set_if_gain(if_gain, 0)
         self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
-        self.osmosdr_sink_0.set_antenna('', 0)
+        self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
         self.low_pass_filter_0 = filter.fir_filter_ccf(
             1,
@@ -220,6 +221,13 @@ class fhss_tx(gr.top_block):
     def set_wav_rate(self, wav_rate):
         self.wav_rate = wav_rate
 
+    def get_antenna(self):
+        return self.antenna
+
+    def set_antenna(self, antenna):
+        self.antenna = antenna
+        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
+
     def get_rf_rate(self):
         return self.rf_rate
 
@@ -321,13 +329,16 @@ def argument_parser():
     parser.add_argument(
         "-a", "--wav-rate", dest="wav_rate", type=intx, default=48000,
         help="Set Wav File Audio Sample Rate [default=%(default)r]")
+    parser.add_argument(
+        "--antenna", dest="antenna", type=str, default='',
+        help="Set Antenna [default=%(default)r]")
     return parser
 
 
 def main(top_block_cls=fhss_tx, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(bb_gain=options.bb_gain, channel_spacing=options.channel_spacing, dev=options.dev, file=options.file, freq=options.freq, hop_rate=options.hop_rate, hop_time=options.hop_time, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, seed=options.seed, wav_rate=options.wav_rate)
+    tb = top_block_cls(bb_gain=options.bb_gain, channel_spacing=options.channel_spacing, dev=options.dev, file=options.file, freq=options.freq, hop_rate=options.hop_rate, hop_time=options.hop_time, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, seed=options.seed, wav_rate=options.wav_rate, antenna=options.antenna)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()

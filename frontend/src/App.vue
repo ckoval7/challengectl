@@ -11,7 +11,7 @@
       >
         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-right: 20px;">
           <h2 style="margin: 0; line-height: 1.3; font-size: 1.5em;">
-            ChallengeCtl Control Center<span v-if="conferenceName"> - {{ conferenceName }}</span>
+            Challengectlv2 Orchestrator<span v-if="conferenceName"> - {{ conferenceName }}</span>
           </h2>
           <div style="font-size: 0.9em; margin-top: 5px; opacity: 0.95;">
             <ConferenceCountdown />
@@ -80,16 +80,16 @@
             class="sidebar-menu"
           >
             <el-menu-item index="/admin">
-              <el-icon><Monitor /></el-icon>
+              <el-icon><House /></el-icon>
               <span>Dashboard</span>
             </el-menu-item>
             <el-menu-item index="/runners">
               <el-icon><Connection /></el-icon>
-              <span>Runners</span>
+              <span>Agents</span>
             </el-menu-item>
             <el-menu-item index="/challenge-config">
-              <el-icon><Setting /></el-icon>
-              <span>Manage Challenges</span>
+              <el-icon><Flag /></el-icon>
+              <span>Challenges</span>
             </el-menu-item>
             <el-menu-item index="/logs">
               <el-icon><Notebook /></el-icon>
@@ -101,6 +101,10 @@
             >
               <el-icon><User /></el-icon>
               <span>Users</span>
+            </el-menu-item>
+            <el-menu-item index="/public">
+              <el-icon><Monitor /></el-icon>
+              <span>Public Dashboard</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -119,7 +123,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Monitor, Connection, Notebook, User, Moon, Sunny, Setting, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
+import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
@@ -129,11 +133,12 @@ import ConferenceCountdown from './components/ConferenceCountdown.vue'
 export default {
   name: 'App',
   components: {
+    House,
     Monitor,
     Connection,
     Notebook,
     User,
-    Setting,
+    Flag,
     ConferenceCountdown
   },
   setup() {

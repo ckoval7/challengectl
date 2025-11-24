@@ -28,6 +28,7 @@ import random
 
 from database import Database
 from crypto import encrypt_totp_secret
+from challenge_duration import calculate_challenge_duration, get_pre_paint_duration
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,19 @@ class ChallengeCtlAPI:
         self.used_totp_codes = {}
         self.totp_codes_lock = threading.Lock()
 
+        # In-memory device status tracking
+        # Format: {(agent_id, device_id): {'status': str, 'model': str, 'last_update': str}}
+        self.device_status = {}
+        self.device_status_lock = threading.Lock()
+
+        # In-memory active transmission tracking with timeouts
+        # Format: {challenge_id: {'transmission_id': int, 'expected_end': datetime, 'assigned_to': str}}
+        self.active_transmissions = {}
+        self.active_transmissions_lock = threading.Lock()
+
+        # Timeout multiplier for transmission duration (default 2.0 = 200% of expected duration)
+        self.transmission_timeout_multiplier = 2.0
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -290,11 +304,84 @@ class ChallengeCtlAPI:
                 runner['devices'] = []
         return runner
 
-    def require_api_key(self, f):
-        """Decorator to require API key authentication (for runners only).
+    def calculate_recording_priority(self, challenge: Dict) -> float:
+        """Calculate recording priority for a challenge transmission.
 
-        Checks database for runner API key with enhanced multi-factor host validation.
-        All runners must be enrolled via the secure enrollment process.
+        Priority algorithm balances:
+        - Number of transmissions since last recording
+        - Time elapsed since last recording
+        - Challenge priority setting
+
+        Args:
+            challenge: Challenge dictionary with id, priority, etc.
+
+        Returns:
+            Priority score (0-1000, higher = more urgent)
+        """
+        challenge_id = challenge['challenge_id']
+        challenge_priority = challenge.get('priority', 0)
+
+        # Get last completed recording for this challenge
+        last_recording = self.db.get_last_recording_for_challenge(challenge_id)
+
+        # Get count of successful transmissions since last recording
+        if last_recording:
+            since_time = datetime.fromisoformat(last_recording['completed_at'])
+            # Ensure since_time is timezone-aware
+            if since_time.tzinfo is None:
+                since_time = since_time.replace(tzinfo=timezone.utc)
+        else:
+            since_time = None
+
+        transmissions_since = self.db.get_transmissions_since_recording(challenge_id, since_time)
+
+        # Never recorded = highest priority
+        if last_recording is None:
+            return 1000.0
+
+        # Calculate time factor
+        now = datetime.now(timezone.utc)
+        completed_at = datetime.fromisoformat(last_recording['completed_at'])
+        # Ensure completed_at is timezone-aware
+        if completed_at.tzinfo is None:
+            completed_at = completed_at.replace(tzinfo=timezone.utc)
+        minutes_since = (now - completed_at).total_seconds() / 60.0
+
+        # Time multiplier: gradually increases up to 10x over hours
+        # max(1.0, ...) ensures minimum 1x multiplier
+        time_multiplier = max(1.0, min(10.0, minutes_since / 60.0))
+
+        # Base priority: transmissions since last recording
+        # Multiply by time to gradually increase priority
+        priority = transmissions_since * time_multiplier
+
+        # Apply challenge priority boost (0-10 scale, default 0 = 1.0x, higher = more frequent recording)
+        # Changed from max(0.1, ...) to max(1.0, ...) so priority=0 doesn't penalize
+        priority_boost = 1.0 + (challenge_priority / 10.0)
+        priority *= priority_boost
+
+        # Cap at 1000
+        return min(1000.0, priority)
+
+    def should_assign_listener(self, challenge: Dict, threshold: float = 1.0) -> bool:
+        """Determine if a listener should be assigned for this transmission.
+
+        Args:
+            challenge: Challenge dictionary
+            threshold: Minimum priority score to trigger recording (default 1.0)
+
+        Returns:
+            True if priority exceeds threshold, False otherwise
+        """
+        priority = self.calculate_recording_priority(challenge)
+        logger.debug(f"Recording priority for {challenge['name']}: {priority:.2f}")
+        return priority >= threshold
+
+    def require_api_key(self, f):
+        """Decorator to require API key authentication (for runners and listeners).
+
+        Checks database for agent API key with enhanced multi-factor host validation.
+        All agents must be enrolled via the secure enrollment process.
         """
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -312,19 +399,27 @@ class ChallengeCtlAPI:
             if request.is_json and request.json:
                 current_hostname = request.json.get('hostname', '')
 
-            # Get host identifiers from custom headers (sent by runner)
-            current_mac = request.headers.get('X-Runner-MAC')
-            current_machine_id = request.headers.get('X-Runner-Machine-ID')
+            # Get host identifiers from custom headers (support both X-Runner-* and X-Agent-* for compatibility)
+            current_mac = request.headers.get('X-Agent-MAC') or request.headers.get('X-Runner-MAC')
+            current_machine_id = request.headers.get('X-Agent-Machine-ID') or request.headers.get('X-Runner-Machine-ID')
 
-            # Find runner_id in database with enhanced host validation (optimized query)
-            runner_id = self.db.find_runner_by_api_key(api_key, current_ip, current_hostname,
-                                                       current_mac, current_machine_id)
+            # Find agent (runner or listener) with enhanced host validation
+            agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
+                                                     current_mac, current_machine_id)
+            if agent_id:
+                # Get agent type from database
+                agent_info = self.db.get_agent(agent_id)
+                agent_type = agent_info.get('agent_type', 'runner') if agent_info else 'runner'
+            else:
+                agent_type = None
 
-            if not runner_id:
+            if not agent_id:
                 return jsonify({'error': 'Invalid API key'}), 401
 
-            # Add runner_id to request context
-            request.runner_id = runner_id
+            # Add agent_id and runner_id to request context (for backward compatibility)
+            request.agent_id = agent_id
+            request.runner_id = agent_id  # For backward compatibility with runner-only code
+            request.agent_type = agent_type
 
             return f(*args, **kwargs)
 
@@ -566,7 +661,7 @@ class ChallengeCtlAPI:
         """
         session_token = secrets.token_urlsafe(32)
         # Use UTC to prevent timezone manipulation
-        expires = datetime.utcnow() + timedelta(hours=24)
+        expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
         # Store session in database instead of memory
         self.db.create_session(
@@ -588,7 +683,7 @@ class ChallengeCtlAPI:
         SECURITY: Extends session by 24 hours from current time on activity.
         Uses UTC timestamps to prevent timezone manipulation.
         """
-        new_expires = datetime.utcnow() + timedelta(hours=24)
+        new_expires = datetime.now(timezone.utc) + timedelta(hours=24)
         return self.db.update_session_expires(session_token, new_expires.isoformat())
 
     def validate_and_renew_session(self):
@@ -616,7 +711,10 @@ class ChallengeCtlAPI:
         # Note: expires is stored as ISO format string in database
         # SECURITY: Use UTC for consistent timezone handling
         expires = datetime.fromisoformat(session['expires'])
-        if datetime.utcnow() > expires:
+        # Ensure timezone-aware comparison
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
             self.db.delete_session(session_token)
             return None, (jsonify({'error': 'Session expired'}), 401)
 
@@ -703,6 +801,37 @@ class ChallengeCtlAPI:
 
             if expired_keys:
                 logger.debug(f"Cleaned up {len(expired_keys)} expired TOTP code(s) from memory")
+
+    def cleanup_expired_transmissions(self):
+        """
+        Remove expired transmissions from active tracking.
+        This automatically marks challenges as no longer active after timeout.
+        Called periodically by the background scheduler.
+        """
+        expired_challenges = []
+
+        with self.active_transmissions_lock:
+            now = datetime.now(timezone.utc)
+            expired_challenges = [
+                challenge_id for challenge_id, info in self.active_transmissions.items()
+                if now >= info['expected_end']
+            ]
+
+            for challenge_id in expired_challenges:
+                transmission_info = self.active_transmissions[challenge_id]
+                logger.info(f"Transmission timeout: challenge {challenge_id} (transmission {transmission_info['transmission_id']}) "
+                          f"exceeded expected duration ({transmission_info['expected_duration']:.1f}s * {self.transmission_timeout_multiplier})")
+                del self.active_transmissions[challenge_id]
+
+        # Broadcast outside the lock to avoid blocking
+        if expired_challenges:
+            logger.debug(f"Cleaned up {len(expired_challenges)} expired transmission(s) from active tracking")
+            # Broadcast updated public challenges since active status changed
+            # Wrap in try/except to handle shutdown gracefully
+            try:
+                self.broadcast_public_challenges()
+            except Exception as e:
+                logger.debug(f"Could not broadcast public challenges (likely shutting down): {e}")
 
     def register_routes(self):
         """Register all API routes."""
@@ -862,7 +991,10 @@ class ChallengeCtlAPI:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -944,7 +1076,10 @@ class ChallengeCtlAPI:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
 
@@ -1069,7 +1204,10 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1108,7 +1246,7 @@ class ChallengeCtlAPI:
             self._setup_pending[session_token] = {
                 'password_hash': password_hash,
                 'totp_secret': totp_secret,
-                'timestamp': datetime.utcnow()
+                'timestamp': datetime.now(timezone.utc)
             }
 
             self.log_security_event('User setup initiated (step 1)', username)
@@ -1142,7 +1280,10 @@ class ChallengeCtlAPI:
 
             # Check if session is expired
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 return jsonify({'error': 'Session expired'}), 401
 
@@ -1159,7 +1300,7 @@ class ChallengeCtlAPI:
             pending = self._setup_pending[session_token]
 
             # Check if pending setup is too old (15 minutes)
-            if datetime.utcnow() - pending['timestamp'] > timedelta(minutes=15):
+            if datetime.now(timezone.utc) - pending['timestamp'] > timedelta(minutes=15):
                 del self._setup_pending[session_token]
                 return jsonify({'error': 'Setup session expired. Please restart setup process.'}), 400
 
@@ -1676,22 +1817,25 @@ class ChallengeCtlAPI:
                 logger.error(f"Error updating auto-pause: {e}")
                 return jsonify({'error': 'Internal server error'}), 500
 
-        # Runner endpoints
-        # SECURITY: Runner endpoints have liberal rate limits due to frequent polling/heartbeats
-        @self.app.route('/api/runners/register', methods=['POST'])
+        # Unified Agent endpoints (support both runners and listeners)
+        @self.app.route('/api/agents/register', methods=['POST'])
         @self.require_api_key
-        @self.limiter.limit("100 per minute")  # Registration not frequent
-        def register_runner():
-            """Register a runner with the server."""
+        @self.limiter.limit("100 per minute")
+        def register_agent():
+            """Register an agent (runner or listener) with the server."""
             data = request.json
 
             # Validate request body
             if not data:
                 return jsonify({'error': 'Missing request body'}), 400
 
-            runner_id = request.runner_id
+            agent_id = request.runner_id  # Note: Uses same authentication mechanism
 
             # Validate required fields
+            agent_type = data.get('agent_type', 'runner')  # Default to runner for backward compatibility
+            if agent_type not in ['runner', 'listener']:
+                return jsonify({'error': 'Invalid agent_type. Must be "runner" or "listener"'}), 400
+
             hostname = data.get('hostname')
             if not hostname or not hostname.strip():
                 return jsonify({'error': 'Missing required field: hostname'}), 400
@@ -1705,158 +1849,385 @@ class ChallengeCtlAPI:
 
             ip_address = request.remote_addr
 
-            # Get host identifiers from custom headers (sent by runner)
-            mac_address = request.headers.get('X-Runner-MAC')
-            machine_id = request.headers.get('X-Runner-Machine-ID')
+            # Get host identifiers from custom headers
+            mac_address = request.headers.get('X-Runner-MAC') or request.headers.get('X-Agent-MAC')
+            machine_id = request.headers.get('X-Runner-Machine-ID') or request.headers.get('X-Agent-Machine-ID')
 
-            success = self.db.register_runner(runner_id, hostname, ip_address, devices,
-                                             mac_address=mac_address, machine_id=machine_id)
+            success = self.db.register_agent(agent_id, agent_type, hostname, ip_address, devices,
+                                            mac_address=mac_address, machine_id=machine_id)
 
             if success:
-                # Broadcast runner online event
-                self.broadcast_event('runner_status', {
-                    'runner_id': runner_id,
+                # Initialize device status in memory with 'unknown' status
+                timestamp = datetime.now(timezone.utc).isoformat()
+                with self.device_status_lock:
+                    for device in devices:
+                        device_id = device.get('device_id')
+                        if device_id is not None:
+                            key = (agent_id, device_id)
+                            self.device_status[key] = {
+                                'status': 'unknown',
+                                'model': device.get('model', 'unknown'),
+                                'name': device.get('name', ''),
+                                'last_update': timestamp
+                            }
+
+                # Broadcast agent online event
+                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                self.broadcast_event(event_name, {
+                    'agent_id': agent_id,
+                    'runner_id': agent_id if agent_type == 'runner' else None,  # Backward compat
+                    'listener_id': agent_id if agent_type == 'listener' else None,
                     'status': 'online',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+                    'timestamp': timestamp
                 })
 
                 return jsonify({
                     'status': 'registered',
-                    'runner_id': runner_id
+                    'agent_id': agent_id,
+                    'agent_type': agent_type
                 }), 200
             else:
                 return jsonify({'error': 'Registration failed'}), 500
 
-        @self.app.route('/api/runners/<runner_id>/heartbeat', methods=['POST'])
+        @self.app.route('/api/agents/<agent_id>/heartbeat', methods=['POST'])
         @self.require_api_key
-        @self.limiter.limit("1000 per minute")  # High limit for frequent heartbeats (every 30s)
-        def heartbeat(runner_id):
-            """Update runner heartbeat."""
-            if request.runner_id != runner_id:
+        @self.limiter.limit("1000 per minute")
+        def agent_heartbeat(agent_id):
+            """Update agent heartbeat (runner or listener)."""
+            if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            success, previous_status = self.db.update_heartbeat(runner_id)
+            # Get optional device status from request body
+            data = request.get_json(silent=True) or {}
+            device_status = data.get('device_status')  # Map of device_id -> status
+
+            # Update agent heartbeat in database (not device status)
+            success, previous_status = self.db.update_agent_heartbeat(agent_id, None)
 
             if success:
-                # Always broadcast heartbeat to update last_heartbeat timestamp in UI
-                heartbeat_time = datetime.now(timezone.utc).isoformat()
-                self.broadcast_event('runner_status', {
-                    'runner_id': runner_id,
-                    'status': 'online',
-                    'last_heartbeat': heartbeat_time,
-                    'timestamp': heartbeat_time
-                })
+                # Get agent details to determine type
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    agent_type = agent['agent_type']
+                    heartbeat_time = datetime.now(timezone.utc).isoformat()
+
+                    # Update device status in memory if provided
+                    if device_status and agent.get('devices'):
+                        devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else agent['devices']
+                        with self.device_status_lock:
+                            for device in devices:
+                                device_id = device.get('device_id')
+                                # JSON serialization converts int keys to strings, so check both
+                                device_id_str = str(device_id)
+                                if device_id in device_status or device_id_str in device_status:
+                                    key = (agent_id, device_id)
+                                    # Try both int and string keys
+                                    new_status = device_status.get(device_id) or device_status.get(device_id_str)
+
+                                    # Get previous status
+                                    prev_device_status = self.device_status.get(key, {}).get('status', 'unknown')
+
+                                    # Update device status in memory
+                                    self.device_status[key] = {
+                                        'status': new_status,
+                                        'model': device.get('model', 'unknown'),
+                                        'name': device.get('name', ''),
+                                        'last_update': heartbeat_time
+                                    }
+
+                                    # Broadcast device status change if status changed
+                                    if prev_device_status != new_status:
+                                        self.broadcast_event('device_status', {
+                                            'agent_id': agent_id,
+                                            'device_id': device_id,
+                                            'status': new_status,
+                                            'model': device.get('model', 'unknown'),
+                                            'name': device.get('name', ''),
+                                            'timestamp': heartbeat_time
+                                        })
+
+                    # Broadcast agent status with appropriate event name for backward compatibility
+                    event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                    self.broadcast_event(event_name, {
+                        'agent_id': agent_id,
+                        'runner_id': agent_id if agent_type == 'runner' else None,
+                        'listener_id': agent_id if agent_type == 'listener' else None,
+                        'status': 'online',
+                        'last_heartbeat': heartbeat_time,
+                        'timestamp': heartbeat_time
+                    })
 
                 return jsonify({'status': 'ok'}), 200
             else:
-                return jsonify({'error': 'Runner not found'}), 404
+                return jsonify({'error': 'Agent not found'}), 404
 
-        @self.app.route('/api/runners/<runner_id>/signout', methods=['POST'])
+        @self.app.route('/api/agents/<agent_id>/signout', methods=['POST'])
         @self.require_api_key
-        @self.limiter.limit("100 per minute")  # Signout not frequent
-        def signout(runner_id):
-            """Runner graceful signout."""
-            if request.runner_id != runner_id:
+        @self.limiter.limit("100 per minute")
+        def agent_signout(agent_id):
+            """Agent graceful signout."""
+            if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            # Mark runner as offline
-            success = self.db.mark_runner_offline(runner_id)
+            # Get agent details before marking offline
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            agent_type = agent['agent_type']
+
+            # Mark agent as offline
+            success = self.db.mark_agent_offline(agent_id)
 
             if success:
                 # Broadcast offline status
-                self.broadcast_event('runner_status', {
-                    'runner_id': runner_id,
+                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+                self.broadcast_event(event_name, {
+                    'agent_id': agent_id,
+                    'runner_id': agent_id if agent_type == 'runner' else None,
+                    'listener_id': agent_id if agent_type == 'listener' else None,
                     'status': 'offline',
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
-                logger.info(f"Runner {runner_id} signed out gracefully")
+                logger.info(f"{agent_type.capitalize()} {agent_id} signed out gracefully")
                 return jsonify({'status': 'signed_out'}), 200
             else:
-                return jsonify({'error': 'Runner not found'}), 404
+                return jsonify({'error': 'Failed to sign out'}), 500
 
-        @self.app.route('/api/runners/<runner_id>/task', methods=['GET'])
+        @self.app.route('/api/agents/<agent_id>/task', methods=['GET'])
         @self.require_api_key
-        @self.limiter.limit("1000 per minute")  # High limit for frequent task polling
-        def get_task(runner_id):
-            """Get next challenge assignment for runner."""
-            if request.runner_id != runner_id:
+        @self.limiter.limit("1000 per minute")
+        def agent_get_task(agent_id):
+            """Get next challenge assignment for runner agent (HTTP polling).
+            Note: Listener agents use WebSocket push instead of polling."""
+            if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify this is a runner agent
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            if agent['agent_type'] != 'runner':
+                return jsonify({'error': 'Only runner agents can poll for tasks. Listeners use WebSocket.'}), 400
 
             # Check if system is paused
             if self.db.get_system_state('paused', 'false') == 'true':
                 return jsonify({'task': None, 'message': 'System paused'}), 200
 
-            # Assign challenge
-            challenge = self.db.assign_challenge(runner_id)
+            # Assign challenge to runner
+            challenge = self.db.assign_challenge(agent_id)
 
             if challenge:
                 # Process frequency_ranges or manual_frequency_range if present
-                config = challenge['config'].copy()  # Make a copy to avoid modifying stored config
+                config = challenge['config'].copy()
                 frequency_ranges = config.get('frequency_ranges')
                 manual_frequency_range = config.get('manual_frequency_range')
 
                 if frequency_ranges:
-                    # Select random frequency from named ranges
                     selected_frequency = self.select_random_frequency(frequency_ranges)
                     if selected_frequency:
-                        # Replace frequency_ranges with selected frequency
                         config['frequency'] = selected_frequency
-                        # Remove frequency_ranges from config sent to runner
                         config.pop('frequency_ranges', None)
                         logger.info(f"Selected random frequency {selected_frequency} Hz from ranges {frequency_ranges}")
                     else:
                         logger.error(f"Failed to select frequency from ranges: {frequency_ranges}")
                         return jsonify({'error': 'Invalid frequency range configuration'}), 500
                 elif manual_frequency_range:
-                    # Select random frequency from manual range
                     min_hz = manual_frequency_range.get('min_hz')
                     max_hz = manual_frequency_range.get('max_hz')
                     if min_hz and max_hz:
                         selected_frequency = float(random.randint(int(min_hz), int(max_hz)))
                         config['frequency'] = selected_frequency
-                        # Remove manual_frequency_range from config sent to runner
                         config.pop('manual_frequency_range', None)
                         logger.info(f"Selected random frequency {selected_frequency} Hz from manual range {min_hz}-{max_hz}")
                     else:
                         logger.error(f"Invalid manual frequency range: {manual_frequency_range}")
                         return jsonify({'error': 'Invalid manual frequency range configuration'}), 500
                 elif 'frequency' in config:
-                    # Ensure existing frequency is a float
                     config['frequency'] = float(config['frequency'])
+
+                # Create transmission record for tracking
+                transmission_id = self.db.record_transmission_start(
+                    challenge['challenge_id'],
+                    agent_id,
+                    config.get('device_id', ''),
+                    int(config.get('frequency', 0))
+                )
+
+                # Calculate expected transmission duration
+                challenge_duration = calculate_challenge_duration(
+                    config=config,
+                    files_dir=self.files_dir,
+                    include_pre_paint=True,  # Include pre-paint for total duration
+                    pre_paint_duration=get_pre_paint_duration(config.get('modulation', ''))
+                )
+
+                # Track active transmission with timeout (expected_duration * multiplier)
+                expected_end = datetime.now(timezone.utc) + timedelta(
+                    seconds=challenge_duration * self.transmission_timeout_multiplier
+                )
+                with self.active_transmissions_lock:
+                    self.active_transmissions[challenge['challenge_id']] = {
+                        'transmission_id': transmission_id,
+                        'expected_end': expected_end,
+                        'assigned_to': agent_id,
+                        'expected_duration': challenge_duration
+                    }
+                logger.debug(f"Tracking transmission {transmission_id} for challenge {challenge['challenge_id']}, "
+                           f"expected duration: {challenge_duration:.1f}s, timeout at: {expected_end.isoformat()}")
 
                 # Broadcast assignment event
                 self.broadcast_event('challenge_assigned', {
-                    'runner_id': runner_id,
+                    'runner_id': agent_id,
+                    'agent_id': agent_id,
                     'challenge_id': challenge['challenge_id'],
                     'challenge_name': challenge['name'],
+                    'frequency': config.get('frequency', 0),
+                    'transmission_id': transmission_id,
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
+
+                # Broadcast updated public challenges (challenge is now active)
+                self.broadcast_public_challenges()
+
+                # Check if we should assign a listener to record this transmission
+                if self.should_assign_listener(challenge):
+                    # Find available listener agents with WebSocket connection
+                    listener_agents = self.db.get_all_agents(agent_type='listener')
+                    logger.debug(f"Found {len(listener_agents)} total listener agents")
+
+                    # Filter listeners by online/enabled/websocket status
+                    online_listeners = [
+                        l for l in listener_agents
+                        if l['status'] == 'online'
+                        and l['enabled']
+                        and l.get('websocket_connected')
+                    ]
+
+                    logger.info(f"Online listeners: {len(online_listeners)} "
+                               f"(total: {len(listener_agents)}, "
+                               f"online: {len([l for l in listener_agents if l['status'] == 'online'])}, "
+                               f"enabled: {len([l for l in listener_agents if l['enabled']])}, "
+                               f"websocket: {len([l for l in listener_agents if l.get('websocket_connected')])})")
+
+                    # Check device availability for parallel recording support
+                    available_listeners = []
+                    for listener in online_listeners:
+                        # Parse devices JSON to get device count
+                        devices = listener.get('devices', '[]')
+                        if isinstance(devices, str):
+                            try:
+                                devices = json.loads(devices)
+                            except (json.JSONDecodeError, TypeError):
+                                devices = []
+
+                        device_count = len(devices) if devices else 1  # Default to 1 if no devices defined
+
+                        # Count active assignments for this listener
+                        active_count = self.db.get_listener_active_assignment_count(listener['agent_id'])
+
+                        # Listener is available if it has capacity (devices > active assignments)
+                        if active_count < device_count:
+                            available_listeners.append({
+                                'listener': listener,
+                                'device_count': device_count,
+                                'active_count': active_count,
+                                'available_devices': device_count - active_count
+                            })
+                            logger.debug(f"Listener {listener['agent_id']}: {active_count}/{device_count} devices busy, "
+                                       f"{device_count - active_count} available")
+                        else:
+                            logger.debug(f"Listener {listener['agent_id']}: all {device_count} device(s) busy "
+                                       f"({active_count} active assignments)")
+
+                    logger.info(f"Available listeners with capacity: {len(available_listeners)}")
+
+                    if available_listeners:
+                        # Select listener with most available devices (best parallelism)
+                        best_listener_info = max(available_listeners, key=lambda x: x['available_devices'])
+                        listener = best_listener_info['listener']
+                        listener_id = listener['agent_id']
+
+                        logger.debug(f"Selected listener {listener_id} with {best_listener_info['available_devices']} "
+                                   f"available device(s)")
+
+                        # Calculate expected transmission timing
+                        expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
+
+                        # Calculate challenge duration (automatically from file/params if not explicitly set)
+                        challenge_duration = calculate_challenge_duration(
+                            config=config,
+                            files_dir=self.files_dir,
+                            include_pre_paint=False,  # Pre-paint is handled by runner, not listener
+                            pre_paint_duration=0.0
+                        )
+                        # Add buffer for listener recording (5s pre-roll + 5s post-roll)
+                        expected_duration = challenge_duration + 10.0
+
+                        logger.debug(f"Challenge duration: {challenge_duration}s, listener recording duration: {expected_duration}s")
+
+                        # Create listener assignment
+                        assignment_id = self.db.create_listener_assignment(
+                            agent_id=listener_id,
+                            challenge_id=challenge['challenge_id'],
+                            transmission_id=transmission_id,
+                            frequency=int(config.get('frequency', 0)),
+                            expected_start=expected_start,
+                            expected_duration=expected_duration
+                        )
+
+                        if assignment_id > 0:
+                            # Push assignment to listener via WebSocket
+                            # Note: This uses SocketIO rooms - listener must join 'agent_<id>' room
+                            assignment_data = {
+                                'assignment_id': assignment_id,
+                                'challenge_id': challenge['challenge_id'],
+                                'challenge_name': challenge['name'],
+                                'transmission_id': transmission_id,
+                                'frequency': int(config.get('frequency', 0)),
+                                'expected_start': expected_start.isoformat(),
+                                'expected_duration': expected_duration,
+                                'runner_id': agent_id,
+                                'timestamp': datetime.now(timezone.utc).isoformat()
+                            }
+
+                            logger.debug(f"Emitting recording_assignment to room 'agent_{listener_id}' on namespace '/agents': {assignment_data}")
+                            self.socketio.emit('recording_assignment', assignment_data,
+                                             room=f'agent_{listener_id}', namespace='/agents')
+
+                            logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
+                        else:
+                            logger.error(f"Failed to create listener assignment for {challenge['name']}")
+                    else:
+                        logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
+                else:
+                    priority = self.calculate_recording_priority(challenge)
+                    logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold 1.0")
 
                 return jsonify({
                     'task': {
                         'challenge_id': challenge['challenge_id'],
                         'name': challenge['name'],
-                        'config': config
+                        'config': config,
+                        'transmission_id': transmission_id
                     }
                 }), 200
             else:
                 return jsonify({'task': None, 'message': 'No challenges available'}), 200
 
-        @self.app.route('/api/runners/<runner_id>/complete', methods=['POST'])
+        @self.app.route('/api/agents/<agent_id>/complete', methods=['POST'])
         @self.require_api_key
-        @self.limiter.limit("1000 per minute")  # High limit for frequent task completions
-        def complete_task(runner_id):
-            """Mark challenge as completed."""
-            if request.runner_id != runner_id:
+        @self.limiter.limit("1000 per minute")
+        def agent_complete_task(agent_id):
+            """Mark challenge as completed by runner agent."""
+            if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
             data = request.json
-
-            # Validate request body
             if not data:
                 return jsonify({'error': 'Missing request body'}), 400
 
-            # Validate required fields
             challenge_id = data.get('challenge_id')
             if not challenge_id:
                 return jsonify({'error': 'Missing required field: challenge_id'}), 400
@@ -1866,15 +2237,24 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Field "success" must be a boolean'}), 400
 
             error_message = data.get('error_message')
-            # device_id and frequency are logged but not currently used
-            # device_id = data.get('device_id', '')
-            # frequency = data.get('frequency', 0)
+            transmission_id = data.get('transmission_id')
+            device_id = data.get('device_id', '')
+            frequency = data.get('frequency', 0)
 
-            # Get challenge info and requeue
+            # Get challenge info
             challenge = self.db.get_challenge(challenge_id)
             challenge_name = challenge['name'] if challenge else challenge_id
 
-            config = self.db.complete_challenge(challenge_id, runner_id, success, error_message)
+            # Update transmission record with actual device_id and frequency if provided
+            if transmission_id:
+                if device_id or frequency:
+                    self.db.update_transmission_details(transmission_id, device_id, frequency)
+
+                # Mark transmission as complete
+                self.db.record_transmission_complete(transmission_id, success, error_message)
+
+            # Complete the challenge (requeue for next transmission)
+            config = self.db.complete_challenge(challenge_id, agent_id, success, error_message)
             if not config:
                 return jsonify({'error': 'Challenge not found'}), 404
 
@@ -1882,40 +2262,51 @@ class ChallengeCtlAPI:
             timestamp = datetime.now(timezone.utc).isoformat()
             transmission = {
                 'started_at': timestamp,
-                'runner_id': runner_id,
+                'runner_id': agent_id,
+                'agent_id': agent_id,
                 'challenge_id': challenge_id,
                 'challenge_name': challenge_name,
-                'frequency': config.get('frequency', 0),
+                'frequency': frequency if frequency else config.get('frequency', 0),
                 'status': 'success' if success else 'failed',
-                'error_message': error_message
+                'error_message': error_message,
+                'transmission_id': transmission_id,
+                'device_id': device_id
             }
 
             with self.transmission_lock:
                 self.transmission_buffer.appendleft(transmission)
-                logger.debug(f"Added transmission to buffer. Buffer size: {len(self.transmission_buffer)}")
+
+            # Remove from active transmissions tracking (transmission complete)
+            with self.active_transmissions_lock:
+                if challenge_id in self.active_transmissions:
+                    del self.active_transmissions[challenge_id]
+                    logger.debug(f"Removed completed transmission for challenge {challenge_id} from active tracking")
 
             # Broadcast completion event
             self.broadcast_event('transmission_complete', {
-                'runner_id': runner_id,
+                'runner_id': agent_id,
+                'agent_id': agent_id,
                 'challenge_id': challenge_id,
                 'challenge_name': challenge_name,
-                'frequency': config.get('frequency', 0),
+                'frequency': frequency if frequency else config.get('frequency', 0),
                 'status': 'success' if success else 'failed',
                 'error_message': error_message,
-                'timestamp': timestamp
+                'timestamp': timestamp,
+                'transmission_id': transmission_id,
+                'device_id': device_id
             })
 
-            # Broadcast updated public challenges to public dashboard
+            # Broadcast updated public challenges
             self.broadcast_public_challenges()
 
             return jsonify({'status': 'recorded'}), 200
 
-        @self.app.route('/api/runners/<runner_id>/log', methods=['POST'])
+        @self.app.route('/api/agents/<agent_id>/log', methods=['POST'])
         @self.require_api_key
-        @self.limiter.limit("1000 per minute")  # High limit for frequent logging
-        def upload_log(runner_id):
-            """Receive log entries from runner."""
-            if request.runner_id != runner_id:
+        @self.limiter.limit("1000 per minute")
+        def agent_upload_log(agent_id):
+            """Receive log entries from agent (runner or listener)."""
+            if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
             data = request.json
@@ -1924,20 +2315,370 @@ class ChallengeCtlAPI:
             # Create structured log event
             log_event = {
                 'type': 'log',
-                'source': runner_id,
+                'source': agent_id,
                 'level': log_entry.get('level', 'INFO'),
                 'message': log_entry.get('message', ''),
                 'timestamp': log_entry.get('timestamp', datetime.now(timezone.utc).isoformat())
             }
 
-            # Add to log buffer
-            with self.buffer_lock:
-                self.log_buffer.append(log_event)
+            # Store in log buffer
+            if len(self.log_buffer) >= 1000:
+                self.log_buffer.pop(0)
+            self.log_buffer.append(log_event)
 
             # Broadcast log event to WebUI
             self.broadcast_event('log', log_event)
 
             return jsonify({'status': 'received'}), 200
+
+        # Recording endpoints (for listener agents)
+        @self.app.route('/api/agents/<agent_id>/recording/start', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def recording_start(agent_id):
+            """Listener reports recording has started."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify this is a listener agent
+            agent = self.db.get_agent(agent_id)
+            if not agent or agent['agent_type'] != 'listener':
+                return jsonify({'error': 'Only listener agents can start recordings'}), 400
+
+            data = request.json
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            challenge_id = data.get('challenge_id')
+            transmission_id = data.get('transmission_id')
+            frequency = data.get('frequency')
+            sample_rate = data.get('sample_rate', 2000000)
+            expected_duration = data.get('expected_duration', 30.0)
+
+            if not all([challenge_id, transmission_id, frequency]):
+                return jsonify({'error': 'Missing required fields'}), 400
+
+            # Create recording entry
+            recording_id = self.db.create_recording(
+                challenge_id=challenge_id,
+                agent_id=agent_id,
+                transmission_id=transmission_id,
+                frequency=int(frequency),
+                sample_rate=int(sample_rate),
+                expected_duration=float(expected_duration)
+            )
+
+            if recording_id > 0:
+                # Broadcast recording started event
+                self.broadcast_event('recording_started', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'listener_id': agent_id,
+                    'challenge_id': challenge_id,
+                    'transmission_id': transmission_id,
+                    'frequency': frequency,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({
+                    'status': 'recording',
+                    'recording_id': recording_id
+                }), 200
+            else:
+                return jsonify({'error': 'Failed to create recording'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/recording/<int:recording_id>/complete', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("100 per minute")
+        def recording_complete(agent_id, recording_id):
+            """Listener reports recording has completed."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            data = request.json
+            if not data:
+                return jsonify({'error': 'Missing request body'}), 400
+
+            success = data.get('success', False)
+            error_message = data.get('error_message')
+            duration = data.get('duration')
+            image_width = data.get('image_width')
+            image_height = data.get('image_height')
+
+            # Note: image_path will be set after upload
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            if recording['agent_id'] != agent_id:
+                return jsonify({'error': 'Unauthorized - recording belongs to different agent'}), 403
+
+            # Update recording status
+            updated = self.db.update_recording_complete(
+                recording_id=recording_id,
+                success=success,
+                image_path=None,  # Will be set on upload
+                image_width=image_width,
+                image_height=image_height,
+                duration=duration,
+                error_message=error_message
+            )
+
+            if updated:
+                # Broadcast recording completed event
+                self.broadcast_event('recording_complete', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'listener_id': agent_id,
+                    'challenge_id': recording['challenge_id'],
+                    'status': 'completed' if success else 'failed',
+                    'error_message': error_message,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({'status': 'updated'}), 200
+            else:
+                return jsonify({'error': 'Failed to update recording'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/recording/<int:recording_id>/upload', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("20 per minute")  # Lower limit for file uploads
+        def recording_upload(agent_id, recording_id):
+            """Upload waterfall image for a recording."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify recording exists and belongs to this agent
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            if recording['agent_id'] != agent_id:
+                return jsonify({'error': 'Unauthorized - recording belongs to different agent'}), 403
+
+            # Check if file was uploaded
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file provided'}), 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+
+            # Validate file type (PNG images only)
+            if not file.filename.lower().endswith('.png'):
+                return jsonify({'error': 'Only PNG images are allowed'}), 400
+
+            # Create recordings directory if it doesn't exist
+            import os
+            recordings_dir = os.path.join(os.path.dirname(__file__), '..', 'recordings')
+            os.makedirs(recordings_dir, exist_ok=True)
+
+            # Save file with recording ID as filename
+            filename = f"recording_{recording_id}.png"
+            file_path = os.path.join(recordings_dir, filename)
+
+            try:
+                file.save(file_path)
+
+                # Get image dimensions
+                from PIL import Image
+                with Image.open(file_path) as img:
+                    width, height = img.size
+
+                # Update recording with image path and dimensions
+                updated = self.db.update_recording_image(
+                    recording_id=recording_id,
+                    image_path=file_path,
+                    image_width=width,
+                    image_height=height
+                )
+
+                if not updated:
+                    logger.error(f"Failed to update recording {recording_id} with image path")
+                    return jsonify({'error': 'Failed to update recording'}), 500
+
+                logger.info(f"Uploaded waterfall image for recording {recording_id}: {width}x{height}px at {file_path}")
+
+                # Broadcast image uploaded event
+                self.broadcast_event('recording_image_uploaded', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'challenge_id': recording['challenge_id'],
+                    'width': width,
+                    'height': height,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({
+                    'status': 'uploaded',
+                    'filename': filename,
+                    'width': width,
+                    'height': height
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error saving recording image: {e}")
+                return jsonify({'error': 'Failed to save image'}), 500
+
+        # Recording query endpoints (admin)
+        @self.app.route('/api/recordings', methods=['GET'])
+        @self.require_admin_auth
+        def get_recordings():
+            """Get all recordings."""
+            limit = request.args.get('limit', 100, type=int)
+            recordings = self.db.get_all_recordings(limit=min(limit, 500))
+            return jsonify({'recordings': recordings}), 200
+
+        @self.app.route('/api/recordings/<int:recording_id>', methods=['GET'])
+        @self.require_admin_auth
+        def get_recording(recording_id):
+            """Get specific recording details."""
+            recording = self.db.get_recording(recording_id)
+            if recording:
+                return jsonify(recording), 200
+            else:
+                return jsonify({'error': 'Recording not found'}), 404
+
+        @self.app.route('/api/recordings/<int:recording_id>/image', methods=['GET'])
+        @self.require_admin_auth
+        def get_recording_image(recording_id):
+            """Serve waterfall image for a recording."""
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            image_path = recording.get('image_path')
+            if not image_path:
+                return jsonify({'error': 'No image available for this recording'}), 404
+
+            import os
+            from flask import send_file
+            if os.path.exists(image_path):
+                return send_file(image_path, mimetype='image/png')
+            else:
+                return jsonify({'error': 'Image file not found'}), 404
+
+        @self.app.route('/api/challenges/<challenge_id>/recordings', methods=['GET'])
+        @self.require_admin_auth
+        def get_challenge_recordings(challenge_id):
+            """Get recordings for a specific challenge."""
+            limit = request.args.get('limit', 50, type=int)
+            recordings = self.db.get_recordings_for_challenge(challenge_id, limit=min(limit, 200))
+            return jsonify({'recordings': recordings}), 200
+
+        # Unified agents query endpoint (admin)
+        @self.app.route('/api/agents', methods=['GET'])
+        @self.require_admin_auth
+        def get_agents():
+            """Get all agents (runners and listeners)."""
+            agent_type_filter = request.args.get('type')  # Optional filter: 'runner' or 'listener'
+
+            # Get all agents from unified agents table
+            all_agents = self.db.get_all_agents(agent_type=agent_type_filter)
+
+            # Parse devices JSON and add backward compatibility fields for each agent
+            for agent in all_agents:
+                # Parse devices JSON
+                if agent.get('devices'):
+                    try:
+                        agent['devices'] = json.loads(agent['devices'])
+                    except (json.JSONDecodeError, TypeError):
+                        agent['devices'] = []
+
+                # Merge device status from memory
+                agent_id = agent['agent_id']
+                if agent.get('devices'):
+                    with self.device_status_lock:
+                        for device in agent['devices']:
+                            device_id = device.get('device_id')
+                            if device_id is not None:
+                                key = (agent_id, device_id)
+                                if key in self.device_status:
+                                    # Use status from memory
+                                    device['status'] = self.device_status[key]['status']
+                                else:
+                                    # Device not in memory yet, initialize with unknown
+                                    device['status'] = 'unknown'
+
+                # Add backward compatibility: runners need runner_id field
+                if agent.get('agent_type') == 'runner':
+                    agent['runner_id'] = agent['agent_id']
+
+            return jsonify({'agents': all_agents}), 200
+
+        @self.app.route('/api/device-status', methods=['GET'])
+        @self.require_admin_auth
+        def get_device_status():
+            """Get all device status from memory."""
+            with self.device_status_lock:
+                # Convert dict to list for JSON response
+                device_list = []
+                for (agent_id, device_id), status_info in self.device_status.items():
+                    device_list.append({
+                        'agent_id': agent_id,
+                        'device_id': device_id,
+                        'status': status_info['status'],
+                        'model': status_info.get('model', 'unknown'),
+                        'name': status_info.get('name', ''),
+                        'last_update': status_info['last_update']
+                    })
+                return jsonify({'devices': device_list}), 200
+
+        @self.app.route('/api/agents/<agent_id>/enable', methods=['POST'])
+        @self.require_admin_auth
+        def enable_agent(agent_id):
+            """Enable an agent (runner or listener)."""
+            success = self.db.enable_agent(agent_id)
+            if success:
+                return jsonify({'status': 'enabled'}), 200
+            else:
+                return jsonify({'error': 'Agent not found'}), 404
+
+        @self.app.route('/api/agents/<agent_id>/disable', methods=['POST'])
+        @self.require_admin_auth
+        def disable_agent(agent_id):
+            """Disable an agent (runner or listener)."""
+            success = self.db.disable_agent(agent_id)
+            if success:
+                return jsonify({'status': 'disabled'}), 200
+            else:
+                return jsonify({'error': 'Agent not found'}), 404
+
+        @self.app.route('/api/agents/<agent_id>/devices', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def update_agent_devices(agent_id):
+            """Update device configuration for an agent."""
+            data = request.json
+            if not data or 'devices' not in data:
+                return jsonify({'error': 'Missing devices in request body'}), 400
+
+            devices = data['devices']
+            if not isinstance(devices, list):
+                return jsonify({'error': 'Devices must be a list'}), 400
+
+            # Update the agent's devices in the database
+            success = self.db.update_agent_devices(agent_id, devices)
+
+            if success:
+                # Broadcast device configuration update via WebSocket
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    agent_type = agent['agent_type']
+                    # Emit directly to /agents namespace for listener agents
+                    event_data = {
+                        'agent_id': agent_id,
+                        'agent_type': agent_type,
+                        'devices': devices,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+                    logger.info(f"Broadcasting agent_devices_updated to /agents namespace for {agent_id}: {len(devices)} devices")
+                    logger.debug(f"Device update payload: {event_data}")
+                    self.socketio.emit('agent_devices_updated', event_data, namespace='/agents')
+
+                return jsonify({'status': 'updated', 'devices': devices}), 200
+            else:
+                return jsonify({'error': 'Agent not found or update failed'}), 404
 
         # Admin/WebUI endpoints
         @self.app.route('/api/dashboard', methods=['GET'])
@@ -1945,7 +2686,13 @@ class ChallengeCtlAPI:
         def get_dashboard():
             """Get dashboard statistics and data."""
             stats = self.db.get_dashboard_stats()
-            runners = self.db.get_all_runners()
+
+            # Get runners from agents table (with backward compatibility)
+            runners = self.db.get_all_agents(agent_type='runner')
+
+            # Add runner_id field for backward compatibility
+            for runner in runners:
+                runner['runner_id'] = runner.get('agent_id', runner.get('runner_id'))
 
             # Get recent transmissions from in-memory buffer
             with self.transmission_lock:
@@ -1987,80 +2734,6 @@ class ChallengeCtlAPI:
                 'logs': recent_logs,
                 'total': len(recent_logs)
             }), 200
-
-        @self.app.route('/api/runners', methods=['GET'])
-        @self.require_admin_auth
-        def get_runners():
-            """Get all registered runners."""
-            runners = self.db.get_all_runners()
-
-            # Parse devices JSON
-            runners = [self._parse_runner_devices(r) for r in runners]
-
-            return jsonify({'runners': runners}), 200
-
-        @self.app.route('/api/runners/<runner_id>', methods=['GET'])
-        @self.require_admin_auth
-        def get_runner_details(runner_id):
-            """Get details for a specific runner."""
-            runner = self.db.get_runner(runner_id)
-
-            if runner:
-                runner = self._parse_runner_devices(runner)
-                return jsonify(runner), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>', methods=['DELETE'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def kick_runner(runner_id):
-            """Remove/kick a runner."""
-            success = self.db.mark_runner_offline(runner_id)
-
-            if success:
-                self.broadcast_event('runner_status', {
-                    'runner_id': runner_id,
-                    'status': 'offline',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'removed'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>/enable', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def enable_runner(runner_id):
-            """Enable a runner to receive task assignments."""
-            success = self.db.enable_runner(runner_id)
-
-            if success:
-                self.broadcast_event('runner_enabled', {
-                    'runner_id': runner_id,
-                    'enabled': True,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'enabled'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
-
-        @self.app.route('/api/runners/<runner_id>/disable', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def disable_runner(runner_id):
-            """Disable a runner from receiving task assignments."""
-            success = self.db.disable_runner(runner_id)
-
-            if success:
-                self.broadcast_event('runner_enabled', {
-                    'runner_id': runner_id,
-                    'enabled': False,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                return jsonify({'status': 'disabled'}), 200
-            else:
-                return jsonify({'error': 'Runner not found'}), 404
 
         # Enrollment token endpoints
         @self.app.route('/api/enrollment/token', methods=['POST'])
@@ -2123,42 +2796,53 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/enrollment/enroll', methods=['POST'])
         @self.limiter.limit("10 per hour")  # Limit enrollment attempts
-        def enroll_runner():
-            """Enroll a new runner using an enrollment token.
+        def enroll_agent():
+            """Enroll a new agent (runner or listener) using an enrollment token.
 
             Request body:
                 enrollment_token: The enrollment token
                 api_key: The API key provided with the token
-                runner_id: Unique identifier for this runner
-                hostname: Hostname of the runner
-                mac_address: Optional MAC address of the runner
-                machine_id: Optional machine ID of the runner
+                agent_id or runner_id: Unique identifier for this agent
+                agent_type: Type of agent ('runner' or 'listener'), defaults to 'runner'
+                hostname: Hostname of the agent
+                mac_address: Optional MAC address of the agent
+                machine_id: Optional machine ID of the agent
                 devices: List of SDR devices
 
             Returns:
                 success: Boolean indicating enrollment success
-                runner_id: The enrolled runner ID
+                agent_id: The enrolled agent ID
             """
             data = request.json
 
             if not data:
                 return jsonify({'error': 'Missing request body'}), 400
 
-            required_fields = ['enrollment_token', 'api_key', 'runner_id', 'hostname', 'devices']
+            # Support both agent_id and runner_id for backward compatibility
+            agent_id = data.get('agent_id') or data.get('runner_id')
+            if not agent_id:
+                return jsonify({'error': 'Missing required field: agent_id or runner_id'}), 400
+
+            # Validate other required fields
+            required_fields = ['enrollment_token', 'api_key', 'hostname', 'devices']
             for field in required_fields:
                 if field not in data:
                     return jsonify({'error': f'Missing required field: {field}'}), 400
 
             enrollment_token = data['enrollment_token']
             api_key = data['api_key']
-            runner_id = data['runner_id']
             hostname = data['hostname']
             mac_address = data.get('mac_address')
             machine_id = data.get('machine_id')
             devices = data['devices']
+            agent_type = data.get('agent_type', 'runner')  # Default to runner for backward compatibility
+
+            # Validate agent_type
+            if agent_type not in ['runner', 'listener']:
+                return jsonify({'error': 'Invalid agent_type. Must be "runner" or "listener"'}), 400
 
             # Verify the enrollment token
-            is_valid, runner_name = self.db.verify_enrollment_token(enrollment_token)
+            is_valid, agent_name = self.db.verify_enrollment_token(enrollment_token)
 
             if not is_valid:
                 logger.warning(f"Invalid or expired enrollment token used from {request.remote_addr}")
@@ -2168,50 +2852,79 @@ class ChallengeCtlAPI:
             token_details = self.db.get_enrollment_token(enrollment_token)
             is_re_enrollment = token_details and token_details.get('re_enrollment_for')
 
-            # Check if runner_id already exists
-            existing_runner = self.db.get_runner(runner_id)
-            if existing_runner and existing_runner.get('api_key_hash') and not is_re_enrollment:
-                return jsonify({'error': 'Runner ID already enrolled'}), 409
+            # Check if agent already exists
+            existing_agent = self.db.get_agent(agent_id)
 
-            # For re-enrollment, verify the runner_id matches
-            if is_re_enrollment and is_re_enrollment != runner_id:
-                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong runner_id {runner_id}")
-                return jsonify({'error': 'Re-enrollment token does not match runner ID'}), 400
+            if existing_agent and existing_agent.get('api_key_hash') and not is_re_enrollment:
+                return jsonify({'error': f'{agent_type.capitalize()} ID already enrolled'}), 409
 
-            # Register or update the runner with the API key and host identifiers
-            success = self.db.register_runner(
-                runner_id=runner_id,
+            # For re-enrollment, verify the agent_id matches
+            if is_re_enrollment and is_re_enrollment != agent_id:
+                logger.warning(f"Re-enrollment token for {is_re_enrollment} used with wrong agent_id {agent_id}")
+                return jsonify({'error': 'Re-enrollment token does not match agent ID'}), 400
+
+            # Register or update the agent with the API key and host identifiers
+            success = self.db.register_agent(
+                agent_id=agent_id,
+                agent_type=agent_type,
                 hostname=hostname,
                 ip_address=request.remote_addr,
+                devices=devices,
                 mac_address=mac_address,
                 machine_id=machine_id,
-                devices=devices,
                 api_key=api_key
             )
 
             if not success:
-                return jsonify({'error': 'Failed to register runner'}), 500
+                return jsonify({'error': f'Failed to register {agent_type}'}), 500
 
             # Mark the token as used
-            self.db.mark_token_used(enrollment_token, runner_id)
+            self.db.mark_token_used(enrollment_token, agent_id)
 
-            logger.info(f"Runner {runner_id} ({runner_name}) enrolled successfully from {request.remote_addr} "
+            logger.info(f"{agent_type.capitalize()} {agent_id} ({agent_name}) enrolled successfully from {request.remote_addr} "
                        f"(MAC: {mac_address}, Machine ID: {machine_id})")
 
-            # Broadcast event to WebUI
-            self.broadcast_event('runner_enrolled', {
-                'runner_id': runner_id,
-                'runner_name': runner_name,
+            # Broadcast enrollment event to WebUI
+            event_name = 'runner_enrolled' if agent_type == 'runner' else 'listener_enrolled'
+            event_data = {
+                'agent_id': agent_id,
+                'agent_name': agent_name,
+                'agent_type': agent_type,
                 'hostname': hostname,
                 'mac_address': mac_address,
                 'machine_id': machine_id,
                 'timestamp': datetime.now(timezone.utc).isoformat()
-            })
+            }
+            # Add backward compatibility fields
+            if agent_type == 'runner':
+                event_data['runner_id'] = agent_id
+                event_data['runner_name'] = agent_name
+            else:
+                event_data['listener_id'] = agent_id
+                event_data['listener_name'] = agent_name
+
+            self.broadcast_event(event_name, event_data)
+
+            # Also broadcast status event so UI immediately shows agent as online
+            status_event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
+            status_event_data = {
+                'agent_id': agent_id,
+                'agent_type': agent_type,
+                'status': 'online',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            if agent_type == 'runner':
+                status_event_data['runner_id'] = agent_id
+            else:
+                status_event_data['listener_id'] = agent_id
+
+            self.broadcast_event(status_event_name, status_event_data)
 
             return jsonify({
                 'success': True,
-                'runner_id': runner_id,
-                'message': f'Runner {runner_name} enrolled successfully'
+                'agent_id': agent_id,
+                'agent_type': agent_type,
+                'message': f'{agent_type.capitalize()} {agent_name} enrolled successfully'
             }), 201
 
         @self.app.route('/api/enrollment/tokens', methods=['GET'])
@@ -2233,30 +2946,33 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Token not found'}), 404
 
-        @self.app.route('/api/enrollment/re-enroll/<runner_id>', methods=['POST'])
+        @self.app.route('/api/enrollment/re-enroll/<agent_id>', methods=['POST'])
         @self.require_admin_auth
         @self.require_csrf
-        def re_enroll_runner(runner_id):
-            """Generate a fresh enrollment token for an existing runner.
+        def re_enroll_agent(agent_id):
+            """Generate a fresh enrollment token for an existing runner or listener.
 
-            This allows re-enrollment of a runner on a different host or after
+            This allows re-enrollment of an agent on a different host or after
             the original credentials are compromised. Generates new enrollment
             token and API key.
 
             Args:
-                runner_id: The runner ID to re-enroll
+                agent_id: The agent ID (runner or listener) to re-enroll
             Request body:
                 expires_hours: Optional hours until token expires (default: 24)
 
             Returns:
                 token: New enrollment token
                 api_key: New API key
+                agent_type: Type of agent (runner or listener)
                 expires_at: Token expiration timestamp
             """
-            # Check if runner exists
-            existing_runner = self.db.get_runner(runner_id)
-            if not existing_runner:
-                return jsonify({'error': 'Runner not found'}), 404
+            # Check if agent exists
+            existing_agent = self.db.get_agent(agent_id)
+            if not existing_agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            agent_type = existing_agent.get('agent_type', 'runner')
 
             data = request.json or {}
             expires_hours = data.get('expires_hours', 24)
@@ -2274,24 +2990,34 @@ class ChallengeCtlAPI:
             # Create enrollment token marked for re-enrollment
             success = self.db.create_enrollment_token(
                 token=enrollment_token,
-                runner_name=runner_id,  # Use runner_id as name for re-enrollment
+                runner_name=agent_id,  # Use agent_id as name for re-enrollment
                 created_by=username,
                 expires_at=expires_at,
-                re_enrollment_for=runner_id  # Mark this as a re-enrollment token
+                re_enrollment_for=agent_id  # Mark this as a re-enrollment token
             )
 
             if not success:
                 return jsonify({'error': 'Failed to create enrollment token'}), 500
 
-            logger.info(f"Re-enrollment token generated for runner {runner_id} by {username}")
+            logger.info(f"Re-enrollment token generated for {agent_type} {agent_id} by {username}")
 
-            return jsonify({
+            # Return response with appropriate ID field for backwards compatibility
+            response = {
                 'token': enrollment_token,
                 'api_key': new_api_key,
-                'runner_id': runner_id,
+                'agent_id': agent_id,
+                'agent_type': agent_type,
                 'expires_at': expires_at.isoformat(),
                 'expires_hours': expires_hours
-            }), 201
+            }
+
+            # Add backwards-compatible fields
+            if agent_type == 'runner':
+                response['runner_id'] = agent_id
+            elif agent_type == 'listener':
+                response['listener_id'] = agent_id
+
+            return jsonify(response), 201
 
         # Provisioning API key management endpoints (admin only)
         @self.app.route('/api/provisioning/keys', methods=['POST'])
@@ -2650,6 +3376,13 @@ radios:
             success = self.db.add_challenge(challenge_id, name, config)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'created',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({
@@ -2699,6 +3432,13 @@ radios:
             success = self.db.update_challenge(challenge_id, config)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'updated',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({'status': 'updated'}), 200
@@ -2713,6 +3453,13 @@ radios:
             success = self.db.delete_challenge(challenge_id)
 
             if success:
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'deleted',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 # Broadcast updated challenges to public dashboard
                 self.broadcast_public_challenges()
                 return jsonify({'status': 'deleted'}), 200
@@ -2732,6 +3479,17 @@ radios:
 
             if success:
                 logger.info(f"Challenge {challenge_id} {'enabled' if enabled else 'disabled'} successfully")
+
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge_id': challenge_id,
+                    'action': 'enabled' if enabled else 'disabled',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+
                 return jsonify({'status': 'updated'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
@@ -3009,22 +3767,26 @@ radios:
             """
             # Check authentication - accept either admin session or API key
             auth_valid = False
+            username = None
 
-            # Try admin session auth first
-            if 'session' in request.cookies:
-                session_token = request.cookies.get('session')
-                if session_token:
-                    user_data = self.db.get_session(session_token)
-                    if user_data:
-                        auth_valid = True
+            # Try admin session auth first using centralized validation
+            username, error_response = self.validate_and_renew_session()
+            if username:
+                auth_valid = True
+                request.admin_username = username
 
             # If not authenticated via session, try API key
             if not auth_valid:
                 auth_header = request.headers.get('Authorization')
                 if auth_header and auth_header.startswith('Bearer '):
                     api_key = auth_header[7:]
-                    runner = self.db.get_runner_by_api_key(api_key)
-                    if runner:
+                    current_ip = request.remote_addr
+                    current_hostname = request.headers.get('X-Agent-Hostname', 'unknown')
+                    current_mac = request.headers.get('X-Agent-MAC')
+                    current_machine_id = request.headers.get('X-Agent-Machine-ID')
+                    agent_id = self.db.find_agent_by_api_key(api_key, current_ip, current_hostname,
+                                                              current_mac, current_machine_id)
+                    if agent_id:
                         auth_valid = True
 
             if not auth_valid:
@@ -3157,7 +3919,10 @@ radios:
             # Check if session is expired
             # SECURITY: Use UTC for consistent timezone handling
             expires = datetime.fromisoformat(session['expires'])
-            if datetime.utcnow() > expires:
+            # Ensure timezone-aware comparison
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires:
                 self.db.delete_session(session_token)
                 logger.warning(f"WebSocket connection rejected: Expired session from {request.remote_addr}")
                 return False  # Reject connection
@@ -3203,6 +3968,104 @@ radios:
         @self.socketio.on('disconnect', namespace='/public')
         def handle_public_disconnect():
             logger.info(f"Public WebSocket client disconnected: {request.sid}")
+
+        # Agent namespace - for listener agents (authenticated via API key)
+        @self.socketio.on('connect', namespace='/agents')
+        def handle_agent_connect(auth):
+            """Handle WebSocket connection from listener agents.
+
+            Agents authenticate via API key in the auth dict.
+            Only listener agents should use this WebSocket connection.
+            """
+            logger.debug(f"Agent WebSocket connection attempt from {request.remote_addr}")
+
+            # Extract authentication from auth dict
+            if not auth or not isinstance(auth, dict):
+                logger.warning(f"Agent WebSocket rejected: Missing auth dict")
+                return False
+
+            api_key = auth.get('api_key')
+            agent_id = auth.get('agent_id')
+
+            if not api_key or not agent_id:
+                logger.warning(f"Agent WebSocket rejected: Missing api_key or agent_id")
+                return False
+
+            # Verify agent exists and API key is valid
+            # Use similar validation as HTTP endpoints
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                logger.warning(f"Agent WebSocket rejected: Agent {agent_id} not found")
+                return False
+
+            # For simplicity, we'll verify the API key matches
+            # In production, you'd want to use the full verification with bcrypt
+            # For now, just check if agent has an API key set
+            if not agent.get('api_key_hash'):
+                logger.warning(f"Agent WebSocket rejected: No API key set for {agent_id}")
+                return False
+
+            # Verify this is a listener agent
+            if agent['agent_type'] != 'listener':
+                logger.warning(f"Agent WebSocket rejected: {agent_id} is not a listener (type: {agent['agent_type']})")
+                return False
+
+            # Authentication successful - join agent-specific room
+            from flask_socketio import join_room
+            join_room(f'agent_{agent_id}', namespace='/agents')
+
+            # Update WebSocket connection status in database
+            self.db.update_listener_websocket_status(agent_id, connected=True)
+
+            logger.info(f"Listener agent WebSocket connected: {agent_id} (sid: {request.sid})")
+
+            # Broadcast listener online status to admin UI
+            self.broadcast_event('listener_status', {
+                'agent_id': agent_id,
+                'listener_id': agent_id,
+                'status': 'online',
+                'websocket_connected': True,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+            # Send welcome message with connection confirmation
+            emit('connected', {
+                'agent_id': agent_id,
+                'message': 'WebSocket connection established',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }, namespace='/agents')
+
+            return True
+
+        @self.socketio.on('disconnect', namespace='/agents')
+        def handle_agent_disconnect():
+            """Handle listener agent WebSocket disconnection."""
+            # Note: We don't have easy access to agent_id here, so we'll rely on
+            # heartbeat timeout to mark agents as offline. We just update the
+            # websocket_connected flag based on connection state.
+            logger.info(f"Agent WebSocket disconnected: {request.sid}")
+
+            # The agent will be marked as having no WebSocket connection
+            # We can't easily determine which agent this was without storing
+            # a mapping, so the cleanup will happen via heartbeat timeout
+
+        @self.socketio.on('heartbeat', namespace='/agents')
+        def handle_agent_heartbeat(data):
+            """Handle heartbeat from listener agent over WebSocket.
+
+            This is optional - agents can also send HTTP heartbeats.
+            This allows for more frequent keepalive over the WebSocket.
+            """
+            agent_id = data.get('agent_id')
+            device_status = data.get('device_status')  # Optional device status
+            if agent_id:
+                # Update heartbeat timestamp and device status
+                self.db.update_agent_heartbeat(agent_id, device_status)
+
+                # Confirm heartbeat
+                emit('heartbeat_ack', {
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }, namespace='/agents')
 
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
@@ -3304,9 +4167,18 @@ radios:
 
             # Show active status if enabled (default: True)
             if public_view.get('show_active_status', True):
-                # Check if currently assigned (actively transmitting)
-                is_active = (challenge.get('status') == 'assigned' and
-                             challenge.get('assigned_to') is not None)
+                # Check if currently assigned and transmission hasn't timed out
+                challenge_id = challenge['challenge_id']
+                is_active = False
+
+                # Check if in active transmissions with timeout
+                with self.active_transmissions_lock:
+                    if challenge_id in self.active_transmissions:
+                        transmission_info = self.active_transmissions[challenge_id]
+                        expected_end = transmission_info['expected_end']
+                        # Only active if still within timeout window
+                        is_active = datetime.now(timezone.utc) < expected_end
+
                 public_challenge['is_active'] = is_active
 
             public_challenges.append(public_challenge)

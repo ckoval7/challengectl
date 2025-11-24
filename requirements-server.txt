@@ -32,3 +32,6 @@ cryptography>=41.0.0
 
 # Optional: PostgreSQL support (if migrating from SQLite)
 # psycopg2-binary>=2.9.0
+
+# Image processing
+pillow>=11.0.0 # Version < 12 for Py 3.9 compatibility

@@ -1,11 +1,12 @@
 # Configuration Reference
 
-This comprehensive reference documents all configuration options for the ChallengeCtl server and runner. Both components use YAML configuration files that define system behavior, challenge parameters, and device settings.
+This comprehensive reference documents all configuration options for ChallengeCtl components: server, runners, and listeners. All components use YAML configuration files that define system behavior, agent parameters, challenge settings, and device configurations.
 
 ## Table of Contents
 
 - [Server Configuration](#server-configuration)
 - [Runner Configuration](#runner-configuration)
+- [Listener Configuration](#listener-configuration)
 - [Challenge Configuration](#challenge-configuration)
 - [Modulation-Specific Parameters](#modulation-specific-parameters)
 - [Environment Variables](#environment-variables)
@@ -29,6 +30,7 @@ server:
   files_dir: "files"
   heartbeat_timeout: 90
   assignment_timeout: 300
+  transmission_timeout_multiplier: 2.0
 ```
 
 #### Parameters
@@ -41,6 +43,7 @@ server:
 | `files_dir` | string | `"files"` | Directory where challenge files are stored. Relative to server working directory. |
 | `heartbeat_timeout` | integer | `90` | Seconds before marking a runner offline due to missed heartbeats. Should be 3x heartbeat interval. |
 | `assignment_timeout` | integer | `300` | Seconds before requeuing a challenge that remains assigned. Prevents stuck assignments. |
+| `transmission_timeout_multiplier` | float | `2.0` | Multiplier for transmission timeout on public dashboard. Challenges remain "active" for `expected_duration * multiplier` seconds. Prevents stuck active indicators when runners fail. |
 
 #### CORS Origins
 
@@ -76,6 +79,44 @@ The enrollment process provides:
 - Enrollment token expiration for time-limited registration
 - Each runner has a unique, cryptographically random 32-character key
 - Re-enrollment process for legitimate host migration
+
+#### Transmission Timeout
+
+The `transmission_timeout_multiplier` controls how long challenges appear as "active" on the public dashboard. This prevents challenges from being stuck in an active state indefinitely when runners encounter errors and fail to complete transmissions.
+
+**How it works**:
+1. When a challenge is assigned, the server calculates the expected transmission duration based on the challenge configuration (file length, modulation parameters, pre-paint time, etc.)
+2. The timeout is set to: `expected_duration × transmission_timeout_multiplier`
+3. If the transmission doesn't complete within the timeout period, the challenge is automatically marked as inactive on the public dashboard
+4. A background cleanup task checks every 10 seconds for expired transmissions
+
+**Recommended values**:
+- **`1.5`**: Aggressive timeout (50% buffer) - faster cleanup, but may timeout slow devices
+- **`2.0`**: Balanced (100% buffer) - **default**, good for most scenarios
+- **`3.0`**: Conservative (200% buffer) - allows for very slow transmissions or high network latency
+
+**Example**:
+```yaml
+server:
+  transmission_timeout_multiplier: 2.0  # Default
+```
+
+With a 30-second challenge and multiplier of 2.0:
+- Expected duration: 30 seconds
+- Timeout: 60 seconds (30 × 2.0)
+- Challenge shows as "active" for up to 60 seconds after assignment
+- If runner completes successfully, challenge immediately marks as inactive
+- If runner crashes or fails, challenge automatically marks inactive after 60 seconds
+
+**Logging**: Timeout events are logged for monitoring:
+```
+Transmission timeout: challenge FM_FLAG_1 (transmission 12345) exceeded expected duration (30.0s * 2.0)
+```
+
+**Important**: This timeout only affects the public dashboard display. It does not affect:
+- Challenge assignment to runners (controlled by `assignment_timeout`)
+- Runner heartbeat detection (controlled by `heartbeat_timeout`)
+- Listener assignment timeouts (15-minute default)
 
 ### Frequency Ranges Section
 
@@ -373,6 +414,252 @@ If not specified, the device can handle any frequency within its hardware capabi
 - Legal to transmit on in your jurisdiction
 - Covered by your license (if required)
 - Within your antenna's specifications
+
+## Listener Configuration
+
+Listeners are configured separately from runners. They capture RF transmissions and generate waterfall images for spectrum visualization.
+
+### Listener Section
+
+```yaml
+agent:
+  agent_id: "listener-1"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "your-api-key-here"
+  heartbeat_interval: 30
+  websocket_enabled: true
+  websocket_reconnect_delay: 5
+
+  recording:
+    output_dir: "recordings"
+    sample_rate: 2000000
+    fft_size: 1024
+    frame_rate: 20
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+
+# SDR Device Configuration (supports multiple devices)
+radios:
+  devices:
+  - name: 0
+    model: rtlsdr
+    gain: 40
+    frequency_limits:
+      - "144000000-148000000"
+      - "420000000-450000000"
+
+  # Additional devices (optional)
+  # - name: 1
+  #   model: hackrf
+  #   gain: 35
+  #   frequency_limits:
+  #     - "902000000-928000000"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+```
+
+#### Parameters
+
+**agent_id** (string, required):
+- Unique identifier for this listener
+- Must match the agent_id enrolled via the server's enrollment system
+- Example: `"listener-1"`, `"sdr-rx-1"`
+
+**server_url** (string, required):
+- URL of the ChallengeCtl server
+- Must be accessible from the listener machine
+- Example: `"http://192.168.1.100:8443"`, `"https://challengectl.example.com"`
+
+**api_key** (string, required):
+- API key obtained during enrollment
+- Keep secure - treat it like a password
+- Never commit to version control
+
+**heartbeat_interval** (integer, optional):
+- How often to send heartbeat to server (in seconds)
+- Default: `30`
+- Server marks listener offline after 3 missed heartbeats (90 seconds)
+
+**websocket_enabled** (boolean, optional):
+- Enable WebSocket connection for real-time recording assignments
+- Default: `true`
+- Must be `true` for listener to receive assignments
+
+**websocket_reconnect_delay** (integer, optional):
+- Seconds to wait between WebSocket reconnection attempts
+- Default: `5`
+- Adjust based on network stability
+
+### Recording Section
+
+**output_dir** (string, required):
+- Directory where waterfall images are saved
+- Created automatically if it doesn't exist
+- Example: `"recordings"`, `"/var/lib/challengectl/waterfalls"`
+
+**sample_rate** (integer, required):
+- SDR sample rate in Hz
+- Higher = more bandwidth captured, more CPU usage
+- Common values: `1000000` (1 MHz), `2000000` (2 MHz), `3200000` (3.2 MHz)
+- Must be within your SDR's capabilities
+
+**fft_size** (integer, required):
+- FFT size for spectrum analysis
+- Common values: `512`, `1024`, `2048`, `4096`
+- Larger = better frequency resolution, more CPU usage
+- Default: `1024`
+
+**frame_rate** (integer, required):
+- Waterfall frames per second
+- Higher = smoother waterfall, larger images
+- Typical: `10-20` fps
+- Default: `20`
+
+**pre_roll_seconds** (integer, optional):
+- Seconds to record before expected transmission start
+- Ensures entire transmission is captured despite timing variations
+- Default: `5`
+- Recommended: 3-10 seconds
+
+**post_roll_seconds** (integer, optional):
+- Seconds to record after expected transmission end
+- Default: `5`
+- Recommended: 3-10 seconds
+
+### Radios Section
+
+**NEW**: Listeners now support multiple SDR receiver devices. Configure one or more devices in the `radios.devices` array.
+
+**name** (string/integer, required):
+- Device identifier or index
+- Examples: `0`, `1`, `"00000001"` (serial number)
+- Used to identify the device in logs and osmosdr connection string
+
+**model** (string, required):
+- Device type
+- Valid values: `"rtlsdr"`, `"hackrf"`, `"usrp"`, `"bladerf"`
+- Determines osmosdr device string format
+
+**gain** (integer/float, required):
+- RF gain in dB for this specific device
+- Adjust based on signal strength and SDR model
+- RTL-SDR: 0-50 dB (typical: 30-40)
+- HackRF: 0-62 dB (typical: 40)
+- USRP/BladeRF: 0-76 dB (typical: 30-50)
+- Start with 40 and adjust based on signal quality
+
+**frequency_limits** (list of strings, optional):
+- Frequency ranges this device should handle (in Hz)
+- Format: `"min_hz-max_hz"`
+- Examples:
+  - `["144000000-148000000"]` - 2m ham band only
+  - `["420000000-450000000", "902000000-928000000"]` - Multiple ranges
+- If not specified, device can capture any frequency
+- Useful for dedicating devices to specific bands
+
+**Multi-Device Example**:
+```yaml
+radios:
+  devices:
+  # VHF-only receiver
+  - name: 0
+    model: rtlsdr
+    gain: 45
+    frequency_limits:
+      - "144000000-148000000"
+
+  # UHF receiver for multiple bands
+  - name: 1
+    model: hackrf
+    gain: 35
+    frequency_limits:
+      - "420000000-450000000"
+      - "902000000-928000000"
+
+  # Wideband receiver (no limits)
+  - name: 2
+    model: usrp
+    gain: 30
+```
+
+The listener will automatically select the appropriate device based on frequency limits and availability.
+
+### Logging Section
+
+**level** (string, optional):
+- Logging verbosity level
+- Values: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`
+- Default: `"INFO"`
+- Use `"DEBUG"` for troubleshooting
+
+**format** (string, optional):
+- Log message format string
+- Default: `"%(asctime)s - %(name)s - %(levelname)s - %(message)s"`
+- Python logging format syntax
+
+### Example: Multiple Listeners
+
+For deployments with multiple SDRs on one machine:
+
+```yaml
+# listener-1-config.yml (VHF)
+agent:
+  agent_id: "listener-vhf"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "key-for-vhf-listener"
+
+  recording:
+    output_dir: "recordings-vhf"
+    sample_rate: 2000000
+    gain: 40
+    device:
+      id: "rtlsdr=00000001"
+      type: "rtlsdr"
+```
+
+```yaml
+# listener-2-config.yml (UHF)
+agent:
+  agent_id: "listener-uhf"
+  server_url: "http://192.168.1.100:8443"
+  api_key: "key-for-uhf-listener"
+
+  recording:
+    output_dir: "recordings-uhf"
+    sample_rate: 2000000
+    gain: 45
+    device:
+      id: "rtlsdr=00000002"
+      type: "rtlsdr"
+```
+
+Run both with:
+```bash
+./listener.py --config listener-1-config.yml &
+./listener.py --config listener-2-config.yml &
+```
+
+### Configuration Tips
+
+**Sample Rate Selection**:
+- Match or exceed the bandwidth of signals you're monitoring
+- NBFM: 1-2 MHz is sufficient
+- Wideband signals: 2-4 MHz
+- Limited by SDR hardware and CPU
+
+**Gain Tuning**:
+- Start with 40 dB
+- Increase if signals are weak in waterfall
+- Decrease if seeing saturation/distortion
+- Use `osmocom_fft` to tune live while monitoring
+
+**Performance Optimization**:
+- Reduce `sample_rate` if CPU usage is high
+- Reduce `frame_rate` to lower image size and CPU usage
+- Reduce `fft_size` for faster processing
+- Use dedicated hardware for best performance
 
 ## Challenge Configuration
 

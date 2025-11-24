@@ -236,12 +236,12 @@ radios:
 
 ### Runner Endpoints (Requires Runner API Key)
 
-- `POST /api/runners/register` - Register runner with server
-- `POST /api/runners/{id}/heartbeat` - Send periodic heartbeat (every 30 seconds)
-- `POST /api/runners/{id}/signout` - Graceful signout on shutdown
-- `GET /api/runners/{id}/task` - Request next challenge assignment
-- `POST /api/runners/{id}/complete` - Report challenge completion or failure
-- `POST /api/runners/{id}/log` - Forward log entries to server
+- `POST /api/agents/register` - Register runner with server
+- `POST /api/agents/{id}/heartbeat` - Send periodic heartbeat (every 30 seconds)
+- `POST /api/agents/{id}/signout` - Graceful signout on shutdown
+- `GET /api/agents/{id}/task` - Request next challenge assignment
+- `POST /api/agents/{id}/complete` - Report challenge completion or failure
+- `POST /api/agents/{id}/log` - Forward log entries to server
 - `GET /api/files/{hash}` - Download challenge file by SHA-256 hash
 
 ### Admin Endpoints (Requires Admin Authentication and CSRF Token)

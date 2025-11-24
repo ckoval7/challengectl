@@ -13,6 +13,7 @@ test_*
 devices.txt.corey
 devices.txt.test
 flags.txt
+recordings/
 
 # Distributed mode additions
 __pycache__/
@@ -23,6 +24,8 @@ challengectl.server.*.log
 challengectl.runner.*.log
 
 # Configuration (may contain secrets)
+*.yml
+!*.example.yml
 server-config.yml
 runner-config.yml
 *-config.local.yml
@@ -49,3 +52,4 @@ temp/
 *.swo
 settings.json
 venv/
+listener/listener.py

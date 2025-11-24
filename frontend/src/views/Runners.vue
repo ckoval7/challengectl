@@ -1,7 +1,7 @@
 <template>
   <div class="runners">
     <div class="header">
-      <h1>Runners</h1>
+      <h1>Agents</h1>
     </div>
 
     <el-tabs
@@ -20,6 +20,9 @@
           >
             Add Runner
           </el-button>
+          <p class="info-text">
+            Runner agents poll the server for available challenges to transmit using TX capable SDR devices.
+          </p>
         </div>
 
         <el-table
@@ -140,6 +143,19 @@
                     prop="name"
                     label="Name/Serial"
                   />
+                  <el-table-column
+                    label="Status"
+                    width="120"
+                  >
+                    <template #default="devScope">
+                      <el-tag
+                        :type="devScope.row.status === 'online' ? 'success' : devScope.row.status === 'busy' ? 'warning' : 'danger'"
+                        size="small"
+                      >
+                        {{ devScope.row.status || 'unknown' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="Frequency Limits">
                     <template #default="devScope">
                       {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}
@@ -309,57 +325,93 @@
             v-else
             class="enrollment-data"
           >
-            <!-- Step 2: Display complete configuration -->
+            <!-- Step 2: Display credentials and configuration -->
             <el-alert
-              title="Important: Save this configuration now!"
-              type="warning"
-              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              title="Runner Enrollment Created"
+              type="success"
               :closable="false"
               show-icon
-              class="mb-xl"
-            />
+            >
+              <p>
+                Copy the API key and enrollment token below. They will only be shown once!
+              </p>
+            </el-alert>
 
-            <div class="mb-15">
-              <el-space>
-                <el-button
-                  type="primary"
-                  @click="copyToClipboard(generatedConfig, 'Configuration')"
-                >
-                  Copy Full Config
-                </el-button>
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Runner Name">
+                  <el-input
+                    :model-value="enrollmentData.runner_name"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="enrollmentData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(enrollmentData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="enrollmentData.enrollment_token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(enrollmentData.enrollment_token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(enrollmentData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Runner Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>runner-config.yml</code> on your runner machine:
+              </p>
+
+              <el-input
+                :model-value="generatedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
                 <el-button
                   type="success"
+                  @click="copyToClipboard(generatedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
                   @click="downloadConfig"
                 >
                   Download runner-config.yml
                 </el-button>
-              </el-space>
-            </div>
-
-            <div class="config-display">
-              <h4>Complete Runner Configuration:</h4>
-              <pre class="config-content">{{ generatedConfig }}</pre>
-            </div>
-
-            <el-divider />
-
-            <div class="setup-instructions">
-              <h4>Setup Instructions:</h4>
-              <ol>
-                <li>Download or copy the complete configuration above</li>
-                <li>On your runner machine, save as <code>runner-config.yml</code></li>
-                <li>Customize the <code>radios</code> section for your SDR devices</li>
-                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-                <li>After successful enrollment, remove the <code>enrollment_token</code> line from the config</li>
-              </ol>
-            </div>
-
-            <el-divider />
-
-            <div class="credential-block">
-              <h4>Token Expires:</h4>
-              <div class="credential-value">
-                <code>{{ formatTimestamp(enrollmentData.expires_at) }}</code>
               </div>
             </div>
           </div>
@@ -411,62 +463,103 @@
             <p>This will generate new enrollment credentials. The old API key will remain valid until the runner re-enrolls with the new credentials.</p>
           </div>
 
-          <div
-            v-else
-            class="enrollment-data"
-          >
+          <div v-else>
             <el-alert
-              title="Important: Save this configuration now!"
-              type="warning"
-              description="The enrollment token and API key will only be shown once. Download or copy the complete configuration below."
+              type="success"
+              title="Re-enrollment Credentials Generated"
               :closable="false"
-              show-icon
-              class="mb-xl"
             />
 
-            <div class="mb-15">
-              <el-space>
-                <el-button
-                  type="primary"
-                  @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
-                >
-                  Copy Full Config
-                </el-button>
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Runner ID">
+                  <el-input
+                    :model-value="reEnrollData.runner_id"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="reEnrollData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="reEnrollData.token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollData.token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(reEnrollData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Runner Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>runner-config.yml</code> on your NEW runner machine:
+              </p>
+
+              <el-input
+                :model-value="reEnrollGeneratedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
                 <el-button
                   type="success"
+                  @click="copyToClipboard(reEnrollGeneratedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
                   @click="downloadReEnrollConfig"
                 >
                   Download runner-config.yml
                 </el-button>
-              </el-space>
-            </div>
-
-            <div class="config-display">
-              <h4>Complete Runner Configuration:</h4>
-              <pre class="config-content">{{ reEnrollGeneratedConfig }}</pre>
-            </div>
-
-            <el-divider />
-
-            <div class="setup-instructions">
-              <h4>Re-enrollment Instructions:</h4>
-              <ol>
-                <li>Download or copy the complete configuration above</li>
-                <li>On the NEW runner machine, save as <code>runner-config.yml</code></li>
-                <li>Customize the <code>radios</code> section for your SDR devices</li>
-                <li>Start the runner with: <code>python -m challengectl.runner.runner</code></li>
-                <li>After successful re-enrollment, remove the <code>enrollment_token</code> line from the config</li>
-                <li>The old runner will be automatically kicked once the new one connects</li>
-              </ol>
-            </div>
-
-            <el-divider />
-
-            <div class="credential-block">
-              <h4>Token Expires:</h4>
-              <div class="credential-value">
-                <code>{{ formatTimestamp(reEnrollData.expires_at) }}</code>
               </div>
+
+              <el-alert
+                type="info"
+                :closable="false"
+                class="mt-15"
+              >
+                <p><strong>Next Steps:</strong></p>
+                <ol>
+                  <li>On the NEW runner machine, save the configuration as <code>runner-config.yml</code></li>
+                  <li>Customize the <code>radios</code> section for your SDR devices</li>
+                  <li>Start the runner: <code>python -m challengectl.runner.runner</code></li>
+                  <li>The old runner will be automatically kicked once the new one connects</li>
+                </ol>
+              </el-alert>
             </div>
           </div>
 
@@ -491,6 +584,715 @@
                 @click="closeReEnrollDialog"
               >
                 Done
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
+
+      <!-- Listeners Tab -->
+      <el-tab-pane
+        label="Listeners"
+        name="listeners"
+      >
+        <div class="tab-header">
+          <el-button
+            type="primary"
+            @click="showAddListenerDialog"
+          >
+            Add Listener
+          </el-button>
+          <p class="info-text">
+            Listener agents capture RF spectrum and generate waterfall images when transmissions occur.
+            They connect via WebSocket for real-time coordination.
+          </p>
+        </div>
+
+        <el-table
+          :data="listeners"
+          class="w-full"
+        >
+          <el-table-column
+            prop="agent_id"
+            label="Listener ID"
+            width="180"
+          />
+          <el-table-column
+            prop="hostname"
+            label="Hostname"
+            width="200"
+          />
+          <el-table-column
+            prop="ip_address"
+            label="IP Address"
+            width="150"
+          />
+          <el-table-column
+            label="Status"
+            width="150"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-tag
+                  :type="scope.row.status === 'online' ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ scope.row.status }}
+                </el-tag>
+                <el-tag
+                  v-if="!scope.row.enabled"
+                  type="warning"
+                  size="small"
+                >
+                  disabled
+                </el-tag>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="WebSocket"
+            width="150"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="scope.row.websocket_connected ? 'success' : 'warning'"
+                size="small"
+              >
+                {{ scope.row.websocket_connected ? 'Connected' : 'Disconnected' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Devices"
+            width="100"
+          >
+            <template #default="scope">
+              {{ scope.row.devices?.length || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Last Heartbeat"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            width="350"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-button
+                  v-if="scope.row.enabled"
+                  size="small"
+                  type="warning"
+                  @click="disableListener(scope.row.agent_id)"
+                >
+                  Disable
+                </el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  type="success"
+                  @click="enableListener(scope.row.agent_id)"
+                >
+                  Enable
+                </el-button>
+                <el-button
+                  size="small"
+                  type="info"
+                  @click="showEditListenerDevicesDialog(scope.row)"
+                >
+                  Edit Devices
+                </el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  @click="showReEnrollListenerDialog(scope.row.agent_id)"
+                >
+                  Re-enroll
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  @click="kickListener(scope.row.agent_id)"
+                >
+                  Kick
+                </el-button>
+              </el-space>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div
+          v-if="listeners.length === 0"
+          class="empty-state"
+        >
+          <p>No listener agents registered.</p>
+          <p>Deploy listener agents with SDR hardware to capture spectrum recordings.</p>
+          <p>See <code>listener/README.md</code> for setup instructions.</p>
+        </div>
+
+        <!-- Add Listener Dialog -->
+        <el-dialog
+          v-model="addListenerDialogVisible"
+          title="Add Listener"
+          width="700px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!listenerEnrollmentData">
+            <!-- Step 1: Enter listener name and configuration -->
+            <el-form
+              :model="addListenerForm"
+              label-width="150px"
+            >
+              <el-form-item label="Listener Name">
+                <el-input
+                  v-model="addListenerForm.listenerName"
+                  placeholder="e.g., listener-1"
+                  @keyup.enter="generateListenerEnrollmentToken"
+                />
+              </el-form-item>
+              <el-form-item label="Token Expiry">
+                <el-select
+                  v-model="addListenerForm.expiresHours"
+                  placeholder="Select expiry time"
+                >
+                  <el-option
+                    label="1 hour"
+                    :value="1"
+                  />
+                  <el-option
+                    label="6 hours"
+                    :value="6"
+                  />
+                  <el-option
+                    label="24 hours (default)"
+                    :value="24"
+                  />
+                  <el-option
+                    label="7 days"
+                    :value="168"
+                  />
+                </el-select>
+              </el-form-item>
+
+              <el-divider content-position="left">
+                SDR Device Configuration (Optional)
+              </el-divider>
+
+              <div
+                v-for="(device, index) in addListenerForm.devices"
+                :key="index"
+                class="device-config-item"
+              >
+                <div class="device-header">
+                  <h4>Device {{ index + 1 }}</h4>
+                  <el-button
+                    v-if="addListenerForm.devices.length > 1"
+                    size="small"
+                    type="danger"
+                    @click="removeListenerDevice(index)"
+                  >
+                    Remove
+                  </el-button>
+                </div>
+
+                <el-form-item label="Device Name">
+                  <el-input
+                    v-model="device.name"
+                    placeholder="e.g., 0, 1, or serial number"
+                  />
+                  <div class="hint-text">
+                    Device index (0, 1, 2) or serial number
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Model">
+                  <el-select
+                    v-model="device.model"
+                    placeholder="Select SDR model"
+                  >
+                    <el-option
+                      label="RTL-SDR"
+                      value="rtlsdr"
+                    />
+                    <el-option
+                      label="HackRF"
+                      value="hackrf"
+                    />
+                    <el-option
+                      label="USRP"
+                      value="usrp"
+                    />
+                    <el-option
+                      label="BladeRF"
+                      value="bladerf"
+                    />
+                  </el-select>
+                  <div class="hint-text">
+                    Type of SDR receiver hardware
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Gain (dB)">
+                  <el-input-number
+                    v-model="device.gain"
+                    :min="0"
+                    :max="100"
+                  />
+                  <div class="hint-text">
+                    RF gain setting (0-100 dB, typical: 20-50)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Min (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_min_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Minimum power level for waterfall display (optional, default: auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Max (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_max_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Maximum power level for waterfall display (optional, default: auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Frequency Limits">
+                  <el-input
+                    v-model="device.frequency_limits"
+                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                  />
+                  <div class="hint-text">
+                    Comma-separated ranges in Hz (optional). Leave blank for full range.
+                  </div>
+                </el-form-item>
+
+                <el-divider v-if="index < addListenerForm.devices.length - 1" />
+              </div>
+
+              <el-button
+                type="primary"
+                plain
+                class="mt-10 w-full"
+                @click="addListenerDevice"
+              >
+                Add Another Device
+              </el-button>
+            </el-form>
+
+            <div class="dialog-footer">
+              <el-button @click="addListenerDialogVisible = false">
+                Cancel
+              </el-button>
+              <el-button
+                type="primary"
+                @click="generateListenerEnrollmentToken"
+                :disabled="!addListenerForm.listenerName"
+              >
+                Generate Token
+              </el-button>
+            </div>
+          </div>
+
+          <div v-else>
+            <!-- Step 2: Show enrollment credentials -->
+            <el-alert
+              title="Listener Enrollment Created"
+              type="success"
+              :closable="false"
+              show-icon
+            >
+              <p>
+                Copy the API key and enrollment token below. They will only be shown once!
+              </p>
+            </el-alert>
+
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Listener Name">
+                  <el-input
+                    :model-value="listenerEnrollmentData.listener_name"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="listenerEnrollmentData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(listenerEnrollmentData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="listenerEnrollmentData.enrollment_token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(listenerEnrollmentData.enrollment_token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(listenerEnrollmentData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Listener Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>listener-config.yml</code> on your listener machine:
+              </p>
+
+              <el-input
+                :model-value="listenerEnrollmentData.config_yaml"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
+                <el-button
+                  type="success"
+                  @click="copyToClipboard(listenerEnrollmentData.config_yaml, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
+                  @click="downloadConfig(listenerEnrollmentData.config_yaml, `${listenerEnrollmentData.listener_name}-config.yml`)"
+                >
+                  Download listener-config.yml
+                </el-button>
+              </div>
+            </div>
+
+            <div class="dialog-footer">
+              <el-button
+                type="primary"
+                @click="addListenerDialogVisible = false; loadAgents()"
+              >
+                Done
+              </el-button>
+            </div>
+          </div>
+        </el-dialog>
+
+        <!-- Re-enroll Listener Dialog -->
+        <el-dialog
+          v-model="reEnrollListenerDialogVisible"
+          title="Re-enroll Listener"
+          width="700px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="!reEnrollListenerData">
+            <el-alert
+              type="warning"
+              title="Warning"
+              description="Generate fresh credentials to migrate this listener to a different host or update compromised credentials."
+              :closable="false"
+            />
+
+            <p><strong>Listener ID:</strong> {{ reEnrollListenerId }}</p>
+            <p>This will generate new enrollment credentials. The old API key will remain valid until the listener re-enrolls with the new credentials.</p>
+          </div>
+
+          <div v-else>
+            <el-alert
+              type="success"
+              title="Re-enrollment Credentials Generated"
+              :closable="false"
+            />
+
+            <div class="credentials-section">
+              <h3>Enrollment Credentials</h3>
+
+              <el-form label-width="150px">
+                <el-form-item label="Listener ID">
+                  <el-input
+                    :model-value="reEnrollListenerData.listener_id"
+                    readonly
+                  />
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    :model-value="reEnrollListenerData.api_key"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollListenerData.api_key, 'API Key')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Enrollment Token">
+                  <el-input
+                    :model-value="reEnrollListenerData.token"
+                    readonly
+                    type="textarea"
+                    :rows="2"
+                  >
+                    <template #append>
+                      <el-button @click="copyToClipboard(reEnrollListenerData.token, 'Enrollment Token')">
+                        Copy
+                      </el-button>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <el-form-item label="Expires">
+                  <el-input
+                    :model-value="formatTimestamp(reEnrollListenerData.expires_at)"
+                    readonly
+                  />
+                </el-form-item>
+              </el-form>
+
+              <el-divider />
+
+              <h3>Listener Configuration File</h3>
+              <p class="hint-text">
+                Copy this complete configuration to <code>listener-config.yml</code> on your NEW listener machine:
+              </p>
+
+              <el-input
+                :model-value="reEnrollListenerGeneratedConfig"
+                type="textarea"
+                :rows="20"
+                readonly
+              />
+
+              <div class="button-group">
+                <el-button
+                  type="success"
+                  @click="copyToClipboard(reEnrollListenerGeneratedConfig, 'Configuration')"
+                >
+                  Copy Configuration
+                </el-button>
+                <el-button
+                  @click="downloadReEnrollListenerConfig"
+                >
+                  Download listener-config.yml
+                </el-button>
+              </div>
+
+              <el-alert
+                type="info"
+                :closable="false"
+                class="mt-15"
+              >
+                <p><strong>Next Steps:</strong></p>
+                <ol>
+                  <li>On the NEW listener machine, save the configuration as <code>listener-config.yml</code></li>
+                  <li>Install dependencies: <code>pip install -r requirements-listener.txt</code></li>
+                  <li>Start the listener: <code>python listener/listener.py --config listener-config.yml</code></li>
+                  <li>The old listener will be automatically kicked once the new one connects</li>
+                </ol>
+              </el-alert>
+            </div>
+          </div>
+
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button
+                v-if="!reEnrollListenerData"
+                @click="reEnrollListenerDialogVisible = false"
+              >
+                Cancel
+              </el-button>
+              <el-button
+                v-if="!reEnrollListenerData"
+                type="primary"
+                @click="generateReEnrollListenerToken"
+              >
+                Generate Re-enrollment Credentials
+              </el-button>
+              <el-button
+                v-if="reEnrollListenerData"
+                type="primary"
+                @click="closeReEnrollListenerDialog"
+              >
+                Done
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
+
+        <!-- Edit Listener Devices Dialog -->
+        <el-dialog
+          v-model="editListenerDevicesDialogVisible"
+          title="Edit Listener Devices"
+          width="700px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="editListenerForm">
+            <el-alert
+              type="info"
+              :closable="false"
+              class="mb-15"
+            >
+              <p>
+                Edit device configuration for listener <strong>{{ editListenerForm.agent_id }}</strong>.
+                Changes will be applied immediately and affect future recordings.
+              </p>
+            </el-alert>
+
+            <div
+              v-for="(device, index) in editListenerForm.devices"
+              :key="index"
+              class="device-config-item"
+            >
+              <div class="device-header">
+                <h4>Device {{ index + 1 }}</h4>
+                <el-button
+                  v-if="editListenerForm.devices.length > 1"
+                  size="small"
+                  type="danger"
+                  @click="editListenerForm.devices.splice(index, 1)"
+                >
+                  Remove
+                </el-button>
+              </div>
+
+              <el-form label-width="150px">
+                <el-form-item label="Device Name">
+                  <el-input
+                    v-model="device.name"
+                    placeholder="e.g., 0, 1, or serial number"
+                  />
+                  <div class="hint-text">
+                    Device index (0, 1, 2) or serial number
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Model">
+                  <el-select
+                    v-model="device.model"
+                    placeholder="Select SDR model"
+                  >
+                    <el-option
+                      label="RTL-SDR"
+                      value="rtlsdr"
+                    />
+                    <el-option
+                      label="HackRF"
+                      value="hackrf"
+                    />
+                    <el-option
+                      label="Simulated"
+                      value="simulated"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="Gain (dB)">
+                  <el-input-number
+                    v-model="device.gain"
+                    :min="0"
+                    :max="60"
+                    :step="1"
+                  />
+                  <div class="hint-text">
+                    RF gain in dB (typical: 20-50 for RTL-SDR, 0-40 for HackRF)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Min (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_min_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Minimum power level for waterfall display (optional, leave empty for auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Waterfall Max (dBm)">
+                  <el-input-number
+                    v-model="device.waterfall_max_dbm"
+                    :min="-120"
+                    :max="0"
+                    :step="5"
+                  />
+                  <div class="hint-text">
+                    Maximum power level for waterfall display (optional, leave empty for auto-scale)
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="Frequency Limits">
+                  <el-input
+                    v-model="device.frequency_limits"
+                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                  />
+                  <div class="hint-text">
+                    Comma-separated ranges in Hz (optional). Leave blank for full range.
+                  </div>
+                </el-form-item>
+              </el-form>
+
+              <el-divider v-if="index < editListenerForm.devices.length - 1" />
+            </div>
+
+            <el-button
+              type="primary"
+              plain
+              class="mt-10 w-full"
+              @click="editListenerForm.devices.push({ name: String(editListenerForm.devices.length), model: 'rtlsdr', gain: 40, waterfall_min_dbm: null, waterfall_max_dbm: null, frequency_limits: '' })"
+            >
+              Add Another Device
+            </el-button>
+          </div>
+
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button @click="editListenerDevicesDialogVisible = false">
+                Cancel
+              </el-button>
+              <el-button
+                type="primary"
+                @click="saveListenerDevices"
+              >
+                Save Changes
               </el-button>
             </span>
           </template>
@@ -720,6 +1522,11 @@ export default {
   name: 'Runners',
   setup() {
     const runners = ref([])
+    const listeners = ref([])
+
+    // Runner enrollment state
+    // Note: Kept separate from listener enrollment due to significantly different
+    // form structures (runners have complex multi-device config, listeners are simpler)
     const addRunnerDialogVisible = ref(false)
     const addRunnerForm = ref({
       runnerName: '',
@@ -738,10 +1545,38 @@ export default {
     const enrollmentData = ref(null)
     const serverUrl = ref(window.location.origin)
 
-    // Re-enrollment state
+    // Re-enrollment state (runners)
     const reEnrollDialogVisible = ref(false)
     const reEnrollRunnerId = ref('')
     const reEnrollData = ref(null)
+
+    // Re-enrollment state (listeners)
+    const reEnrollListenerDialogVisible = ref(false)
+    const reEnrollListenerId = ref('')
+    const reEnrollListenerData = ref(null)
+
+    // Listener enrollment state
+    // Note: Updated to support multiple devices like runners
+    const addListenerDialogVisible = ref(false)
+    const addListenerForm = ref({
+      listenerName: '',
+      expiresHours: 24,
+      devices: [
+        {
+          name: '0',
+          model: 'rtlsdr',
+          gain: 40,
+          waterfall_min_dbm: null,  // null = auto-scale
+          waterfall_max_dbm: null,  // null = auto-scale
+          frequency_limits: ''
+        }
+      ]
+    })
+    const listenerEnrollmentData = ref(null)
+
+    // Edit listener devices state
+    const editListenerDevicesDialogVisible = ref(false)
+    const editListenerForm = ref(null)
 
     const loadRunners = async () => {
       try {
@@ -750,6 +1585,36 @@ export default {
       } catch (error) {
         console.error('Error loading runners:', error)
         ElMessage.error('Failed to load runners')
+      }
+    }
+
+    const loadAgents = async () => {
+      try {
+        // Try to load from unified /agents endpoint first
+        // Fallback to /runners if not available (backward compatibility)
+        let agentsData = []
+
+        try {
+          const response = await api.get('/agents')
+          agentsData = response.data.agents || []
+        } catch (err) {
+          // Fallback to old endpoint
+          const response = await api.get('/runners')
+          agentsData = (response.data.runners || []).map(r => ({
+            ...r,
+            agent_id: r.runner_id,
+            agent_type: 'runner',
+            websocket_connected: false
+          }))
+        }
+
+        // Filter by agent type
+        runners.value = agentsData.filter(a => a.agent_type === 'runner')
+        listeners.value = agentsData.filter(a => a.agent_type === 'listener')
+
+      } catch (error) {
+        console.error('Error loading agents:', error)
+        ElMessage.error('Failed to load agents')
       }
     }
 
@@ -772,6 +1637,25 @@ export default {
       }
     }
 
+    const showAddListenerDialog = () => {
+      addListenerDialogVisible.value = true
+      listenerEnrollmentData.value = null
+      addListenerForm.value = {
+        listenerName: '',
+        expiresHours: 24,
+        devices: [
+          {
+            name: '0',
+            model: 'rtlsdr',
+            gain: 40,
+            waterfall_min_dbm: null,
+            waterfall_max_dbm: null,
+            frequency_limits: ''
+          }
+        ]
+      }
+    }
+
     const addDevice = () => {
       addRunnerForm.value.devices.push({
         name: String(addRunnerForm.value.devices.length),
@@ -784,6 +1668,21 @@ export default {
 
     const removeDevice = (index) => {
       addRunnerForm.value.devices.splice(index, 1)
+    }
+
+    const addListenerDevice = () => {
+      addListenerForm.value.devices.push({
+        name: String(addListenerForm.value.devices.length),
+        model: 'rtlsdr',
+        gain: 40,
+        waterfall_min_dbm: null,
+        waterfall_max_dbm: null,
+        frequency_limits: ''
+      })
+    }
+
+    const removeListenerDevice = (index) => {
+      addListenerForm.value.devices.splice(index, 1)
     }
 
     const generateEnrollmentToken = async () => {
@@ -917,14 +1816,23 @@ ${addRunnerForm.value.devices.map(device => {
       return config
     })
 
-    const downloadConfig = () => {
-      if (!enrollmentData.value) return
+    const downloadConfig = (content = null, filename = null) => {
+      // Support both runner and listener configs
+      let configContent = content
+      let configFilename = filename
 
-      const blob = new Blob([generatedConfig.value], { type: 'text/yaml' })
+      if (!configContent) {
+        // Default to runner config if no content provided
+        if (!enrollmentData.value) return
+        configContent = generatedConfig.value
+        configFilename = 'runner-config.yml'
+      }
+
+      const blob = new Blob([configContent], { type: 'text/yaml' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'runner-config.yml'
+      link.download = configFilename
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -934,11 +1842,27 @@ ${addRunnerForm.value.devices.map(device => {
 
     const copyToClipboard = async (text, label) => {
       try {
+        // Check if clipboard API is available (requires HTTPS or localhost)
+        if (!navigator.clipboard) {
+          ElMessage({
+            message: 'Clipboard not available over HTTP. Please use HTTPS or download the file instead.',
+            type: 'warning',
+            duration: 5000,
+            showClose: true
+          })
+          return
+        }
+
         await navigator.clipboard.writeText(text)
         ElMessage.success(`${label} copied to clipboard`)
       } catch (error) {
         console.error('Failed to copy:', error)
-        ElMessage.error('Failed to copy to clipboard')
+        ElMessage({
+          message: 'Failed to copy to clipboard. Try downloading the file instead.',
+          type: 'error',
+          duration: 5000,
+          showClose: true
+        })
       }
     }
 
@@ -1097,9 +2021,111 @@ radios:
       ElMessage.success('Configuration downloaded')
     }
 
+    // Listener re-enrollment functions
+    const showReEnrollListenerDialog = (listenerId) => {
+      reEnrollListenerDialogVisible.value = true
+      reEnrollListenerId.value = listenerId
+      reEnrollListenerData.value = null
+    }
+
+    const closeReEnrollListenerDialog = () => {
+      reEnrollListenerDialogVisible.value = false
+      reEnrollListenerId.value = ''
+      reEnrollListenerData.value = null
+    }
+
+    const generateReEnrollListenerToken = async () => {
+      if (!reEnrollListenerId.value) {
+        ElMessage.warning('No listener ID specified')
+        return
+      }
+
+      try {
+        const response = await api.post(`/enrollment/re-enroll/${reEnrollListenerId.value}`, {
+          expires_hours: 24
+        })
+
+        reEnrollListenerData.value = {
+          token: response.data.token,
+          api_key: response.data.api_key,
+          listener_id: response.data.listener_id || response.data.agent_id,
+          expires_at: response.data.expires_at
+        }
+
+        ElMessage.success('Re-enrollment credentials generated')
+      } catch (error) {
+        console.error('Error generating re-enrollment token:', error)
+        ElMessage.error('Failed to generate re-enrollment credentials')
+      }
+    }
+
+    const reEnrollListenerGeneratedConfig = computed(() => {
+      if (!reEnrollListenerData.value) return ''
+
+      const config = `---
+# ChallengeCtl Listener Configuration - RE-ENROLLMENT
+# Generated for listener: ${reEnrollListenerData.value.listener_id}
+
+agent:
+  # Agent type and identification
+  agent_type: listener
+  agent_id: "${reEnrollListenerData.value.listener_id}"
+
+  # Server URL
+  server_url: "${serverUrl.value}"
+
+  # Re-enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
+  enrollment_token: "${reEnrollListenerData.value.token}"
+  api_key: "${reEnrollListenerData.value.api_key}"
+
+  # TLS/SSL Configuration
+  ca_cert: ""
+  verify_ssl: true
+
+  # Heartbeat interval (seconds)
+  heartbeat_interval: 30
+
+  # WebSocket configuration
+  websocket_enabled: true
+  websocket_reconnect_delay: 5
+
+  # Recording configuration
+  recording:
+    output_dir: "recordings"
+    sample_rate: 2000000
+    fft_size: 1024
+    frame_rate: 20
+    gain: 40
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+    reference_level_dbm: -10.0
+
+    # SDR device configuration
+    device:
+      id: "rtlsdr=0"  # Customize for your device
+      type: "rtlsdr"  # rtlsdr, hackrf, usrp, etc.
+`
+      return config
+    })
+
+    const downloadReEnrollListenerConfig = () => {
+      if (!reEnrollListenerData.value) return
+
+      const blob = new Blob([reEnrollListenerGeneratedConfig.value], { type: 'text/yaml' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `listener-config-${reEnrollListenerData.value.listener_id}.yml`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      ElMessage.success('Configuration downloaded')
+    }
+
     const enableRunner = async (runnerId) => {
       try {
-        await api.post(`/runners/${runnerId}/enable`)
+        await api.post(`/agents/${runnerId}/enable`)
         ElMessage.success('Runner enabled')
         // WebSocket will update the UI automatically
       } catch (error) {
@@ -1110,12 +2136,100 @@ radios:
 
     const disableRunner = async (runnerId) => {
       try {
-        await api.post(`/runners/${runnerId}/disable`)
+        await api.post(`/agents/${runnerId}/disable`)
         ElMessage.success('Runner disabled')
         // WebSocket will update the UI automatically
       } catch (error) {
         console.error('Error disabling runner:', error)
         ElMessage.error('Failed to disable runner')
+      }
+    }
+
+    const enableListener = async (listenerId) => {
+      try {
+        await api.post(`/agents/${listenerId}/enable`)
+        ElMessage.success('Listener enabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error enabling listener:', error)
+        ElMessage.error('Failed to enable listener')
+      }
+    }
+
+    const disableListener = async (listenerId) => {
+      try {
+        await api.post(`/agents/${listenerId}/disable`)
+        ElMessage.success('Listener disabled')
+        // WebSocket will update the UI automatically
+      } catch (error) {
+        console.error('Error disabling listener:', error)
+        ElMessage.error('Failed to disable listener')
+      }
+    }
+
+    const showEditListenerDevicesDialog = (listener) => {
+      // Parse devices from JSON if needed
+      let devices = listener.devices
+      if (typeof devices === 'string') {
+        devices = JSON.parse(devices)
+      }
+
+      // Create editable copy of devices with proper structure
+      editListenerForm.value = {
+        agent_id: listener.agent_id,
+        devices: devices.map(d => ({
+          name: d.name || d.device_id || '0',
+          model: d.model || 'rtlsdr',
+          gain: d.gain || 40,
+          waterfall_min_dbm: d.waterfall_min_dbm !== undefined ? d.waterfall_min_dbm : null,
+          waterfall_max_dbm: d.waterfall_max_dbm !== undefined ? d.waterfall_max_dbm : null,
+          frequency_limits: Array.isArray(d.frequency_limits)
+            ? d.frequency_limits.join(', ')
+            : (d.frequency_limits || '')
+        }))
+      }
+
+      editListenerDevicesDialogVisible.value = true
+    }
+
+    const saveListenerDevices = async () => {
+      try {
+        // Convert devices back to server format
+        const devices = editListenerForm.value.devices.map(d => {
+          const device = {
+            device_id: d.name,
+            name: d.name,
+            model: d.model,
+            gain: d.gain
+          }
+
+          // Only include waterfall params if they're set
+          if (d.waterfall_min_dbm !== null && d.waterfall_min_dbm !== undefined) {
+            device.waterfall_min_dbm = d.waterfall_min_dbm
+          }
+          if (d.waterfall_max_dbm !== null && d.waterfall_max_dbm !== undefined) {
+            device.waterfall_max_dbm = d.waterfall_max_dbm
+          }
+
+          // Parse frequency limits
+          if (d.frequency_limits) {
+            device.frequency_limits = d.frequency_limits
+              .split(',')
+              .map(f => f.trim())
+              .filter(f => f)
+          }
+
+          return device
+        })
+
+        await api.put(`/agents/${editListenerForm.value.agent_id}/devices`, { devices })
+
+        ElMessage.success('Device configuration updated')
+        editListenerDevicesDialogVisible.value = false
+        loadAgents()
+      } catch (error) {
+        console.error('Error updating listener devices:', error)
+        ElMessage.error('Failed to update device configuration')
       }
     }
 
@@ -1131,13 +2245,127 @@ radios:
           }
         )
 
-        await api.delete(`/runners/${runnerId}`)
+        await api.delete(`/agents/${runnerId}`)
         ElMessage.success('Runner removed')
         loadRunners()
       } catch (error) {
         if (error !== 'cancel') {
           ElMessage.error('Failed to remove runner')
         }
+      }
+    }
+
+    const kickListener = async (listenerId) => {
+      try {
+        await ElMessageBox.confirm(
+          `Remove listener ${listenerId}?`,
+          'Confirm',
+          {
+            confirmButtonText: 'Remove',
+            cancelButtonText: 'Cancel',
+            type: 'warning'
+          }
+        )
+
+        await api.delete(`/agents/${listenerId}`)
+        ElMessage.success('Listener removed')
+        loadAgents()
+      } catch (error) {
+        if (error !== 'cancel') {
+          ElMessage.error('Failed to remove listener')
+        }
+      }
+    }
+
+    const generateListenerEnrollmentToken = async () => {
+      if (!addListenerForm.value.listenerName) {
+        ElMessage.error('Listener name is required')
+        return
+      }
+
+      try {
+        // Generate enrollment token via enrollment endpoint
+        const response = await api.post('/enrollment/token', {
+          runner_name: addListenerForm.value.listenerName,
+          expires_hours: addListenerForm.value.expiresHours,
+          agent_type: 'listener'
+        })
+
+        // Generate devices YAML section
+        const devicesYaml = addListenerForm.value.devices.map(device => {
+          const freqLimits = device.frequency_limits
+            ? device.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
+            : []
+
+          let deviceYaml = `  - name: ${device.name}\n`
+          deviceYaml += `    model: ${device.model}\n`
+          deviceYaml += `    gain: ${device.gain}\n`
+
+          // Add waterfall scale parameters if set
+          if (device.waterfall_min_dbm !== null && device.waterfall_min_dbm !== undefined) {
+            deviceYaml += `    waterfall_min_dbm: ${device.waterfall_min_dbm}\n`
+          }
+          if (device.waterfall_max_dbm !== null && device.waterfall_max_dbm !== undefined) {
+            deviceYaml += `    waterfall_max_dbm: ${device.waterfall_max_dbm}\n`
+          }
+
+          if (freqLimits.length > 0) {
+            deviceYaml += `    frequency_limits:\n`
+            freqLimits.forEach(limit => {
+              deviceYaml += `      - "${limit}"\n`
+            })
+          }
+
+          return deviceYaml
+        }).join('\n')
+
+        // Generate complete configuration YAML
+        const configYaml = `# ChallengeCtl Listener Configuration
+# Generated: ${new Date().toISOString()}
+
+agent:
+  agent_id: "${addListenerForm.value.listenerName}"
+  server_url: "${serverUrl.value}"
+
+  # Enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
+  enrollment_token: "${response.data.token}"
+  api_key: "${response.data.api_key}"
+
+  heartbeat_interval: 30
+  websocket_enabled: true
+  websocket_reconnect_delay: 5
+
+  recording:
+    output_dir: "recordings"
+    sample_rate: 2000000  # 2 MHz
+    fft_size: 1024
+    frame_rate: 20
+    pre_roll_seconds: 5
+    post_roll_seconds: 5
+
+# SDR Device Configuration
+radios:
+  # Individual device configuration
+  devices:
+${devicesYaml}
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+`
+
+        listenerEnrollmentData.value = {
+          listener_name: addListenerForm.value.listenerName,
+          api_key: response.data.api_key,
+          enrollment_token: response.data.token,
+          expires_at: response.data.expires_at,
+          config_yaml: configYaml
+        }
+
+        ElMessage.success('Listener enrollment token generated')
+      } catch (error) {
+        console.error('Error generating listener enrollment token:', error)
+        ElMessage.error('Failed to generate enrollment token')
       }
     }
 
@@ -1178,14 +2406,64 @@ radios:
       }
     }
 
+    const handleListenerStatusEvent = (event) => {
+      console.log('Agents page received listener_status event:', event)
+
+      const listener = listeners.value.find(l => l.agent_id === event.agent_id || l.agent_id === event.listener_id)
+
+      if (event.status === 'online') {
+        if (!listener) {
+          // New listener registered, reload full list
+          console.log('New listener detected, reloading agents')
+          loadAgents()
+        } else {
+          // Update existing listener status
+          console.log('Updating listener to online:', event.agent_id)
+          listener.status = 'online'
+          if (event.last_heartbeat) {
+            listener.last_heartbeat = event.last_heartbeat
+          }
+          if (event.websocket_connected !== undefined) {
+            listener.websocket_connected = event.websocket_connected
+          }
+        }
+      } else if (event.status === 'offline') {
+        if (listener) {
+          // Mark listener as offline
+          console.log('Updating listener to offline:', event.agent_id)
+          listener.status = 'offline'
+          listener.websocket_connected = false
+        }
+      }
+    }
+
+    const handleDeviceStatusEvent = (event) => {
+      console.log('Agents page received device_status event:', event)
+
+      // Find agent (runner or listener) by agent_id
+      const allAgents = [...runners.value, ...listeners.value]
+      const agent = allAgents.find(a => a.agent_id === event.agent_id)
+
+      if (agent && agent.devices) {
+        // Find device by device_id and update status
+        const device = agent.devices.find(d => d.device_id === event.device_id)
+        if (device) {
+          console.log(`Updating device ${event.device_id} status to ${event.status} for agent ${event.agent_id}`)
+          device.status = event.status
+        }
+      }
+    }
+
     onMounted(() => {
-      loadRunners()
+      loadAgents()  // Load both runners and listeners
       loadProvisioningKeys()
 
       // Connect WebSocket for real-time updates
       websocket.connect()
       websocket.on('runner_status', handleRunnerStatusEvent)
+      websocket.on('listener_status', handleListenerStatusEvent)
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
+      websocket.on('device_status', handleDeviceStatusEvent)
     })
 
     // Provisioning Keys state
@@ -1296,12 +2574,16 @@ curl -k \\
 
     onUnmounted(() => {
       websocket.off('runner_status', handleRunnerStatusEvent)
+      websocket.off('listener_status', handleListenerStatusEvent)
       websocket.off('runner_enabled', handleRunnerEnabledEvent)
+      websocket.off('device_status', handleDeviceStatusEvent)
     })
 
     return {
       activeTab,
       runners,
+      listeners,
+      loadAgents,
       addRunnerDialogVisible,
       addRunnerForm,
       enrollmentData,
@@ -1311,6 +2593,10 @@ curl -k \\
       reEnrollRunnerId,
       reEnrollData,
       reEnrollGeneratedConfig,
+      reEnrollListenerDialogVisible,
+      reEnrollListenerId,
+      reEnrollListenerData,
+      reEnrollListenerGeneratedConfig,
       showAddRunnerDialog,
       addDevice,
       removeDevice,
@@ -1322,9 +2608,27 @@ curl -k \\
       generateReEnrollToken,
       closeReEnrollDialog,
       downloadReEnrollConfig,
+      showReEnrollListenerDialog,
+      generateReEnrollListenerToken,
+      closeReEnrollListenerDialog,
+      downloadReEnrollListenerConfig,
       enableRunner,
       disableRunner,
+      enableListener,
+      disableListener,
       kickRunner,
+      kickListener,
+      addListenerDialogVisible,
+      addListenerForm,
+      listenerEnrollmentData,
+      editListenerDevicesDialogVisible,
+      editListenerForm,
+      showEditListenerDevicesDialog,
+      saveListenerDevices,
+      showAddListenerDialog,
+      addListenerDevice,
+      removeListenerDevice,
+      generateListenerEnrollmentToken,
       provisioningKeys,
       createProvKeyDialogVisible,
       createProvKeyForm,

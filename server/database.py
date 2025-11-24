@@ -11,6 +11,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import threading
+import bcrypt
+import secrets
+import string
 
 from crypto import encrypt_totp_secret, decrypt_totp_secret
 
@@ -53,10 +56,12 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Runners table
+            # Agents table (unified runners and listeners)
+            # Note: For backward compatibility, we first create as 'runners' then migrate to 'agents'
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS runners (
-                    runner_id TEXT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS agents (
+                    agent_id TEXT PRIMARY KEY,
+                    agent_type TEXT NOT NULL DEFAULT 'runner',
                     hostname TEXT,
                     ip_address TEXT,
                     mac_address TEXT,
@@ -66,22 +71,57 @@ class Database:
                     last_heartbeat TIMESTAMP,
                     devices JSON,
                     api_key_hash TEXT,
+                    websocket_connected BOOLEAN DEFAULT 0,
+                    websocket_last_connected TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
 
-            # Migration: Add host identifier columns if they don't exist
-            cursor.execute("PRAGMA table_info(runners)")
-            columns = [col[1] for col in cursor.fetchall()]
 
-            if 'mac_address' not in columns:
-                logger.info("Adding mac_address column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN mac_address TEXT')
+            # Recordings table (for listener waterfall captures)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS recordings (
+                    recording_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    challenge_id TEXT,
+                    agent_id TEXT,
+                    transmission_id INTEGER,
+                    frequency INTEGER,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    status TEXT DEFAULT 'recording',
+                    image_path TEXT,
+                    image_width INTEGER,
+                    image_height INTEGER,
+                    sample_rate INTEGER,
+                    duration_seconds REAL,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
+                    FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
+                )
+            ''')
 
-            if 'machine_id' not in columns:
-                logger.info("Adding machine_id column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN machine_id TEXT')
+            # Listener assignments table (tracks recording assignments to listeners)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS listener_assignments (
+                    assignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id TEXT NOT NULL,
+                    challenge_id TEXT,
+                    transmission_id INTEGER,
+                    frequency INTEGER NOT NULL,
+                    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expected_start TIMESTAMP,
+                    expected_duration REAL,
+                    status TEXT DEFAULT 'pending',
+                    cancelled_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
+                    FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                    FOREIGN KEY (transmission_id) REFERENCES transmissions(transmission_id)
+                )
+            ''')
 
             # Enrollment tokens table (for one-time runner registration)
             cursor.execute('''
@@ -138,7 +178,7 @@ class Database:
                     assignment_expires TIMESTAMP,
                     enabled BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (assigned_to) REFERENCES runners(runner_id)
+                    FOREIGN KEY (assigned_to) REFERENCES agents(agent_id)
                 )
             ''')
 
@@ -147,7 +187,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS transmissions (
                     transmission_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     challenge_id TEXT,
-                    runner_id TEXT,
+                    agent_id TEXT,
                     device_id TEXT,
                     frequency INTEGER,
                     started_at TIMESTAMP,
@@ -155,7 +195,7 @@ class Database:
                     status TEXT,
                     error_message TEXT,
                     FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
-                    FOREIGN KEY (runner_id) REFERENCES runners(runner_id)
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
                 )
             ''')
 
@@ -239,10 +279,6 @@ class Database:
             user_count = cursor.fetchone()['count']
 
             if user_count == 0:
-                import bcrypt
-                import secrets
-                import string
-
                 # Create default admin with random password and no TOTP
                 # User will create their own account with TOTP on first login
                 alphabet = string.ascii_letters + string.digits
@@ -285,22 +321,43 @@ class Database:
                 print("=" * 80 + "\n", flush=True)
 
             # Migrations for existing databases
-            # Add enabled column to runners table if it doesn't exist
-            cursor.execute("PRAGMA table_info(runners)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'enabled' not in columns:
-                logger.info("Adding 'enabled' column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN enabled BOOLEAN DEFAULT 1')
-            if 'api_key_hash' not in columns:
-                logger.info("Adding 'api_key_hash' column to runners table")
-                cursor.execute('ALTER TABLE runners ADD COLUMN api_key_hash TEXT')
-
             # Migration: Add is_temporary column to users table if it doesn't exist
             cursor.execute("PRAGMA table_info(users)")
             user_columns = [row[1] for row in cursor.fetchall()]
             if 'is_temporary' not in user_columns:
                 logger.info("Adding 'is_temporary' column to users table")
                 cursor.execute('ALTER TABLE users ADD COLUMN is_temporary BOOLEAN DEFAULT 0')
+
+            # Migration: Rename runner_id to agent_id in transmissions table
+            cursor.execute("PRAGMA table_info(transmissions)")
+            transmissions_columns = [row[1] for row in cursor.fetchall()]
+            if 'runner_id' in transmissions_columns and 'agent_id' not in transmissions_columns:
+                logger.info("Migrating transmissions table: renaming runner_id to agent_id")
+                # SQLite doesn't support direct column rename with foreign keys, so we need to recreate the table
+                cursor.execute('''
+                    CREATE TABLE transmissions_new (
+                        transmission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        challenge_id TEXT,
+                        agent_id TEXT,
+                        device_id TEXT,
+                        frequency INTEGER,
+                        started_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        status TEXT,
+                        error_message TEXT,
+                        FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                        FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+                    )
+                ''')
+                cursor.execute('''
+                    INSERT INTO transmissions_new
+                    SELECT transmission_id, challenge_id, runner_id, device_id, frequency,
+                           started_at, completed_at, status, error_message
+                    FROM transmissions
+                ''')
+                cursor.execute('DROP TABLE transmissions')
+                cursor.execute('ALTER TABLE transmissions_new RENAME TO transmissions')
+                logger.info("Successfully migrated transmissions table")
 
             # Create indexes
             cursor.execute('''
@@ -309,24 +366,8 @@ class Database:
             ''')
 
             cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_status
-                ON runners(status, last_heartbeat)
-            ''')
-
-            cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_transmissions_time
                 ON transmissions(started_at DESC)
-            ''')
-
-            # Critical indexes for authentication performance
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_api_key
-                ON runners(api_key_hash)
-            ''')
-
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_runners_enabled
-                ON runners(enabled, status)
             ''')
 
             cursor.execute('''
@@ -349,158 +390,130 @@ class Database:
                 ON permissions(username)
             ''')
 
+            # Indices for unified agents architecture
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agents_type_status
+                ON agents(agent_type, status, enabled)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agents_websocket
+                ON agents(agent_type, websocket_connected)
+                WHERE agent_type = 'listener'
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_recordings_challenge
+                ON recordings(challenge_id, completed_at DESC)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_recordings_agent
+                ON recordings(agent_id, started_at DESC)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_listener_assignments_agent
+                ON listener_assignments(agent_id, status)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_listener_assignments_transmission
+                ON listener_assignments(transmission_id)
+            ''')
+
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
 
     # Runner management
-    def register_runner(self, runner_id: str, hostname: str, ip_address: str, devices: List[Dict],
-                       api_key: Optional[str] = None, mac_address: Optional[str] = None,
-                       machine_id: Optional[str] = None) -> bool:
-        """Register a new runner or update existing one.
+    def _verify_host_identifiers(self, agent_id: str, table: str, status: str, stored_ip: str,
+                                  stored_hostname: str, stored_mac: Optional[str], stored_machine_id: Optional[str],
+                                  last_heartbeat: Optional[str], current_ip: str, current_hostname: str,
+                                  current_mac: Optional[str], current_machine_id: Optional[str],
+                                  conn) -> bool:
+        """Shared host validation logic for both runners and listeners.
 
-        Args:
-            runner_id: Unique identifier for the runner
-            hostname: Hostname of the runner
-            ip_address: IP address of the runner
-            devices: List of SDR devices available on this runner
-            api_key: Optional API key to set for this runner (will be bcrypt hashed)
-            mac_address: Optional MAC address of the runner's primary network interface
-            machine_id: Optional machine ID (e.g., from /etc/machine-id)
+        Prevents credential reuse on different machines using multi-factor validation.
+        Requires at least 2 of: IP+hostname, MAC address, or machine ID to match.
 
         Returns:
-            True if successful, False otherwise
+            True if host validation passes, False otherwise
         """
-        import bcrypt
+        cursor = conn.cursor()
 
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                # Hash API key if provided
-                api_key_hash = None
-                if api_key:
-                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # Enhanced host validation: check multiple identifiers
+        # Prevent credential reuse on different machines
+        if status == 'online' and last_heartbeat:
+            # Check if agent is actively online (heartbeat within 90 seconds)
+            last_hb = datetime.fromisoformat(last_heartbeat)
+            # Ensure timezone-aware comparison
+            if last_hb.tzinfo is None:
+                last_hb = last_hb.replace(tzinfo=timezone.utc)
+            time_since_heartbeat = (datetime.now(timezone.utc) - last_hb).total_seconds()
 
-                cursor.execute('''
-                    INSERT INTO runners (runner_id, hostname, ip_address, mac_address, machine_id,
-                                       status, last_heartbeat, devices, api_key_hash)
-                    VALUES (?, ?, ?, ?, ?, 'online', ?, ?, ?)
-                    ON CONFLICT(runner_id) DO UPDATE SET
-                        hostname = excluded.hostname,
-                        ip_address = excluded.ip_address,
-                        mac_address = CASE
-                            WHEN excluded.mac_address IS NOT NULL THEN excluded.mac_address
-                            ELSE runners.mac_address
-                        END,
-                        machine_id = CASE
-                            WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
-                            ELSE runners.machine_id
-                        END,
-                        status = 'online',
-                        last_heartbeat = excluded.last_heartbeat,
-                        devices = excluded.devices,
-                        updated_at = CURRENT_TIMESTAMP
-                ''', (runner_id, hostname, ip_address, mac_address, machine_id,
-                     datetime.now(timezone.utc), json.dumps(devices), api_key_hash))
-                conn.commit()
-                logger.info(f"Registered runner: {runner_id} from {ip_address} (MAC: {mac_address}, Machine ID: {machine_id})")
-                return True
-            except Exception as e:
-                logger.error(f"Error registering runner {runner_id}: {e}")
-                return False
+            if time_since_heartbeat < 90:
+                # Agent is actively online - perform multi-factor host validation
+                # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
+                matches = []
 
-    def update_heartbeat(self, runner_id: str) -> tuple[bool, str]:
-        """Update runner heartbeat timestamp.
+                # Check IP and hostname together
+                if stored_ip == current_ip and stored_hostname == current_hostname:
+                    matches.append("IP+hostname")
 
-        Returns:
-            tuple: (success: bool, previous_status: str)
-        """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                # Get previous status
-                cursor.execute('SELECT status FROM runners WHERE runner_id = ?', (runner_id,))
-                row = cursor.fetchone()
-                previous_status = row['status'] if row else 'offline'
+                # Check MAC address (strong identifier)
+                # If stored_mac is None, accept any current_mac (backwards compatibility)
+                if stored_mac is None and current_mac:
+                    matches.append("MAC-upgrade")
+                    # Update the database with the new MAC address
+                    cursor.execute(f'''
+                        UPDATE {table}
+                        SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE {table[:-1]}_id = ?
+                    ''', (current_mac, agent_id))
+                    conn.commit()
+                    logger.info(f"Updated {table[:-1]} {agent_id} with MAC address: {current_mac}")
+                elif stored_mac and current_mac and stored_mac.lower() == current_mac.lower():
+                    matches.append("MAC")
 
-                # Update heartbeat and status
-                cursor.execute('''
-                    UPDATE runners
-                    SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
-                    WHERE runner_id = ?
-                ''', (datetime.now(timezone.utc), runner_id))
-                conn.commit()
-                return (cursor.rowcount > 0, previous_status)
-            except Exception as e:
-                logger.error(f"Error updating heartbeat for {runner_id}: {e}")
-                return (False, 'offline')
+                # Check machine ID (strongest identifier)
+                # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
+                if stored_machine_id is None and current_machine_id:
+                    matches.append("machine-ID-upgrade")
+                    # Update the database with the new machine ID
+                    cursor.execute(f'''
+                        UPDATE {table}
+                        SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE {table[:-1]}_id = ?
+                    ''', (current_machine_id, agent_id))
+                    conn.commit()
+                    logger.info(f"Updated {table[:-1]} {agent_id} with machine ID: {current_machine_id}")
+                elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
+                    matches.append("machine-ID")
 
-    def get_runner(self, runner_id: str) -> Optional[Dict]:
-        """Get runner details."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM runners WHERE runner_id = ?', (runner_id,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+                # Require at least 2 matching factors for security
+                if len(matches) < 2:
+                    logger.warning(
+                        f"SECURITY: {table[:-1].capitalize()} {agent_id} credential reuse attempt! "
+                        f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
+                        f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
+                        f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
+                    )
+                    return False
+                else:
+                    logger.debug(f"{table[:-1].capitalize()} {agent_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
 
-    def get_all_runners(self) -> List[Dict]:
-        """Get all registered runners."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM runners ORDER BY runner_id')
-            return [dict(row) for row in cursor.fetchall()]
+        return True
 
-    def mark_runner_offline(self, runner_id: str) -> bool:
-        """Mark a runner as offline."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET status = 'offline', updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def enable_runner(self, runner_id: str) -> bool:
-        """Enable a runner to receive task assignments."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            if cursor.rowcount > 0:
-                logger.info(f"Enabled runner: {runner_id}")
-            return cursor.rowcount > 0
-
-    def disable_runner(self, runner_id: str) -> bool:
-        """Disable a runner from receiving task assignments."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE runners
-                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (runner_id,))
-            conn.commit()
-            if cursor.rowcount > 0:
-                logger.info(f"Disabled runner: {runner_id}")
-            return cursor.rowcount > 0
-
-    def verify_runner_api_key(self, runner_id: str, api_key: str, current_ip: str, current_hostname: str,
+    def verify_agent_api_key(self, agent_id: str, api_key: str, current_ip: str, current_hostname: str,
                              current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> bool:
-        """Verify a runner's API key against the stored bcrypt hash.
+        """Verify an agent's API key against the stored bcrypt hash.
 
-        Also validates that the runner is not already active from a different host
+        Also validates that the agent is not already active from a different host
         to prevent credential reuse attacks. Uses multiple host identifiers for
         robust validation.
 
         Args:
-            runner_id: The runner ID to verify
+            agent_id: The agent ID to verify
             api_key: The plaintext API key to check
             current_ip: IP address of the current authentication attempt
             current_hostname: Hostname of the current authentication attempt
@@ -510,14 +523,12 @@ class Database:
         Returns:
             True if the API key is valid and host check passes, False otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT api_key_hash, status, ip_address, hostname, mac_address, machine_id, last_heartbeat
-                FROM runners WHERE runner_id = ?
-            ''', (runner_id,))
+                FROM agents WHERE agent_id = ?
+            ''', (agent_id,))
             row = cursor.fetchone()
 
             if not row or not row['api_key_hash']:
@@ -527,165 +538,18 @@ class Database:
             try:
                 api_key_valid = bcrypt.checkpw(api_key.encode('utf-8'), row['api_key_hash'].encode('utf-8'))
             except Exception as e:
-                logger.error(f"API key verification error for runner {runner_id}: {e}")
+                logger.error(f"API key verification error for agent {agent_id}: {e}")
                 return False
 
             if not api_key_valid:
                 return False
 
-            # Enhanced host validation: check multiple identifiers
-            # Prevent credential reuse on different machines
-            if row['status'] == 'online' and row['last_heartbeat']:
-                stored_ip = row['ip_address']
-                stored_hostname = row['hostname']
-                stored_mac = row['mac_address']
-                stored_machine_id = row['machine_id']
-
-                # Check if runner is actively online (heartbeat within 90 seconds)
-                last_heartbeat = datetime.fromisoformat(row['last_heartbeat'])
-                time_since_heartbeat = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
-
-                if time_since_heartbeat < 90:
-                    # Runner is actively online - perform multi-factor host validation
-                    # Must match at least TWO of: (IP + hostname), MAC address, OR machine ID
-                    matches = []
-
-                    # Check IP and hostname together
-                    if stored_ip == current_ip and stored_hostname == current_hostname:
-                        matches.append("IP+hostname")
-
-                    # Check MAC address (strong identifier)
-                    # If stored_mac is None, accept any current_mac (backwards compatibility)
-                    if stored_mac is None and current_mac:
-                        matches.append("MAC-upgrade")
-                        # Update the database with the new MAC address
-                        cursor.execute('''
-                            UPDATE runners
-                            SET mac_address = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE runner_id = ?
-                        ''', (current_mac, runner_id))
-                        conn.commit()
-                        logger.info(f"Updated runner {runner_id} with MAC address: {current_mac}")
-                    elif stored_mac and current_mac and stored_mac == current_mac:
-                        matches.append("MAC")
-
-                    # Check machine ID (strongest identifier)
-                    # If stored_machine_id is None, accept any current_machine_id (backwards compatibility)
-                    if stored_machine_id is None and current_machine_id:
-                        matches.append("machine-ID-upgrade")
-                        # Update the database with the new machine ID
-                        cursor.execute('''
-                            UPDATE runners
-                            SET machine_id = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE runner_id = ?
-                        ''', (current_machine_id, runner_id))
-                        conn.commit()
-                        logger.info(f"Updated runner {runner_id} with machine ID: {current_machine_id}")
-                    elif stored_machine_id and current_machine_id and stored_machine_id == current_machine_id:
-                        matches.append("machine-ID")
-
-                    # Require at least 2 matching factors for security
-                    if len(matches) < 2:
-                        logger.warning(
-                            f"SECURITY: Runner {runner_id} credential reuse attempt! "
-                            f"Active on {stored_hostname} ({stored_ip}, MAC: {stored_mac}, ID: {stored_machine_id}), "
-                            f"rejected attempt from {current_hostname} ({current_ip}, MAC: {current_mac}, ID: {current_machine_id}). "
-                            f"Only {len(matches)} factor(s) matched: {', '.join(matches) if matches else 'none'}"
-                        )
-                        return False
-                    else:
-                        logger.debug(f"Runner {runner_id} host validation passed: {len(matches)} factors matched ({', '.join(matches)})")
-
-            return True
-
-    def find_runner_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
-                               current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
-        """Find a runner by verifying the API key without knowing the runner_id in advance.
-
-        This method efficiently searches for the runner matching the provided API key
-        by only checking enabled runners with API keys set.
-
-        Args:
-            api_key: The plaintext API key to verify
-            current_ip: IP address of the current authentication attempt
-            current_hostname: Hostname of the current authentication attempt
-            current_mac: Optional MAC address of the current authentication attempt
-            current_machine_id: Optional machine ID of the current authentication attempt
-
-        Returns:
-            runner_id if found and verified, None otherwise
-        """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # Only fetch enabled runners with API keys set (optimized query)
-            cursor.execute('''
-                SELECT runner_id
-                FROM runners
-                WHERE enabled = 1 AND api_key_hash IS NOT NULL
-            ''')
-
-            for row in cursor.fetchall():
-                runner_id = row['runner_id']
-                # Use existing verify_runner_api_key method for consistent validation
-                if self.verify_runner_api_key(runner_id, api_key, current_ip, current_hostname,
-                                             current_mac, current_machine_id):
-                    return runner_id
-
-            return None
-
-    def update_runner_api_key(self, runner_id: str, api_key: str) -> bool:
-        """Update a runner's bcrypt-hashed API key.
-
-        Args:
-            runner_id: The runner ID to update
-            api_key: The plaintext API key to hash and store
-
-        Returns:
-            True if successful, False otherwise
-        """
-        import bcrypt
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-            cursor.execute('''
-                UPDATE runners
-                SET api_key_hash = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE runner_id = ?
-            ''', (api_key_hash, runner_id))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def cleanup_stale_runners(self, timeout_seconds: int = 90) -> list[str]:
-        """Mark runners as offline if they haven't sent heartbeat within timeout.
-
-        Returns:
-            list: List of runner IDs that were marked offline
-        """
-        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # First get the IDs of runners that will be marked offline
-            cursor.execute('''
-                SELECT runner_id FROM runners
-                WHERE status = 'online'
-                  AND last_heartbeat < ?
-            ''', (threshold,))
-            offline_runners = [row['runner_id'] for row in cursor.fetchall()]
-
-            # Now mark them offline
-            if offline_runners:
-                cursor.execute('''
-                    UPDATE runners
-                    SET status = 'offline'
-                    WHERE status = 'online'
-                      AND last_heartbeat < ?
-                ''', (threshold,))
-                conn.commit()
-                logger.warning(f"Marked {len(offline_runners)} runner(s) as offline due to missed heartbeats")
-
-            return offline_runners
+            # Use shared host validation logic
+            return self._verify_host_identifiers(
+                agent_id, 'agents', row['status'], row['ip_address'], row['hostname'],
+                row['mac_address'], row['machine_id'], row['last_heartbeat'],
+                current_ip, current_hostname, current_mac, current_machine_id, conn
+            )
 
     # Challenge management
     def add_challenge(self, challenge_id: str, name: str, config: Dict) -> bool:
@@ -747,9 +611,9 @@ class Database:
                 challenges.append(challenge)
             return challenges
 
-    def assign_challenge(self, runner_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
+    def assign_challenge(self, agent_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
         """
-        Assign next available challenge to a runner.
+        Assign next available challenge to an agent.
         Uses pessimistic locking to prevent race conditions.
         """
         with self.get_connection() as conn:
@@ -759,12 +623,13 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
-                # Check if runner is enabled
-                cursor.execute('SELECT enabled FROM runners WHERE runner_id = ?', (runner_id,))
-                runner_row = cursor.fetchone()
-                if not runner_row or not runner_row['enabled']:
+                # Check if agent is enabled
+                cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (agent_id,))
+                agent_row = cursor.fetchone()
+
+                if not agent_row or not agent_row['enabled']:
                     conn.rollback()
-                    logger.debug(f"Runner {runner_id} is disabled, skipping task assignment")
+                    logger.debug(f"Agent {agent_id} is disabled or not found, skipping task assignment")
                     return None
 
                 # Find next available challenge (queued or waiting with expired delay)
@@ -811,7 +676,7 @@ class Database:
                             assigned_at = CURRENT_TIMESTAMP,
                             assignment_expires = ?
                         WHERE challenge_id = ?
-                    ''', (runner_id, expires_at, challenge_id))
+                    ''', (agent_id, expires_at, challenge_id))
 
                     conn.commit()
 
@@ -820,7 +685,7 @@ class Database:
                     # Convert SQLite integer to boolean
                     challenge['enabled'] = bool(challenge['enabled'])
 
-                    logger.info(f"Assigned challenge {challenge['name']} to runner {runner_id}")
+                    logger.info(f"Assigned challenge {challenge['name']} to agent {agent_id}")
                     return challenge
                 else:
                     conn.rollback()
@@ -828,10 +693,10 @@ class Database:
 
             except Exception as e:
                 conn.rollback()
-                logger.error(f"Error assigning challenge to {runner_id}: {e}")
+                logger.error(f"Error assigning challenge to {agent_id}: {e}")
                 return None
 
-    def complete_challenge(self, challenge_id: str, runner_id: str, success: bool,
+    def complete_challenge(self, challenge_id: str, agent_id: str, success: bool,
                            error_message: Optional[str] = None) -> Optional[Dict]:
         """Mark challenge as completed and requeue it. Returns challenge config."""
         with self.get_connection() as conn:
@@ -875,7 +740,7 @@ class Database:
                 conn.commit()
 
                 status = 'success' if success else 'failed'
-                logger.info(f"Challenge {challenge_id} completed by {runner_id}: {status}")
+                logger.info(f"Challenge {challenge_id} completed by {agent_id}: {status}")
                 return config
 
             except Exception as e:
@@ -942,17 +807,29 @@ class Database:
                 return False
 
     # Transmission history
-    def record_transmission_start(self, challenge_id: str, runner_id: str,
+    def record_transmission_start(self, challenge_id: str, agent_id: str,
                                   device_id: str, frequency: int) -> int:
         """Record the start of a transmission."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO transmissions (challenge_id, runner_id, device_id, frequency, started_at, status)
+                INSERT INTO transmissions (challenge_id, agent_id, device_id, frequency, started_at, status)
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'transmitting')
-            ''', (challenge_id, runner_id, device_id, frequency))
+            ''', (challenge_id, agent_id, device_id, frequency))
             conn.commit()
             return cursor.lastrowid
+
+    def update_transmission_details(self, transmission_id: int, device_id: str, frequency: int):
+        """Update transmission with actual device_id and frequency from runner."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE transmissions
+                SET device_id = ?,
+                    frequency = ?
+                WHERE transmission_id = ?
+            ''', (device_id, frequency, transmission_id))
+            conn.commit()
 
     def record_transmission_complete(self, transmission_id: int, success: bool,
                                      error_message: Optional[str] = None):
@@ -1445,11 +1322,10 @@ class Database:
 
         SECURITY: Uses UTC timestamps for consistent timezone handling.
         """
-        from datetime import datetime
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Use UTC for consistent timezone handling
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             cursor.execute('''
                 DELETE FROM sessions
                 WHERE expires < ?
@@ -1467,7 +1343,7 @@ class Database:
             runner_name: Descriptive name for the runner
             created_by: Username of the admin who created the token
             expires_at: When the token expires
-            re_enrollment_for: Optional runner_id if this is a re-enrollment token
+            re_enrollment_for: Optional agent_id if this is a re-enrollment token
 
         Returns:
             True if successful, False otherwise
@@ -1527,18 +1403,21 @@ class Database:
 
         # Check if expired
         expires_at = datetime.fromisoformat(token_data['expires_at'])
+        # Ensure timezone-aware comparison
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires_at:
             logger.warning(f"Enrollment token expired")
             return (False, None)
 
         return (True, token_data['runner_name'])
 
-    def mark_token_used(self, token: str, runner_id: str) -> bool:
+    def mark_token_used(self, token: str, agent_id: str) -> bool:
         """Mark an enrollment token as used.
 
         Args:
             token: The enrollment token
-            runner_id: The runner ID that used this token
+            agent_id: The agent ID that used this token
 
         Returns:
             True if successful, False otherwise
@@ -1549,7 +1428,7 @@ class Database:
                 UPDATE enrollment_tokens
                 SET used = 1, used_at = CURRENT_TIMESTAMP, used_by_runner_id = ?
                 WHERE token = ?
-            ''', (runner_id, token))
+            ''', (agent_id, token))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -1593,7 +1472,7 @@ class Database:
             cursor.execute('''
                 DELETE FROM enrollment_tokens
                 WHERE expires_at < ? AND used = 0
-            ''', (datetime.now(timezone.utc),))
+            ''', (datetime.now(timezone.utc).isoformat(),))
             conn.commit()
             return cursor.rowcount
 
@@ -1610,8 +1489,6 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
@@ -1636,8 +1513,6 @@ class Database:
         Returns:
             key_id if valid and enabled, None otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Filter for enabled keys in SQL to avoid unnecessary bcrypt operations
@@ -1719,11 +1594,23 @@ class Database:
 
             stats = {}
 
-            # Runner stats
-            cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online FROM runners')
+            # Runner agent stats
+            cursor.execute('''
+                SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online
+                FROM agents WHERE agent_type = 'runner'
+            ''')
             row = cursor.fetchone()
-            stats['runners_total'] = row['total']
-            stats['runners_online'] = row['online']
+            stats['runners_total'] = row['total'] if row else 0
+            stats['runners_online'] = row['online'] if row else 0
+
+            # Listener stats
+            cursor.execute('''
+                SELECT COUNT(*) as total, SUM(CASE WHEN status="online" THEN 1 ELSE 0 END) as online
+                FROM agents WHERE agent_type = 'listener'
+            ''')
+            row = cursor.fetchone()
+            stats['listeners_total'] = row['total'] if row else 0
+            stats['listeners_online'] = row['online'] if row else 0
 
             # Challenge stats
             cursor.execute('''
@@ -1743,7 +1630,673 @@ class Database:
             stats['challenges_assigned'] = row['assigned']
             stats['total_transmissions'] = row['total_transmissions'] or 0
 
+            # Recording stats
+            cursor.execute('SELECT COUNT(*) as total FROM recordings')
+            row = cursor.fetchone()
+            stats['recordings_total'] = row['total'] if row else 0
+
             # System state
             stats['paused'] = self.get_system_state('paused', 'false') == 'true'
 
             return stats
+
+    # Agent management (unified runners and listeners)
+    def register_agent(self, agent_id: str, agent_type: str, hostname: str, ip_address: str,
+                      devices: List[Dict], api_key: Optional[str] = None,
+                      mac_address: Optional[str] = None, machine_id: Optional[str] = None) -> bool:
+        """Register a new agent (runner or listener) or update existing one.
+
+        Args:
+            agent_id: Unique identifier for the agent
+            agent_type: Type of agent ('runner' or 'listener')
+            hostname: Hostname of the agent
+            ip_address: IP address of the agent
+            devices: List of SDR devices available on this agent
+            api_key: Optional API key to set for this agent (will be bcrypt hashed)
+            mac_address: Optional MAC address
+            machine_id: Optional machine ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Hash API key if provided
+                api_key_hash = None
+                if api_key:
+                    api_key_hash = bcrypt.hashpw(api_key.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+                cursor.execute('''
+                    INSERT INTO agents (agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
+                                       status, last_heartbeat, devices, api_key_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, 'online', ?, ?, ?)
+                    ON CONFLICT(agent_id) DO UPDATE SET
+                        agent_type = excluded.agent_type,
+                        hostname = excluded.hostname,
+                        ip_address = excluded.ip_address,
+                        mac_address = CASE
+                            WHEN excluded.mac_address IS NOT NULL THEN excluded.mac_address
+                            ELSE agents.mac_address
+                        END,
+                        machine_id = CASE
+                            WHEN excluded.machine_id IS NOT NULL THEN excluded.machine_id
+                            ELSE agents.machine_id
+                        END,
+                        api_key_hash = CASE
+                            WHEN excluded.api_key_hash IS NOT NULL THEN excluded.api_key_hash
+                            ELSE agents.api_key_hash
+                        END,
+                        status = 'online',
+                        last_heartbeat = excluded.last_heartbeat,
+                        devices = excluded.devices,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (agent_id, agent_type, hostname, ip_address, mac_address, machine_id,
+                     datetime.now(timezone.utc).isoformat(), json.dumps(devices), api_key_hash))
+                conn.commit()
+                logger.info(f"Registered {agent_type}: {agent_id} from {ip_address}")
+                return True
+            except Exception as e:
+                logger.error(f"Error registering agent {agent_id}: {e}")
+                return False
+
+    def update_agent_heartbeat(self, agent_id: str, device_status: Optional[Dict[int, str]] = None) -> tuple[bool, str]:
+        """Update agent heartbeat timestamp and optionally device status.
+
+        Args:
+            agent_id: Agent identifier
+            device_status: Optional map of device_id -> status ('online', 'offline', 'busy')
+
+        Returns:
+            tuple: (success: bool, previous_status: str)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Get previous status and current devices
+                cursor.execute('SELECT status, devices FROM agents WHERE agent_id = ?', (agent_id,))
+                row = cursor.fetchone()
+                previous_status = row['status'] if row else 'offline'
+
+                # Update device status if provided
+                if device_status and row:
+                    try:
+                        devices = json.loads(row['devices']) if row['devices'] else []
+                        # Update status for each device
+                        for device in devices:
+                            device_id = device.get('device_id')
+                            if device_id in device_status:
+                                device['status'] = device_status[device_id]
+
+                        # Update with new device status
+                        cursor.execute('''
+                            UPDATE agents
+                            SET last_heartbeat = ?, status = 'online', devices = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE agent_id = ?
+                        ''', (datetime.now(timezone.utc).isoformat(), json.dumps(devices), agent_id))
+                    except Exception as e:
+                        logger.error(f"Error updating device status for {agent_id}: {e}")
+                        # Fall back to just updating heartbeat
+                        cursor.execute('''
+                            UPDATE agents
+                            SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
+                            WHERE agent_id = ?
+                        ''', (datetime.now(timezone.utc).isoformat(), agent_id))
+                else:
+                    # Just update heartbeat
+                    cursor.execute('''
+                        UPDATE agents
+                        SET last_heartbeat = ?, status = 'online', updated_at = CURRENT_TIMESTAMP
+                        WHERE agent_id = ?
+                    ''', (datetime.now(timezone.utc).isoformat(), agent_id))
+
+                conn.commit()
+                return (cursor.rowcount > 0, previous_status)
+            except Exception as e:
+                logger.error(f"Error updating heartbeat for {agent_id}: {e}")
+                return (False, 'offline')
+
+    def get_agent(self, agent_id: str) -> Optional[Dict]:
+        """Get agent details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM agents WHERE agent_id = ?', (agent_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def find_agent_by_api_key(self, api_key: str, current_ip: str, current_hostname: str,
+                               current_mac: Optional[str] = None, current_machine_id: Optional[str] = None) -> Optional[str]:
+        """Find an agent by verifying the API key without knowing the agent_id in advance.
+
+        This method efficiently searches for the agent matching the provided API key
+        by only checking enabled agents with API keys set.
+
+        Args:
+            api_key: The plaintext API key to verify
+            current_ip: IP address of the current authentication attempt
+            current_hostname: Hostname of the current authentication attempt
+            current_mac: Optional MAC address of the current authentication attempt
+            current_machine_id: Optional machine ID of the current authentication attempt
+
+        Returns:
+            agent_id if found and verified, None otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Only fetch enabled agents with API keys set (optimized query)
+            cursor.execute('''
+                SELECT agent_id
+                FROM agents
+                WHERE enabled = 1 AND api_key_hash IS NOT NULL
+            ''')
+
+            for row in cursor.fetchall():
+                agent_id = row['agent_id']
+                # Use existing verify_agent_api_key method for consistent validation
+                if self.verify_agent_api_key(agent_id, api_key, current_ip, current_hostname,
+                                             current_mac, current_machine_id):
+                    return agent_id
+
+            return None
+
+    def get_all_agents(self, agent_type: Optional[str] = None) -> List[Dict]:
+        """Get all registered agents, optionally filtered by type.
+
+        Args:
+            agent_type: Optional filter by agent type ('runner' or 'listener')
+
+        Returns:
+            List of agent dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if agent_type:
+                cursor.execute('SELECT * FROM agents WHERE agent_type = ? ORDER BY agent_id', (agent_type,))
+            else:
+                cursor.execute('SELECT * FROM agents ORDER BY agent_type, agent_id')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def mark_agent_offline(self, agent_id: str) -> bool:
+        """Mark an agent as offline."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET status = 'offline', updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def enable_agent(self, agent_id: str) -> bool:
+        """Enable an agent to receive task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET enabled = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Enabled agent: {agent_id}")
+            return cursor.rowcount > 0
+
+    def disable_agent(self, agent_id: str) -> bool:
+        """Disable an agent from receiving task assignments."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (agent_id,))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Disabled agent: {agent_id}")
+            return cursor.rowcount > 0
+
+    def update_agent_devices(self, agent_id: str, devices: List[Dict]) -> bool:
+        """Update device configuration for an agent.
+
+        Args:
+            agent_id: The agent ID to update
+            devices: List of device dictionaries
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET devices = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (json.dumps(devices), agent_id))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"Updated devices for agent {agent_id}: {len(devices)} devices")
+                return True
+            return False
+
+    def update_listener_websocket_status(self, agent_id: str, connected: bool) -> bool:
+        """Update WebSocket connection status for a listener agent.
+
+        Args:
+            agent_id: The listener agent ID
+            connected: True if connected, False if disconnected
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            timestamp = datetime.now(timezone.utc).isoformat() if connected else None
+            cursor.execute('''
+                UPDATE agents
+                SET websocket_connected = ?,
+                    websocket_last_connected = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ? AND agent_type = 'listener'
+            ''', (1 if connected else 0, timestamp, agent_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def cleanup_stale_agents(self, timeout_seconds: int = 90) -> list[str]:
+        """Mark agents as offline if they haven't sent heartbeat within timeout.
+
+        Returns:
+            list: List of agent IDs that were marked offline
+        """
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Get the IDs of agents that will be marked offline
+            cursor.execute('''
+                SELECT agent_id FROM agents
+                WHERE status = 'online'
+                  AND last_heartbeat < ?
+            ''', (threshold,))
+            offline_agents = [row['agent_id'] for row in cursor.fetchall()]
+
+            # Now mark them offline
+            if offline_agents:
+                cursor.execute('''
+                    UPDATE agents
+                    SET status = 'offline'
+                    WHERE status = 'online'
+                      AND last_heartbeat < ?
+                ''', (threshold,))
+                conn.commit()
+                logger.warning(f"Marked {len(offline_agents)} agent(s) as offline due to missed heartbeats")
+
+            return offline_agents
+
+    # Recording management
+    def create_recording(self, challenge_id: str, agent_id: str, transmission_id: int,
+                        frequency: int, sample_rate: int, expected_duration: float) -> int:
+        """Create a new recording entry.
+
+        Args:
+            challenge_id: Challenge being recorded
+            agent_id: Listener agent performing the recording
+            transmission_id: Associated transmission ID
+            frequency: Frequency in Hz
+            sample_rate: Sample rate in Hz
+            expected_duration: Expected duration in seconds
+
+        Returns:
+            recording_id if successful, -1 otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO recordings (
+                        challenge_id, agent_id, transmission_id, frequency,
+                        started_at, status, sample_rate, duration_seconds
+                    )
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'recording', ?, ?)
+                ''', (challenge_id, agent_id, transmission_id, frequency, sample_rate, expected_duration))
+                conn.commit()
+                return cursor.lastrowid
+            except Exception as e:
+                logger.error(f"Error creating recording: {e}")
+                return -1
+
+    def update_recording_complete(self, recording_id: int, success: bool, image_path: Optional[str] = None,
+                                  image_width: Optional[int] = None, image_height: Optional[int] = None,
+                                  duration: Optional[float] = None, error_message: Optional[str] = None) -> bool:
+        """Mark recording as completed.
+
+        Args:
+            recording_id: Recording ID
+            success: True if successful, False if failed
+            image_path: Path to waterfall image (if successful)
+            image_width: Width of image in pixels
+            image_height: Height of image in pixels
+            duration: Actual duration in seconds
+            error_message: Error message if failed
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            status = 'completed' if success else 'failed'
+            cursor.execute('''
+                UPDATE recordings
+                SET completed_at = CURRENT_TIMESTAMP,
+                    status = ?,
+                    image_path = ?,
+                    image_width = ?,
+                    image_height = ?,
+                    duration_seconds = ?,
+                    error_message = ?
+                WHERE recording_id = ?
+            ''', (status, image_path, image_width, image_height, duration, error_message, recording_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_recording_image(self, recording_id: int, image_path: str,
+                               image_width: int, image_height: int) -> bool:
+        """Update recording with image information after upload.
+
+        Args:
+            recording_id: Recording ID
+            image_path: Path to saved waterfall image
+            image_width: Width of image in pixels
+            image_height: Height of image in pixels
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE recordings
+                SET image_path = ?,
+                    image_width = ?,
+                    image_height = ?
+                WHERE recording_id = ?
+            ''', (image_path, image_width, image_height, recording_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_recording(self, recording_id: int) -> Optional[Dict]:
+        """Get recording details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM recordings WHERE recording_id = ?', (recording_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_recordings_for_challenge(self, challenge_id: str, limit: int = 50) -> List[Dict]:
+        """Get recordings for a specific challenge.
+
+        Args:
+            challenge_id: Challenge ID
+            limit: Maximum number of recordings to return
+
+        Returns:
+            List of recording dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT r.*, a.agent_id as listener_id
+                FROM recordings r
+                LEFT JOIN agents a ON r.agent_id = a.agent_id
+                WHERE r.challenge_id = ?
+                ORDER BY r.started_at DESC
+                LIMIT ?
+            ''', (challenge_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_recordings(self, limit: int = 100) -> List[Dict]:
+        """Get recent recordings across all challenges.
+
+        Args:
+            limit: Maximum number of recordings to return
+
+        Returns:
+            List of recording dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT r.*, c.name as challenge_name, a.agent_id as listener_id
+                FROM recordings r
+                LEFT JOIN challenges c ON r.challenge_id = c.challenge_id
+                LEFT JOIN agents a ON r.agent_id = a.agent_id
+                ORDER BY r.started_at DESC
+                LIMIT ?
+            ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_last_recording_for_challenge(self, challenge_id: str) -> Optional[Dict]:
+        """Get the most recent completed recording for a challenge.
+
+        Args:
+            challenge_id: Challenge ID
+
+        Returns:
+            Recording dictionary or None if no completed recordings exist
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM recordings
+                WHERE challenge_id = ? AND status = 'completed'
+                ORDER BY completed_at DESC
+                LIMIT 1
+            ''', (challenge_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_transmissions_since_recording(self, challenge_id: str, since: Optional[datetime] = None) -> int:
+        """Get count of transmissions for a challenge since a given time.
+
+        Args:
+            challenge_id: Challenge ID
+            since: Timestamp to count from (if None, count all transmissions)
+
+        Returns:
+            Number of transmissions
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if since:
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM transmissions
+                    WHERE challenge_id = ? AND completed_at > ? AND status = 'success'
+                ''', (challenge_id, since))
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM transmissions
+                    WHERE challenge_id = ? AND status = 'success'
+                ''', (challenge_id,))
+            row = cursor.fetchone()
+            return row['count'] if row else 0
+
+    # Listener assignment management
+    def create_listener_assignment(self, agent_id: str, challenge_id: str, transmission_id: int,
+                                  frequency: int, expected_start: datetime, expected_duration: float) -> int:
+        """Create a listener assignment.
+
+        Args:
+            agent_id: Listener agent ID
+            challenge_id: Challenge ID
+            transmission_id: Transmission ID
+            frequency: Frequency in Hz
+            expected_start: Expected start time
+            expected_duration: Expected duration in seconds
+
+        Returns:
+            assignment_id if successful, -1 otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO listener_assignments (
+                        agent_id, challenge_id, transmission_id, frequency,
+                        expected_start, expected_duration, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                ''', (agent_id, challenge_id, transmission_id, frequency, expected_start, expected_duration))
+                conn.commit()
+                return cursor.lastrowid
+            except Exception as e:
+                logger.error(f"Error creating listener assignment: {e}")
+                return -1
+
+    def update_listener_assignment_status(self, assignment_id: int, status: str) -> bool:
+        """Update listener assignment status.
+
+        Args:
+            assignment_id: Assignment ID
+            status: New status ('pending', 'recording', 'completed', 'cancelled', 'failed')
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if status == 'completed':
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            elif status == 'cancelled':
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?, cancelled_at = CURRENT_TIMESTAMP
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            else:
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = ?
+                    WHERE assignment_id = ?
+                ''', (status, assignment_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_listener_assignment(self, assignment_id: int) -> Optional[Dict]:
+        """Get listener assignment details."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM listener_assignments WHERE assignment_id = ?', (assignment_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_active_listener_assignments(self, agent_id: Optional[str] = None) -> List[Dict]:
+        """Get active listener assignments.
+
+        Args:
+            agent_id: Optional filter by agent ID
+
+        Returns:
+            List of active assignment dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if agent_id:
+                cursor.execute('''
+                    SELECT * FROM listener_assignments
+                    WHERE agent_id = ? AND status IN ('pending', 'recording')
+                    ORDER BY expected_start
+                ''', (agent_id,))
+            else:
+                cursor.execute('''
+                    SELECT * FROM listener_assignments
+                    WHERE status IN ('pending', 'recording')
+                    ORDER BY expected_start
+                ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def cleanup_stale_listener_assignments(self, timeout_minutes: int = 15) -> int:
+        """Cancel listener assignments that have exceeded their expected duration.
+
+        Args:
+            timeout_minutes: Minutes after expected_start + expected_duration to timeout
+
+        Returns:
+            Number of assignments cancelled
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Calculate timeout threshold
+                # Cancel if: expected_start + expected_duration + timeout < now
+                timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+
+                # Find stale assignments (pending or recording status, but past expected end time)
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+                    WHERE status IN ('pending', 'recording')
+                      AND datetime(expected_start, '+' || CAST(expected_duration AS TEXT) || ' seconds') < ?
+                ''', (timeout_threshold.isoformat(),))
+
+                count = cursor.rowcount
+                conn.commit()
+                return count
+            except Exception as e:
+                logger.error(f"Error cleaning up stale listener assignments: {e}")
+                return 0
+
+    def cancel_listener_assignments_for_agent(self, agent_id: str) -> int:
+        """Cancel all pending/recording assignments for a listener agent.
+
+        Used when a listener goes offline or disconnects.
+
+        Args:
+            agent_id: Listener agent ID
+
+        Returns:
+            Number of assignments cancelled
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    UPDATE listener_assignments
+                    SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+                    WHERE agent_id = ? AND status IN ('pending', 'recording')
+                ''', (agent_id,))
+
+                count = cursor.rowcount
+                conn.commit()
+                return count
+            except Exception as e:
+                logger.error(f"Error cancelling assignments for agent {agent_id}: {e}")
+                return 0
+
+    def get_listener_active_assignment_count(self, agent_id: str) -> int:
+        """Get count of active assignments for a listener.
+
+        Args:
+            agent_id: Listener agent ID
+
+        Returns:
+            Count of pending or recording assignments
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM listener_assignments
+                WHERE agent_id = ? AND status IN ('pending', 'recording')
+            ''', (agent_id,))
+            row = cursor.fetchone()
+            return row['count'] if row else 0

@@ -29,7 +29,7 @@ import time
 
 class nbfm(gr.top_block):
 
-    def __init__(self, audio_gain=0.6, bb_gain=20, dev='bladerf=0', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='./test.wav', wav_rate=48000):
+    def __init__(self, audio_gain=0.6, bb_gain=20, dev='bladerf=0', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='./test.wav', wav_rate=48000, antenna=''):
         gr.top_block.__init__(self, "NBFM Transmitter", catch_exceptions=True)
 
         ##################################################
@@ -45,6 +45,7 @@ class nbfm(gr.top_block):
         self.rf_samp_rate = rf_samp_rate
         self.wav_file = wav_file
         self.wav_rate = wav_rate
+        self.antenna = antenna
 
         ##################################################
         # Variables
@@ -76,7 +77,7 @@ class nbfm(gr.top_block):
         self.osmosdr_sink_0.set_gain(rf_gain, 0)
         self.osmosdr_sink_0.set_if_gain(if_gain, 0)
         self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
-        self.osmosdr_sink_0.set_antenna('', 0)
+        self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
         self.low_pass_filter_0 = filter.fir_filter_ccf(
             1,
@@ -176,6 +177,13 @@ class nbfm(gr.top_block):
         self.wav_rate = wav_rate
         self.set_variable_low_pass_filter_taps_0(firdes.low_pass(self.audio_gain, self.wav_rate, 3000, 300, window.WIN_HAMMING, 6.76))
 
+    def get_antenna(self):
+        return self.antenna
+
+    def set_antenna(self, antenna):
+        self.antenna = antenna
+        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
+
     def get_audio_rate(self):
         return self.audio_rate
 
@@ -231,13 +239,16 @@ def argument_parser():
     parser.add_argument(
         "-a", "--wav-rate", dest="wav_rate", type=intx, default=48000,
         help="Set Wav File Audio Sample Rate [default=%(default)r]")
+    parser.add_argument(
+        "--antenna", dest="antenna", type=str, default='',
+        help="Set Antenna [default=%(default)r]")
     return parser
 
 
 def main(top_block_cls=nbfm, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_rate=options.wav_rate)
+    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_rate=options.wav_rate, antenna=options.antenna)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()

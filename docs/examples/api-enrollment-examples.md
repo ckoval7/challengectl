@@ -204,7 +204,7 @@ curl -k \
   -H "Authorization: Bearer $API_KEY" \
   -H "X-Runner-MAC: $MAC_ADDRESS" \
   -H "X-Runner-Machine-ID: $MACHINE_ID" \
-  https://localhost:8443/api/runners/heartbeat
+  https://localhost:8443/api/agents/{agent_id}/heartbeat
 ```
 
 **Response (if successful):**
