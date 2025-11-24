@@ -2125,7 +2125,7 @@ agent:
 
     const enableRunner = async (runnerId) => {
       try {
-        await api.post(`/runners/${runnerId}/enable`)
+        await api.post(`/agents/${runnerId}/enable`)
         ElMessage.success('Runner enabled')
         // WebSocket will update the UI automatically
       } catch (error) {
@@ -2136,7 +2136,7 @@ agent:
 
     const disableRunner = async (runnerId) => {
       try {
-        await api.post(`/runners/${runnerId}/disable`)
+        await api.post(`/agents/${runnerId}/disable`)
         ElMessage.success('Runner disabled')
         // WebSocket will update the UI automatically
       } catch (error) {
@@ -2245,7 +2245,7 @@ agent:
           }
         )
 
-        await api.delete(`/runners/${runnerId}`)
+        await api.delete(`/agents/${runnerId}`)
         ElMessage.success('Runner removed')
         loadRunners()
       } catch (error) {
