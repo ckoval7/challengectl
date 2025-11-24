@@ -26,9 +26,18 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import socketio
+import uuid
+import platform
+import urllib3
+import traceback
+from PIL import Image
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import local listener modules
+from spectrum_listener import SpectrumListener
+from waterfall_generator import generate_waterfall
 
 # Initial basic logging setup with default INFO level
 # This will be reconfigured in main() after parsing CLI args to use the --log-level parameter
@@ -88,7 +97,6 @@ def get_mac_address() -> Optional[str]:
         MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
     """
     try:
-        import uuid
         mac = uuid.getnode()
         # Format as colon-separated hex
         mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
@@ -120,7 +128,6 @@ def get_machine_id() -> Optional[str]:
 
     # Fallback: use platform-specific identifier
     try:
-        import platform
         # Create a consistent ID from system information
         system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
         # Hash it to create a consistent ID
@@ -186,7 +193,6 @@ class ListenerAgent:
             self.session.verify = False
             logger.warning("SSL verification disabled - development mode only!")
             # Disable SSL warnings if verification is disabled
-            import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
             # Use default system CA certificates
@@ -548,10 +554,6 @@ class ListenerAgent:
         """
         selected_device = None
         try:
-            # Import GNU Radio components
-            from spectrum_listener import SpectrumListener
-            from waterfall_generator import generate_waterfall
-
             # In simulation mode, create a dummy device
             if self.simulate:
                 logger.info(f"Simulation mode: Recording {frequency} Hz (frequency-independent)")
@@ -690,7 +692,6 @@ class ListenerAgent:
             # Get image dimensions if available
             image_width, image_height = None, None
             if success and image_path:
-                from PIL import Image
                 with Image.open(image_path) as img:
                     image_width, image_height = img.size
 
@@ -739,7 +740,6 @@ class ListenerAgent:
 
         except Exception as e:
             logger.error(f"Error uploading waterfall image for recording {recording_id}: {e}")
-            import traceback
             logger.error(traceback.format_exc())
 
     def enroll(self) -> bool:

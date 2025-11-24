@@ -21,6 +21,10 @@ import signal
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
+import uuid
+import platform
+import urllib3
+from multiprocessing import Process
 
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -43,7 +47,6 @@ def get_mac_address() -> Optional[str]:
         MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
     """
     try:
-        import uuid
         mac = uuid.getnode()
         # Format as colon-separated hex
         mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
@@ -75,7 +78,6 @@ def get_machine_id() -> Optional[str]:
 
     # Fallback: use platform-specific identifier
     try:
-        import platform
         # Create a consistent ID from system information
         system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
         # Hash it to create a consistent ID
@@ -181,7 +183,6 @@ class ChallengeCtlRunner:
             self.session.verify = False
             logger.warning("SSL verification disabled - development mode only!")
             # Disable SSL warnings if verification is disabled
-            import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
             # Use default system CA certificates
@@ -514,7 +515,6 @@ class ChallengeCtlRunner:
         """
         try:
             logger.info(f"Running spectrum paint on {frequency} Hz before challenge")
-            from multiprocessing import Process
             p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
             p.start()
             p.join()
@@ -728,7 +728,6 @@ class ChallengeCtlRunner:
             # Execute based on modulation type
             if modulation == 'cw':
                 speed = config.get('speed', 35)
-                from multiprocessing import Process
                 p = Process(target=cw.main, args=(flag, speed, frequency, device_string, antenna))
                 p.start()
                 p.join()
@@ -740,27 +739,39 @@ class ChallengeCtlRunner:
 
             elif modulation == 'nbfm':
                 wav_rate = config.get('wav_samplerate', 48000)
-                nbfm_opts = nbfm.argument_parser().parse_args('')
-                nbfm_opts.dev = device_string
-                nbfm_opts.freq = frequency
-                nbfm_opts.wav_file = flag
-                nbfm_opts.wav_samp_rate = wav_rate
-                nbfm_opts.antenna = antenna
-                nbfm.main(options=nbfm_opts)
-                success = True
+
+                def run_nbfm():
+                    nbfm_opts = nbfm.argument_parser().parse_args('')
+                    nbfm_opts.dev = device_string
+                    nbfm_opts.freq = frequency
+                    nbfm_opts.wav_file = flag
+                    nbfm_opts.wav_samp_rate = wav_rate
+                    nbfm_opts.antenna = antenna
+                    nbfm.main(options=nbfm_opts)
+
+                p = Process(target=run_nbfm)
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             elif modulation == 'ssb':
                 mode = config.get('mode', 'usb')
                 wav_rate = config.get('wav_samplerate', 48000)
-                ssb_opts = ssb_tx.argument_parser().parse_args('')
-                ssb_opts.dev = device_string
-                ssb_opts.freq = frequency
-                ssb_opts.wav_file = flag
-                ssb_opts.wav_samp_rate = wav_rate
-                ssb_opts.mode = mode
-                ssb_opts.antenna = antenna
-                ssb_tx.main(options=ssb_opts)
-                success = True
+
+                def run_ssb():
+                    ssb_opts = ssb_tx.argument_parser().parse_args('')
+                    ssb_opts.dev = device_string
+                    ssb_opts.freq = frequency
+                    ssb_opts.wav_file = flag
+                    ssb_opts.wav_samp_rate = wav_rate
+                    ssb_opts.mode = mode
+                    ssb_opts.antenna = antenna
+                    ssb_tx.main(options=ssb_opts)
+
+                p = Process(target=run_ssb)
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             elif modulation == 'fhss':
                 wav_rate = config.get('wav_samplerate', 48000)
@@ -769,34 +780,44 @@ class ChallengeCtlRunner:
                 hop_time = config.get('hop_time', 60)
                 seed = config.get('seed', 'RFHS')
 
-                fhss_opts = fhss_tx.argument_parser().parse_args('')
-                fhss_opts.dev = device_string
-                fhss_opts.freq = frequency
-                fhss_opts.file = flag
-                fhss_opts.wav_rate = wav_rate
-                fhss_opts.channel_spacing = channel_spacing
-                fhss_opts.hop_rate = hop_rate
-                fhss_opts.hop_time = hop_time
-                fhss_opts.seed = seed
-                fhss_opts.antenna = antenna
-                fhss_tx.main(options=fhss_opts)
-                success = True
+                def run_fhss():
+                    fhss_opts = fhss_tx.argument_parser().parse_args('')
+                    fhss_opts.dev = device_string
+                    fhss_opts.freq = frequency
+                    fhss_opts.file = flag
+                    fhss_opts.wav_rate = wav_rate
+                    fhss_opts.channel_spacing = channel_spacing
+                    fhss_opts.hop_rate = hop_rate
+                    fhss_opts.hop_time = hop_time
+                    fhss_opts.seed = seed
+                    fhss_opts.antenna = antenna
+                    fhss_tx.main(options=fhss_opts)
+
+                p = Process(target=run_fhss)
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             elif modulation == 'freedv':
                 mode = config.get('mode', 'usb')
                 wav_rate = config.get('wav_samplerate', 48000)
                 text = config.get('text', '')
 
-                freedv_opts = freedv_tx.argument_parser().parse_args('')
-                freedv_opts.dev = device_string
-                freedv_opts.freq = frequency
-                freedv_opts.wav_file = flag
-                freedv_opts.wav_samp_rate = wav_rate
-                freedv_opts.mode = mode
-                freedv_opts.text = text
-                # Note: freedv_tx doesn't support antenna parameter yet
-                freedv_tx.main(options=freedv_opts)
-                success = True
+                def run_freedv():
+                    freedv_opts = freedv_tx.argument_parser().parse_args('')
+                    freedv_opts.dev = device_string
+                    freedv_opts.freq = frequency
+                    freedv_opts.wav_file = flag
+                    freedv_opts.wav_samp_rate = wav_rate
+                    freedv_opts.mode = mode
+                    freedv_opts.text = text
+                    # Note: freedv_tx doesn't support antenna parameter yet
+                    freedv_tx.main(options=freedv_opts)
+
+                p = Process(target=run_freedv)
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             elif modulation == 'pocsag':
                 capcode = config.get('capcode', 0)
@@ -831,7 +852,6 @@ class ChallengeCtlRunner:
                 success = True
 
             elif modulation == 'paint':
-                from multiprocessing import Process
                 p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
                 p.start()
                 p.join()

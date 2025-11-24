@@ -5,7 +5,7 @@ Handles runner communication, challenge distribution, and WebUI serving.
 """
 
 from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
 from werkzeug.security import safe_join
 from flask_limiter import Limiter
@@ -25,6 +25,8 @@ import secrets
 import bcrypt
 import pyotp
 import random
+import re
+from PIL import Image
 
 from database import Database
 from crypto import encrypt_totp_secret
@@ -1749,7 +1751,6 @@ class ChallengeCtlAPI:
                 if not data:
                     return jsonify({'error': 'Missing request body'}), 400
 
-                import re
                 time_pattern = r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
 
                 # Update day_start if provided
@@ -2469,7 +2470,6 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Only PNG images are allowed'}), 400
 
             # Create recordings directory if it doesn't exist
-            import os
             recordings_dir = os.path.join(os.path.dirname(__file__), '..', 'recordings')
             os.makedirs(recordings_dir, exist_ok=True)
 
@@ -2481,7 +2481,6 @@ class ChallengeCtlAPI:
                 file.save(file_path)
 
                 # Get image dimensions
-                from PIL import Image
                 with Image.open(file_path) as img:
                     width, height = img.size
 
@@ -2551,8 +2550,6 @@ class ChallengeCtlAPI:
             if not image_path:
                 return jsonify({'error': 'No image available for this recording'}), 404
 
-            import os
-            from flask import send_file
             if os.path.exists(image_path):
                 return send_file(image_path, mimetype='image/png')
             else:
@@ -3049,7 +3046,6 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing required field: key_id'}), 400
 
             # Validate key_id format (alphanumeric, hyphens, underscores)
-            import re
             if not re.match(r'^[a-zA-Z0-9_-]+$', key_id):
                 return jsonify({'error': 'key_id must contain only alphanumeric characters, hyphens, and underscores'}), 400
 
@@ -3541,8 +3537,7 @@ radios:
                 # Parse YAML content
                 yaml_content = yaml_file.read().decode('utf-8')
                 try:
-                    import yaml as yaml_lib
-                    challenges_data = yaml_lib.safe_load(yaml_content)
+                    challenges_data = yaml.safe_load(yaml_content)
                 except Exception as e:
                     logger.error(f"Error parsing YAML: {e}")
                     return jsonify({'error': f'Invalid YAML format: {str(e)}'}), 400
@@ -4011,7 +4006,6 @@ radios:
                 return False
 
             # Authentication successful - join agent-specific room
-            from flask_socketio import join_room
             join_room(f'agent_{agent_id}', namespace='/agents')
 
             # Update WebSocket connection status in database

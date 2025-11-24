@@ -10,8 +10,9 @@ import sys
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 import signal
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import yaml
+import re
 
 from api import ChallengeCtlAPI
 from database import Database
@@ -60,7 +61,6 @@ class ChallengeCtlServer:
                 if offline_agents:
                     logger.info(f"Cleanup: marked {len(offline_agents)} agent(s) as offline")
                     # Broadcast WebSocket events for each agent marked offline
-                    from datetime import timezone
                     for agent_id in offline_agents:
                         # Get agent details to determine type
                         agent = self.db.get_agent(agent_id)
@@ -217,19 +217,17 @@ class ChallengeCtlServer:
 
                 # Get conference timezone offset from start time
                 # Format: "2063-04-05 09:00:00 -5"
-                from datetime import timezone as tz, timedelta
                 conference_start = config.get('conference', {}).get('start', '')
                 tz_offset_hours = 0
 
                 if conference_start:
-                    import re
                     match = re.search(r'\s([+-]\d+)$', conference_start)
                     if match:
                         tz_offset_hours = int(match.group(1))
 
                 # Get current time in conference timezone
-                conference_tz = tz(timedelta(hours=tz_offset_hours))
-                now = datetime.now(tz.utc).astimezone(conference_tz)
+                conference_tz = timezone(timedelta(hours=tz_offset_hours))
+                now = datetime.now(timezone.utc).astimezone(conference_tz)
 
                 # Parse day start and end times (format: HH:MM)
                 start_hours, start_minutes = map(int, day_start_str.split(':'))
