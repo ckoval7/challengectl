@@ -11,6 +11,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import threading
+import bcrypt
+import secrets
+import string
 
 from crypto import encrypt_totp_secret, decrypt_totp_secret
 
@@ -276,10 +279,6 @@ class Database:
             user_count = cursor.fetchone()['count']
 
             if user_count == 0:
-                import bcrypt
-                import secrets
-                import string
-
                 # Create default admin with random password and no TOTP
                 # User will create their own account with TOTP on first login
                 alphabet = string.ascii_letters + string.digits
@@ -524,8 +523,6 @@ class Database:
         Returns:
             True if the API key is valid and host check passes, False otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -1325,7 +1322,6 @@ class Database:
 
         SECURITY: Uses UTC timestamps for consistent timezone handling.
         """
-        from datetime import datetime
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Use UTC for consistent timezone handling
@@ -1493,8 +1489,6 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
@@ -1519,8 +1513,6 @@ class Database:
         Returns:
             key_id if valid and enabled, None otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Filter for enabled keys in SQL to avoid unnecessary bcrypt operations
@@ -1667,8 +1659,6 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
-        import bcrypt
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
@@ -1878,8 +1868,6 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
-        import json
-
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
