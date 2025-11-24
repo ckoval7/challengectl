@@ -198,9 +198,9 @@ jobs:
               db = Database(db_path)
 
               # Test basic operations
-              db.register_runner('test-runner', 'test-host', '127.0.0.1', [])
-              runners = db.get_all_runners()
-              assert len(runners) == 1
+              db.register_agent('test-runner', 'runner', 'test-host', '127.0.0.1', [])
+              agents = db.get_all_agents(agent_type='runner')
+              assert len(agents) == 1
               print('Integration test passed')
           finally:
               os.unlink(db_path)
