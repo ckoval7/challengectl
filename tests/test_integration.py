@@ -113,7 +113,8 @@ class TestEndToEndWorkflow:
 
         for runner_id, hostname, ip in runners:
             integrated_db.register_agent(
-                runner_id=runner_id,
+                agent_id=runner_id,
+                agent_type='runner',
                 hostname=hostname,
                 ip_address=ip,
                 devices=[]
@@ -275,7 +276,8 @@ class TestPerformance:
         # Register many runners
         for i in range(20):
             integrated_db.register_agent(
-                runner_id=f'runner-{i}',
+                agent_id=f'runner-{i}',
+                agent_type='runner',
                 hostname=f'host-{i}',
                 ip_address=f'192.168.1.{i}',
                 devices=[]

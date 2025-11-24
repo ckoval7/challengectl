@@ -175,7 +175,7 @@ class Database:
                     assignment_expires TIMESTAMP,
                     enabled BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (assigned_to) REFERENCES runners(runner_id)
+                    FOREIGN KEY (assigned_to) REFERENCES agents(agent_id)
                 )
             ''')
 
@@ -184,7 +184,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS transmissions (
                     transmission_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     challenge_id TEXT,
-                    runner_id TEXT,
+                    agent_id TEXT,
                     device_id TEXT,
                     frequency INTEGER,
                     started_at TIMESTAMP,
@@ -192,7 +192,7 @@ class Database:
                     status TEXT,
                     error_message TEXT,
                     FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
-                    FOREIGN KEY (runner_id) REFERENCES runners(runner_id)
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
                 )
             ''')
 
@@ -328,6 +328,37 @@ class Database:
             if 'is_temporary' not in user_columns:
                 logger.info("Adding 'is_temporary' column to users table")
                 cursor.execute('ALTER TABLE users ADD COLUMN is_temporary BOOLEAN DEFAULT 0')
+
+            # Migration: Rename runner_id to agent_id in transmissions table
+            cursor.execute("PRAGMA table_info(transmissions)")
+            transmissions_columns = [row[1] for row in cursor.fetchall()]
+            if 'runner_id' in transmissions_columns and 'agent_id' not in transmissions_columns:
+                logger.info("Migrating transmissions table: renaming runner_id to agent_id")
+                # SQLite doesn't support direct column rename with foreign keys, so we need to recreate the table
+                cursor.execute('''
+                    CREATE TABLE transmissions_new (
+                        transmission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        challenge_id TEXT,
+                        agent_id TEXT,
+                        device_id TEXT,
+                        frequency INTEGER,
+                        started_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        status TEXT,
+                        error_message TEXT,
+                        FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
+                        FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+                    )
+                ''')
+                cursor.execute('''
+                    INSERT INTO transmissions_new
+                    SELECT transmission_id, challenge_id, runner_id, device_id, frequency,
+                           started_at, completed_at, status, error_message
+                    FROM transmissions
+                ''')
+                cursor.execute('DROP TABLE transmissions')
+                cursor.execute('ALTER TABLE transmissions_new RENAME TO transmissions')
+                logger.info("Successfully migrated transmissions table")
 
             # Create indexes
             cursor.execute('''
@@ -583,9 +614,9 @@ class Database:
                 challenges.append(challenge)
             return challenges
 
-    def assign_challenge(self, runner_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
+    def assign_challenge(self, agent_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
         """
-        Assign next available challenge to a runner.
+        Assign next available challenge to an agent.
         Uses pessimistic locking to prevent race conditions.
         """
         with self.get_connection() as conn:
@@ -596,12 +627,12 @@ class Database:
 
             try:
                 # Check if agent is enabled
-                cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (runner_id,))
+                cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (agent_id,))
                 agent_row = cursor.fetchone()
 
                 if not agent_row or not agent_row['enabled']:
                     conn.rollback()
-                    logger.debug(f"Agent {runner_id} is disabled or not found, skipping task assignment")
+                    logger.debug(f"Agent {agent_id} is disabled or not found, skipping task assignment")
                     return None
 
                 # Find next available challenge (queued or waiting with expired delay)
@@ -648,7 +679,7 @@ class Database:
                             assigned_at = CURRENT_TIMESTAMP,
                             assignment_expires = ?
                         WHERE challenge_id = ?
-                    ''', (runner_id, expires_at, challenge_id))
+                    ''', (agent_id, expires_at, challenge_id))
 
                     conn.commit()
 
@@ -657,7 +688,7 @@ class Database:
                     # Convert SQLite integer to boolean
                     challenge['enabled'] = bool(challenge['enabled'])
 
-                    logger.info(f"Assigned challenge {challenge['name']} to runner {runner_id}")
+                    logger.info(f"Assigned challenge {challenge['name']} to agent {agent_id}")
                     return challenge
                 else:
                     conn.rollback()
@@ -665,10 +696,10 @@ class Database:
 
             except Exception as e:
                 conn.rollback()
-                logger.error(f"Error assigning challenge to {runner_id}: {e}")
+                logger.error(f"Error assigning challenge to {agent_id}: {e}")
                 return None
 
-    def complete_challenge(self, challenge_id: str, runner_id: str, success: bool,
+    def complete_challenge(self, challenge_id: str, agent_id: str, success: bool,
                            error_message: Optional[str] = None) -> Optional[Dict]:
         """Mark challenge as completed and requeue it. Returns challenge config."""
         with self.get_connection() as conn:
@@ -712,7 +743,7 @@ class Database:
                 conn.commit()
 
                 status = 'success' if success else 'failed'
-                logger.info(f"Challenge {challenge_id} completed by {runner_id}: {status}")
+                logger.info(f"Challenge {challenge_id} completed by {agent_id}: {status}")
                 return config
 
             except Exception as e:
@@ -779,15 +810,15 @@ class Database:
                 return False
 
     # Transmission history
-    def record_transmission_start(self, challenge_id: str, runner_id: str,
+    def record_transmission_start(self, challenge_id: str, agent_id: str,
                                   device_id: str, frequency: int) -> int:
         """Record the start of a transmission."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO transmissions (challenge_id, runner_id, device_id, frequency, started_at, status)
+                INSERT INTO transmissions (challenge_id, agent_id, device_id, frequency, started_at, status)
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'transmitting')
-            ''', (challenge_id, runner_id, device_id, frequency))
+            ''', (challenge_id, agent_id, device_id, frequency))
             conn.commit()
             return cursor.lastrowid
 
@@ -1316,7 +1347,7 @@ class Database:
             runner_name: Descriptive name for the runner
             created_by: Username of the admin who created the token
             expires_at: When the token expires
-            re_enrollment_for: Optional runner_id if this is a re-enrollment token
+            re_enrollment_for: Optional agent_id if this is a re-enrollment token
 
         Returns:
             True if successful, False otherwise
@@ -1385,12 +1416,12 @@ class Database:
 
         return (True, token_data['runner_name'])
 
-    def mark_token_used(self, token: str, runner_id: str) -> bool:
+    def mark_token_used(self, token: str, agent_id: str) -> bool:
         """Mark an enrollment token as used.
 
         Args:
             token: The enrollment token
-            runner_id: The runner ID that used this token
+            agent_id: The agent ID that used this token
 
         Returns:
             True if successful, False otherwise
@@ -1401,7 +1432,7 @@ class Database:
                 UPDATE enrollment_tokens
                 SET used = 1, used_at = CURRENT_TIMESTAMP, used_by_runner_id = ?
                 WHERE token = ?
-            ''', (runner_id, token))
+            ''', (agent_id, token))
             conn.commit()
             return cursor.rowcount > 0
 
