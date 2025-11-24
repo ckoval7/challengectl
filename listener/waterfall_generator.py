@@ -16,13 +16,16 @@ import logging
 logger = logging.getLogger(__name__)
 COLORMAP = ['#000033', '#000066', '#0000CC', '#00CC00', '#CCCC00', '#CC6600', '#CC0000']
 
+MAX_PERCENTILE = 98
+MIN_PERCENTILE = 50
+
 
 def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
                       fft_size: int, frame_rate: int, output_path: str,
                       reference_level_dbm: float = -10.0,
                       vmin_dbm: float = None,
                       vmax_dbm: float = None):
-    """Generate waterfall PNG image from FFT data.
+    """Generate waterfall PNG image from FFT data with dual-bandwidth view.
 
     Args:
         fft_data: 2D numpy array of FFT power data [time, frequency]
@@ -59,8 +62,8 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         logger.info(f"Using manual waterfall scale: {vmin:.1f} to {vmax:.1f} dBm")
     else:
         # Auto-scale: use 5th and 95th percentile for dynamic range
-        vmin = np.percentile(fft_data_db, 25)
-        vmax = np.percentile(fft_data_db, 95)
+        vmin = np.percentile(fft_data_db, MIN_PERCENTILE)
+        vmax = np.percentile(fft_data_db, MAX_PERCENTILE)
         logger.debug(f"Auto-scaling waterfall: {vmin:.1f} to {vmax:.1f} dBm (reference: {reference_level_dbm:.1f} dBm at 0 dBFS)")
 
     # Create custom colormap (blue -> green -> yellow -> red)
@@ -68,7 +71,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
     n_bins = 256
     cmap = LinearSegmentedColormap.from_list('spectrum', colors, N=n_bins)
 
-    # Calculate time and frequency axes
+    # Calculate time and frequency axes for full bandwidth
     duration = fft_data.shape[0] / frame_rate
     time_axis = np.linspace(0, duration, fft_data.shape[0])
 
@@ -76,15 +79,33 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
     freq_max = frequency + sample_rate / 2
     freq_axis = np.linspace(freq_min, freq_max, fft_size)
 
-    # Create figure with appropriate size
+    # Extract center 200 kHz for decimated waterfall
+    zoom_bandwidth = 200e3  # 200 kHz
+    bins_per_hz = fft_size / sample_rate
+    zoom_bins = int(zoom_bandwidth * bins_per_hz)
+    center_bin = fft_size // 2
+    zoom_start = center_bin - zoom_bins // 2
+    zoom_end = center_bin + zoom_bins // 2
+
+    # Extract center portion of spectrum
+    fft_data_zoom_db = fft_data_db[:, zoom_start:zoom_end]
+
+    zoom_freq_min = frequency - zoom_bandwidth / 2
+    zoom_freq_max = frequency + zoom_bandwidth / 2
+
+    logger.info(f"Zoom waterfall: {zoom_bins} bins covering {zoom_bandwidth/1e3:.1f} kHz")
+
+    # Create figure with two subplots side-by-side (full bandwidth on left, zoom on right)
     # Height scales with number of time frames to maintain aspect ratio
-    width_inches = 12
-    height_inches = max(6, min(48, fft_data.shape[0] / 50))  # Scale height, cap at 48"
+    base_height = max(6, min(48, fft_data.shape[0] / 50))  # Scale height, cap at 48"
+    width_inches = 16  # Wider to accommodate side-by-side layout
 
-    fig, ax = plt.subplots(figsize=(width_inches, height_inches), dpi=100)
+    # Allocate 60% width to full bandwidth, 40% to zoom
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(width_inches, base_height),
+                                     gridspec_kw={'width_ratios': [3, 2]})
 
-    # Plot waterfall
-    im = ax.imshow(
+    # Plot full bandwidth waterfall
+    im1 = ax1.imshow(
         fft_data_db,
         aspect='auto',
         cmap=cmap,
@@ -94,22 +115,38 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
         interpolation='nearest'
     )
 
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, label='Power (dBm)')
+    # Set labels for full bandwidth
+    ax1.set_xlabel('Frequency (MHz)')
+    ax1.set_ylabel('Time (seconds)')
+    ax1.set_title(f'Full Spectrum - {frequency / 1e6:.3f} MHz (BW: {sample_rate/1e6:.2f} MHz)')
+    ax1.grid(True, alpha=0.3, linestyle='--')
+    ax1.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.3f}'))
 
-    # Set labels
-    ax.set_xlabel('Frequency (MHz)')
-    ax.set_ylabel('Time (seconds)')
-    ax.set_title(f'Spectrum Waterfall - {frequency / 1e6:.3f} MHz')
+    # Plot zoomed (200 kHz) waterfall
+    im2 = ax2.imshow(
+        fft_data_zoom_db,
+        aspect='auto',
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        extent=[zoom_freq_min / 1e6, zoom_freq_max / 1e6, duration, 0],
+        interpolation='nearest'
+    )
 
-    # Add grid
-    ax.grid(True, alpha=0.3, linestyle='--')
+    # Set labels for zoomed waterfall
+    ax2.set_xlabel('Frequency (MHz)')
+    ax2.set_ylabel('Time (seconds)')
+    ax2.set_title(f'Zoomed View - {frequency / 1e6:.3f} MHz (BW: {zoom_bandwidth/1e3:.0f} kHz)')
+    ax2.grid(True, alpha=0.3, linestyle='--')
+    ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.4f}'))
 
-    # Format frequency axis to show MHz with 3 decimal places
-    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.3f}'))
+    # Add single colorbar on the right side of the figure
+    fig.subplots_adjust(right=0.93)
+    cbar_ax = fig.add_axes([0.94, 0.15, 0.01, 0.7])
+    cbar = fig.colorbar(im1, cax=cbar_ax, label='Power (dBm)')
 
-    # Tight layout to prevent label cutoff
-    plt.tight_layout()
+    # Tight layout to prevent label cutoff (but preserve colorbar space)
+    plt.tight_layout(rect=[0, 0, 0.93, 1])
 
     # Save to file
     plt.savefig(output_path, format='png', dpi=100, bbox_inches='tight')
@@ -152,8 +189,8 @@ def generate_waterfall_with_markers(fft_data: np.ndarray, frequency: int, sample
             max_power = 1.0
         fft_data_dbfs = 10 * np.log10(fft_data / max_power + 1e-10)
         fft_data_db = fft_data_dbfs + reference_level_dbm
-        vmin = np.percentile(fft_data_db, 5)
-        vmax = np.percentile(fft_data_db, 95)
+        vmin = np.percentile(fft_data_db, MIN_PERCENTILE)
+        vmax = np.percentile(fft_data_db, MAX_PERCENTILE)
 
         duration = fft_data.shape[0] / frame_rate
         freq_min = frequency - sample_rate / 2
