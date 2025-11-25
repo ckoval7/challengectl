@@ -3325,8 +3325,20 @@ radios:
         @self.app.route('/api/challenges', methods=['GET'])
         @self.require_admin_auth
         def get_challenges():
-            """Get all challenges."""
-            challenges = self.db.get_all_challenges()
+            """Get all challenges with queue and recording priority info."""
+            # Get challenges with queue position and timing info
+            challenges = self.db.get_challenges_with_queue_info()
+
+            # Add recording priority information for each challenge
+            for challenge in challenges:
+                if challenge['enabled']:
+                    recording_priority = self.calculate_recording_priority(challenge)
+                    challenge['recording_priority'] = recording_priority
+                    challenge['will_be_recorded'] = recording_priority >= 1.0
+                else:
+                    challenge['recording_priority'] = 0.0
+                    challenge['will_be_recorded'] = False
+
             return jsonify({'challenges': challenges}), 200
 
         @self.app.route('/api/challenges', methods=['POST'])

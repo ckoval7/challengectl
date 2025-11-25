@@ -611,6 +611,74 @@ class Database:
                 challenges.append(challenge)
             return challenges
 
+    def get_challenges_with_queue_info(self) -> List[Dict]:
+        """Get all challenges with queue position and timing information.
+
+        Returns:
+            List of challenge dictionaries with additional fields:
+            - queue_position: Position in queue (1-indexed), None if not enabled
+            - next_available_time: ISO timestamp when challenge becomes ready, None if ready now
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Get all enabled challenges ordered by queue priority
+            cursor.execute('''
+                SELECT * FROM challenges
+                WHERE enabled = 1
+                ORDER BY priority DESC, name
+            ''')
+
+            enabled_challenges = []
+            for row in cursor.fetchall():
+                challenge = dict(row)
+                challenge['config'] = json.loads(challenge['config'])
+                challenge['enabled'] = bool(challenge['enabled'])
+                enabled_challenges.append(challenge)
+
+            # Calculate queue positions with timing information
+            now = datetime.now()
+            queue_position = 1
+
+            with self.timing_lock:
+                for challenge in enabled_challenges:
+                    cid = challenge['challenge_id']
+                    timing = self.challenge_timing.get(cid, {})
+                    next_tx = timing.get('next_tx')
+
+                    # Add timing information
+                    if next_tx is None:
+                        challenge['next_available_time'] = None  # Ready now
+                    elif next_tx <= now:
+                        challenge['next_available_time'] = None  # Ready now (timer expired)
+                    else:
+                        challenge['next_available_time'] = next_tx.isoformat()  # Waiting
+
+                    # Assign queue position only if challenge is in queue
+                    if challenge['status'] in ('queued', 'waiting', 'assigned'):
+                        challenge['queue_position'] = queue_position
+                        queue_position += 1
+                    else:
+                        challenge['queue_position'] = None
+
+            # Also get disabled challenges
+            cursor.execute('''
+                SELECT * FROM challenges
+                WHERE enabled = 0
+                ORDER BY name
+            ''')
+
+            disabled_challenges = []
+            for row in cursor.fetchall():
+                challenge = dict(row)
+                challenge['config'] = json.loads(challenge['config'])
+                challenge['enabled'] = bool(challenge['enabled'])
+                challenge['queue_position'] = None
+                challenge['next_available_time'] = None
+                disabled_challenges.append(challenge)
+
+            # Combine and return all challenges
+            return enabled_challenges + disabled_challenges
+
     def assign_challenge(self, agent_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
         """
         Assign next available challenge to an agent.

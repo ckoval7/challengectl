@@ -189,6 +189,129 @@
         </el-table>
       </el-tab-pane>
 
+      <!-- Playlist Tab -->
+      <el-tab-pane
+        label="Playlist"
+        name="playlist"
+      >
+        <div class="playlist-description">
+          <p>View the transmission queue order and recording schedule for all enabled challenges.</p>
+        </div>
+
+        <el-table
+          :data="playlistChallenges"
+          class="w-full playlist-table"
+        >
+          <el-table-column
+            prop="queue_position"
+            label="Queue #"
+            width="90"
+            align="center"
+          >
+            <template #default="scope">
+              <el-tag
+                v-if="scope.row.queue_position"
+                :type="scope.row.queue_position === 1 ? 'danger' : scope.row.queue_position <= 3 ? 'warning' : 'info'"
+                size="large"
+              >
+                #{{ scope.row.queue_position }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="name"
+            label="Challenge Name"
+            width="250"
+          >
+            <template #default="scope">
+              <strong v-if="scope.row.queue_position === 1">{{ scope.row.name }}</strong>
+              <span v-else>{{ scope.row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Modulation"
+            width="120"
+          >
+            <template #default="scope">
+              {{ scope.row.config?.modulation || 'N/A' }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Frequency"
+            width="180"
+          >
+            <template #default="scope">
+              {{ scope.row.config?.frequency ? formatFrequency(scope.row.config.frequency) : 'N/A' }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="priority"
+            label="Priority"
+            width="100"
+            align="center"
+          >
+            <template #default="scope">
+              <el-tag :type="getPriorityType(scope.row.priority)" size="small">
+                {{ scope.row.priority }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Status"
+            width="120"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="getStatusType(scope.row)"
+                size="small"
+              >
+                {{ scope.row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Next Available"
+            width="180"
+          >
+            <template #default="scope">
+              <span :class="{ 'ready-now': !scope.row.next_available_time }">
+                {{ formatNextAvailable(scope.row.next_available_time) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Recording Priority"
+            width="150"
+            align="center"
+          >
+            <template #default="scope">
+              <div class="recording-priority-cell">
+                <el-tag
+                  :type="getRecordingPriorityType(scope.row.recording_priority)"
+                  size="small"
+                >
+                  {{ formatRecordingPriority(scope.row.recording_priority) }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Will Record"
+            width="120"
+            align="center"
+          >
+            <template #default="scope">
+              <el-tag
+                :type="scope.row.will_be_recorded ? 'success' : ''"
+                size="small"
+              >
+                {{ scope.row.will_be_recorded ? 'Yes' : 'No' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
       <!-- Create/Edit Challenge Tab -->
       <el-tab-pane
         label="Create Challenge"
@@ -1029,6 +1152,13 @@ export default {
       return challengeForm.value.modulation !== ''
     })
 
+    // Computed property for playlist view (only enabled challenges sorted by queue position)
+    const playlistChallenges = computed(() => {
+      return challenges.value
+        .filter(c => c.enabled && c.queue_position !== null)
+        .sort((a, b) => (a.queue_position || 999) - (b.queue_position || 999))
+    })
+
     // Convert public_fields array to public_view object format
     const convertPublicFieldsToView = (publicFields) => {
       // Always explicitly set all fields (default to false if not in array)
@@ -1428,6 +1558,76 @@ export default {
       return ranges.map(r => getDisplayNameForRange(r)).join(', ')
     }
 
+    // Format relative time for next available transmission
+    const formatNextAvailable = (isoTimestamp) => {
+      if (!isoTimestamp) {
+        return 'Ready now'
+      }
+
+      const targetTime = new Date(isoTimestamp)
+      const now = new Date()
+      const diffMs = targetTime - now
+
+      if (diffMs <= 0) {
+        return 'Ready now'
+      }
+
+      const diffSec = Math.floor(diffMs / 1000)
+      const diffMin = Math.floor(diffSec / 60)
+      const diffHour = Math.floor(diffMin / 60)
+      const diffDay = Math.floor(diffHour / 24)
+
+      if (diffDay > 0) {
+        return `Ready in ${diffDay}d ${diffHour % 24}h`
+      } else if (diffHour > 0) {
+        return `Ready in ${diffHour}h ${diffMin % 60}m`
+      } else if (diffMin > 0) {
+        return `Ready in ${diffMin}m`
+      } else {
+        return `Ready in ${diffSec}s`
+      }
+    }
+
+    // Format recording priority number
+    const formatRecordingPriority = (priority) => {
+      if (priority === null || priority === undefined) {
+        return 'N/A'
+      }
+      if (priority >= 1000) {
+        return '1000+'
+      }
+      return priority.toFixed(1)
+    }
+
+    // Get Element Plus tag type for recording priority
+    const getRecordingPriorityType = (priority) => {
+      if (priority === null || priority === undefined) {
+        return 'info'
+      }
+      if (priority >= 1000) {
+        return 'danger' // Never recorded or forced
+      } else if (priority >= 10) {
+        return 'warning' // High priority
+      } else if (priority >= 1.0) {
+        return 'success' // Will be recorded
+      } else {
+        return 'info' // Won't be recorded
+      }
+    }
+
+    // Get Element Plus tag type for challenge priority
+    const getPriorityType = (priority) => {
+      if (priority >= 75) {
+        return 'danger'
+      } else if (priority >= 50) {
+        return 'warning'
+      } else if (priority >= 25) {
+        return 'success'
+      } else {
+        return 'info'
+      }
+    }
+
     const loadRecordings = async (challengeId) => {
       if (recordings.value[challengeId]) {
         // Already loaded
@@ -1560,6 +1760,7 @@ export default {
       editForm,
       editConfigJson,
       showModulationSpecificFields,
+      playlistChallenges,
       onModulationChange,
       handleFlagFileChange,
       handleYamlChange,
@@ -1574,7 +1775,11 @@ export default {
       toggleChallenge,
       triggerChallenge,
       getStatusType,
+      getPriorityType,
       formatTimestamp: formatDateTime,
+      formatNextAvailable,
+      formatRecordingPriority,
+      getRecordingPriorityType,
       editChallenge,
       saveEditedChallenge,
       deleteChallenge,
@@ -1814,6 +2019,47 @@ html.dark .modal-info p {
 
 html.dark .modal-info strong {
   color: var(--el-text-color-primary);
+}
+
+/* Playlist Tab Styles */
+.playlist-description {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: var(--el-fill-color-light);
+  border-radius: 4px;
+}
+
+.playlist-description p {
+  margin: 0;
+  color: var(--el-text-color-regular);
+}
+
+.playlist-table {
+  margin-top: 10px;
+}
+
+.playlist-table .el-table__row:first-child {
+  font-weight: bold;
+  background-color: var(--el-fill-color-lighter);
+}
+
+.ready-now {
+  color: var(--el-color-success);
+  font-weight: 600;
+}
+
+.recording-priority-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+html.dark .playlist-description {
+  background-color: var(--el-fill-color-dark);
+}
+
+html.dark .playlist-description p {
+  color: var(--el-text-color-regular);
 }
 </style>
 
