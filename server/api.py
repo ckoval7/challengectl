@@ -179,6 +179,11 @@ class ChallengeCtlAPI:
         # Timeout multiplier for transmission duration (default 2.0 = 200% of expected duration)
         self.transmission_timeout_multiplier = 2.0
 
+        # In-memory tracking for challenges that should force recording on next transmission
+        # Used when "Trigger Now" is pressed to ensure the transmission is recorded
+        self.force_record_challenges = set()
+        self.force_record_lock = threading.Lock()
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -313,6 +318,7 @@ class ChallengeCtlAPI:
         - Number of transmissions since last recording
         - Time elapsed since last recording
         - Challenge priority setting
+        - Manual trigger via "Trigger Now" button (highest priority)
 
         Args:
             challenge: Challenge dictionary with id, priority, etc.
@@ -322,6 +328,12 @@ class ChallengeCtlAPI:
         """
         challenge_id = challenge['challenge_id']
         challenge_priority = challenge.get('priority', 0)
+
+        # Check if this challenge was manually triggered and should force recording
+        with self.force_record_lock:
+            if challenge_id in self.force_record_challenges:
+                logger.info(f"Challenge {challenge['name']} manually triggered - forcing recording with highest priority")
+                return 1000.0
 
         # Get last completed recording for this challenge
         last_recording = self.db.get_last_recording_for_challenge(challenge_id)
@@ -2198,10 +2210,21 @@ class ChallengeCtlAPI:
                                              room=f'agent_{listener_id}', namespace='/agents')
 
                             logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
+
+                            # Clear forced recording flag after successful assignment
+                            with self.force_record_lock:
+                                if challenge_id in self.force_record_challenges:
+                                    self.force_record_challenges.discard(challenge_id)
+                                    logger.debug(f"Cleared forced recording flag for challenge {challenge['name']}")
                         else:
                             logger.error(f"Failed to create listener assignment for {challenge['name']}")
                     else:
                         logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
+                        # Clear forced recording flag if no listeners available (prevents flag from staying set indefinitely)
+                        with self.force_record_lock:
+                            if challenge_id in self.force_record_challenges:
+                                self.force_record_challenges.discard(challenge_id)
+                                logger.debug(f"Cleared forced recording flag for challenge {challenge['name']} (no listeners available)")
                 else:
                     priority = self.calculate_recording_priority(challenge)
                     logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold 1.0")
@@ -3543,6 +3566,11 @@ radios:
                         WHERE challenge_id = ?
                     ''', (challenge_id,))
                     conn.commit()
+
+                # Mark this challenge for forced recording on next transmission
+                with self.force_record_lock:
+                    self.force_record_challenges.add(challenge_id)
+                    logger.info(f"Challenge {challenge['name']} marked for priority recording on next transmission")
 
                 return jsonify({'status': 'triggered'}), 200
             else:
