@@ -424,13 +424,14 @@ class transmitter:
 
         # Configure options specific to lrs_tx script
         lrsopts = lrs_tx.argument_parser().parse_args('')
+        pager_data = lrs_pager.main(options=lrspageropts)
         lrsopts.deviceargs = device
         lrsopts.freq = freq
-        lrsopts.binfile = outfile
+        # lrsopts.binfile = outfile
         lrsopts.antenna = antenna
 
         # Call main in lrs_tx, passing in lrsopts options array
-        lrs_tx.main(options=lrsopts)
+        lrs_tx.main(options=lrsopts, data=pager_data)
         sleep(3)
         logging.info("LRS transmission complete")
         disable_bladerf_biastee(device)
