@@ -100,13 +100,24 @@
       <div class="text-xs text-secondary">
         Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
       </div>
-      <el-button
-        type="danger"
-        plain
-        @click="clearLogs"
-      >
-        Clear Logs
-      </el-button>
+      <el-space>
+        <el-dropdown split-button type="primary" @click="exportLogs('txt')">
+          Export Logs
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="exportLogs('txt')">Plain Text (.txt)</el-dropdown-item>
+              <el-dropdown-item @click="exportLogs('csv')">CSV (.csv)</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button
+          type="danger"
+          plain
+          @click="clearLogs"
+        >
+          Clear Logs
+        </el-button>
+      </el-space>
     </div>
   </div>
 </template>
@@ -114,6 +125,7 @@
 <script>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { websocket } from '../websocket'
 import { api } from '../api'
 import { formatTime } from '../utils/time'
@@ -221,6 +233,46 @@ export default {
       searchFilter.value = ''
     }
 
+    const exportLogs = (format = 'txt') => {
+      if (filteredLogs.value.length === 0) {
+        ElMessage.warning('No logs to export')
+        return
+      }
+
+      let content, mimeType, extension
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+
+      if (format === 'csv') {
+        // CSV format: Timestamp,Source,Level,Message
+        content = 'Timestamp,Source,Level,Message\n' +
+          filteredLogs.value.map(log =>
+            `"${log.timestamp}","${log.source}","${log.level}","${log.message.replace(/"/g, '""')}"`
+          ).join('\n')
+        mimeType = 'text/csv'
+        extension = 'csv'
+      } else {
+        // Plain text format: timestamp [source] LEVEL: message
+        content = filteredLogs.value.map(log =>
+          `${formatTime(log.timestamp)} [${log.source}] ${log.level}: ${log.message}`
+        ).join('\n')
+        mimeType = 'text/plain'
+        extension = 'txt'
+      }
+
+      // Create blob and trigger download
+      const blob = new Blob([content], { type: mimeType })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `challengectl-logs-${timestamp}.${extension}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      ElMessage.success(`Exported ${filteredLogs.value.length} log entries as ${extension.toUpperCase()}`)
+    }
+
     onMounted(async () => {
       // Fetch historical logs first
       await fetchLogs()
@@ -246,6 +298,7 @@ export default {
       loading,
       clearLogs,
       clearFilters,
+      exportLogs,
       formatTime
     }
   }
