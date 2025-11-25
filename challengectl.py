@@ -437,10 +437,10 @@ class transmitter:
         disable_bladerf_biastee(device)
 
         # Delete pager bin file from /tmp/
-        os.remove(outfile)
-        logging.debug(f"Removed temporary file: {outfile}")
-        if verbose:
-            print("Removed outfile")
+        # os.remove(outfile)
+        # logging.debug(f"Removed temporary file: {outfile}")
+        # if verbose:
+        #     print("Removed outfile")
         cleanup_after_transmission(device_id, device_q, flag_q, flag_args)
         if verbose:
             print("Returned flag to pool")
