@@ -646,6 +646,54 @@
             />
           </el-form-item>
 
+          <!-- SSB settings -->
+          <el-form-item
+            v-if="challengeForm.modulation === 'ssb'"
+            label="Mode"
+          >
+            <el-select
+              v-model="challengeForm.mode"
+              placeholder="Select sideband mode"
+              class="w-full"
+            >
+              <el-option
+                label="USB (Upper Sideband)"
+                value="usb"
+              />
+              <el-option
+                label="LSB (Lower Sideband)"
+                value="lsb"
+              />
+            </el-select>
+            <div class="hint-text">
+              USB is typically used above 10 MHz, LSB below 10 MHz
+            </div>
+          </el-form-item>
+
+          <!-- FreeDV settings -->
+          <el-form-item
+            v-if="challengeForm.modulation === 'freedv'"
+            label="Mode"
+          >
+            <el-select
+              v-model="challengeForm.mode"
+              placeholder="Select sideband mode"
+              class="w-full"
+            >
+              <el-option
+                label="USB (Upper Sideband)"
+                value="usb"
+              />
+              <el-option
+                label="LSB (Lower Sideband)"
+                value="lsb"
+              />
+            </el-select>
+            <div class="hint-text">
+              USB is typically used above 10 MHz, LSB below 10 MHz
+            </div>
+          </el-form-item>
+
           <!-- CW settings -->
           <el-form-item
             v-if="challengeForm.modulation === 'cw'"
@@ -1058,6 +1106,7 @@ export default {
       priority: 0,
       public_fields: ['name', 'modulation', 'frequency', 'status'], // Default public fields
       wav_samplerate: 48000,
+      mode: 'usb', // SSB/FreeDV mode (usb or lsb)
       speed: 35, // CW
       channel_spacing: 10000, // FHSS
       hop_rate: 10, // FHSS
@@ -1139,6 +1188,7 @@ export default {
         priority: 0,
         public_fields: ['name', 'modulation', 'frequency', 'status'],
         wav_samplerate: 48000,
+        mode: 'usb',
         speed: 35,
         channel_spacing: 10000,
         hop_rate: 10,
@@ -1259,6 +1309,10 @@ export default {
         // Add modulation-specific fields
         if (['nbfm', 'ssb', 'freedv', 'fhss'].includes(challengeForm.value.modulation)) {
           config.wav_samplerate = challengeForm.value.wav_samplerate
+        }
+
+        if (['ssb', 'freedv'].includes(challengeForm.value.modulation)) {
+          config.mode = challengeForm.value.mode
         }
 
         if (challengeForm.value.modulation === 'cw') {

@@ -448,7 +448,7 @@ Modulation-specific parameters:
 | `fhss` | `channel_spacing`, `hop_rate`, `hop_time`, `seed` |
 | `pocsag` | `capcode` - POCSAG capcode |
 | `lrs` | No additional parameters |
-| `freedv` | `mode` - FreeDV mode (1600, 700, etc.) |
+| `freedv` | `mode` - FreeDV mode (usb/lsb), `wav_samplerate` |
 | `ask` | No additional parameters |
 | `paint` | No additional parameters (uses image files) |
 

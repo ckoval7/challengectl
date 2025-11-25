@@ -139,6 +139,21 @@ The challenge content section changes based on the selected modulation type.
 - Must match the actual sample rate of your WAV file
 - Default: `48000` Hz
 
+**SSB-Specific: Mode**:
+- Sideband mode selection for Single Sideband transmission
+- Options: `usb` (Upper Sideband) or `lsb` (Lower Sideband)
+- Convention: USB is typically used above 10 MHz, LSB below 10 MHz
+- Default: `usb`
+- Upper Sideband: Uses positive frequency offset from carrier
+- Lower Sideband: Uses negative frequency offset from carrier
+
+**FreeDV-Specific: Mode**:
+- Sideband mode selection for FreeDV digital voice transmission
+- Options: `usb` (Upper Sideband) or `lsb` (Lower Sideband)
+- Convention: USB is typically used above 10 MHz, LSB below 10 MHz
+- Default: `usb`
+- FreeDV typically uses USB mode for compatibility with other digital modes
+
 #### Text-Based Modulations (CW, ASK, POCSAG)
 
 **Flag (Text)**:
@@ -293,6 +308,28 @@ Your YAML file can use either format:
   min_delay: 60
   max_delay: 90
   enabled: true
+
+# SSB (Single Sideband) example with LSB mode
+- name: SSB_LSB_VOICE_1
+  frequency: 3950000  # 3.950 MHz (80m band, LSB typical)
+  modulation: ssb
+  mode: lsb  # Upper Sideband (usb) or Lower Sideband (lsb)
+  flag: voice_message.wav
+  wav_samplerate: 48000
+  min_delay: 60
+  max_delay: 90
+  enabled: true
+
+# FreeDV (Digital Voice) example with USB mode
+- name: FREEDV_USB_VOICE_1
+  frequency: 14236000  # 14.236 MHz (20m band, USB typical)
+  modulation: freedv
+  mode: usb  # Upper Sideband (usb) or Lower Sideband (lsb)
+  flag: digital_voice.wav
+  wav_samplerate: 48000
+  min_delay: 60
+  max_delay: 90
+  enabled: true
 ```
 
 **Format 2: Dict with challenges key**
@@ -332,6 +369,28 @@ challenges:
     modulation: cw
     flag: 'CQ CQ CQ DE RFCTF K'
     speed: 35
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # SSB (Single Sideband) example with USB mode
+  - name: SSB_USB_VOICE_1
+    frequency: 14200000  # 14.200 MHz (20m band, USB typical)
+    modulation: ssb
+    mode: usb  # Upper Sideband (usb) or Lower Sideband (lsb)
+    flag: ssb_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # FreeDV (Digital Voice) example with USB mode
+  - name: FREEDV_USB_DIGITAL_1
+    frequency: 14236000  # 14.236 MHz (20m FreeDV calling frequency)
+    modulation: freedv
+    mode: usb  # Upper Sideband (usb) or Lower Sideband (lsb)
+    flag: freedv_message.wav
+    wav_samplerate: 48000
     min_delay: 60
     max_delay: 90
     enabled: true
@@ -988,8 +1047,8 @@ Now that you understand challenge management, you can:
 | Modulation | Type | Flag Format | Key Parameters |
 |------------|------|-------------|----------------|
 | `nbfm` | Audio | WAV file | `wav_samplerate` |
-| `ssb` | Audio | WAV file | `wav_samplerate` |
-| `freedv` | Audio | WAV file | `wav_samplerate` |
+| `ssb` | Audio | WAV file | `mode` (usb/lsb), `wav_samplerate` |
+| `freedv` | Audio | WAV file | `mode` (usb/lsb), `wav_samplerate` |
 | `cw` | Text | Text string | `speed` (WPM) |
 | `ask` | Text | Text string | - |
 | `pocsag` | Text | Text string | - |
