@@ -24,14 +24,14 @@ import time
 
 class lrs_tx(gr.top_block):
 
-    def __init__(self, bbgain=20, binfile="pager.bin", deviceargs="hackrf", freq=467750000, ifgain=20, rfgain=47, antenna=""):
+    def __init__(self, bbgain=20, data=None, deviceargs="hackrf", freq=467750000, ifgain=20, rfgain=47, antenna=""):
         gr.top_block.__init__(self, "LRS TX")
 
         ##################################################
         # Parameters
         ##################################################
         self.bbgain = bbgain
-        self.binfile = binfile
+        self.data = data if data is not None else []
         self.deviceargs = deviceargs
         self.freq = freq
         self.ifgain = ifgain
@@ -58,8 +58,7 @@ class lrs_tx(gr.top_block):
         self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
         self.blocks_repeat_0 = blocks.repeat(gr.sizeof_float*1, 3190)
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_float*1, binfile, False, 0, 0)
-        self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
+        self.blocks_vector_source_0 = blocks.vector_source_f(self.data, False, 1, [])
         self.analog_frequency_modulator_fc_0 = analog.frequency_modulator_fc(6.26)
 
 
@@ -68,7 +67,7 @@ class lrs_tx(gr.top_block):
         # Connections
         ##################################################
         self.connect((self.analog_frequency_modulator_fc_0, 0), (self.osmosdr_sink_0, 0))
-        self.connect((self.blocks_file_source_0, 0), (self.blocks_repeat_0, 0))
+        self.connect((self.blocks_vector_source_0, 0), (self.blocks_repeat_0, 0))
         self.connect((self.blocks_repeat_0, 0), (self.analog_frequency_modulator_fc_0, 0))
 
 
@@ -79,12 +78,13 @@ class lrs_tx(gr.top_block):
         self.bbgain = bbgain
         self.osmosdr_sink_0.set_bb_gain(self.bbgain, 0)
 
-    def get_binfile(self):
-        return self.binfile
+    def get_data(self):
+        return self.data
 
-    def set_binfile(self, binfile):
-        self.binfile = binfile
-        self.blocks_file_source_0.open(self.binfile, False)
+    def set_data(self, data):
+        self.data = data
+        # Note: vector_source doesn't support runtime data updates
+        # A new flowgraph instance should be created for new data
 
     def get_deviceargs(self):
         return self.deviceargs
@@ -129,9 +129,6 @@ def argument_parser():
         "-b", "--bbgain", dest="bbgain", type=eng_float, default="20.0",
         help="Set bbgain [default=%(default)r]")
     parser.add_argument(
-        "-r", "--binfile", dest="binfile", type=str, default="pager.bin",
-        help="Set binfile [default=%(default)r]")
-    parser.add_argument(
         "-d", "--deviceargs", dest="deviceargs", type=str, default="hackrf",
         help="Set deviceargs [default=%(default)r]")
     parser.add_argument(
@@ -149,10 +146,10 @@ def argument_parser():
     return parser
 
 
-def main(top_block_cls=lrs_tx, options=None):
+def main(top_block_cls=lrs_tx, options=None, data=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(bbgain=options.bbgain, binfile=options.binfile, deviceargs=options.deviceargs, freq=options.freq, ifgain=options.ifgain, rfgain=options.rfgain, antenna=options.antenna)
+    tb = top_block_cls(bbgain=options.bbgain, data=data, deviceargs=options.deviceargs, freq=options.freq, ifgain=options.ifgain, rfgain=options.rfgain, antenna=options.antenna)
 
     # def sig_handler(sig=None, frame=None):
     #     tb.stop()

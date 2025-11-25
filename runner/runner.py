@@ -832,23 +832,17 @@ class ChallengeCtlRunner:
                 success = True
 
             elif modulation == 'lrs':
+                # Parse pager parameters and generate data in memory
                 lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
-                randomstring = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                # Use local temp directory instead of /tmp
-                temp_dir = os.path.join(os.getcwd(), 'temp')
-                os.makedirs(temp_dir, exist_ok=True)
-                outfile = os.path.join(temp_dir, f"lrs_{randomstring}.bin")
-                lrspageropts.outputfile = outfile
-                lrs_pager.main(options=lrspageropts)
+                pager_data = lrs_pager.main(options=lrspageropts)
 
+                # Configure and run transmitter with in-memory data
                 lrsopts = lrs_tx.argument_parser().parse_args('')
                 lrsopts.deviceargs = device_string
                 lrsopts.freq = frequency
-                lrsopts.binfile = outfile
                 lrsopts.antenna = antenna
-                lrs_tx.main(options=lrsopts)
+                lrs_tx.main(options=lrsopts, data=pager_data)
 
-                os.remove(outfile)
                 success = True
 
             elif modulation == 'paint':

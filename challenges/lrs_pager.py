@@ -167,7 +167,8 @@ def main(options=None):
         print('SDR Simple Challenge Runner line:')
         print('16,LRS_PAGER,-s {0} -p {1} -pf {2},lrs,,0'.format(rest_id, pagers, alert_type))
 
-    handle = open(outputfile, 'wb')
+    # Build list of floats in memory instead of writing to disk
+    all_floats = []
 
     data = []
     for pager_n in pager_list:
@@ -181,16 +182,17 @@ def main(options=None):
             print("".join(str(x) for x in data))
             print('\n')
 
+        # Convert binary data to floats in memory
         for d in data:
             if d == 0:
-                handle.write(struct.pack('f', .0001)) 
+                all_floats.append(0.0001)
             elif d == 1:
-                handle.write(struct.pack('f', 1)) 
+                all_floats.append(1.0)
             else:
                 print("Error detected in data")
                 sys.exit()
 
-    handle.close()
+    return all_floats
 
 
 if __name__ == '__main__':
