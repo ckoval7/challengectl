@@ -2213,8 +2213,8 @@ class ChallengeCtlAPI:
 
                             # Clear forced recording flag after successful assignment
                             with self.force_record_lock:
-                                if challenge_id in self.force_record_challenges:
-                                    self.force_record_challenges.discard(challenge_id)
+                                if challenge['challenge_id'] in self.force_record_challenges:
+                                    self.force_record_challenges.discard(challenge['challenge_id'])
                                     logger.debug(f"Cleared forced recording flag for challenge {challenge['name']}")
                         else:
                             logger.error(f"Failed to create listener assignment for {challenge['name']}")
@@ -2222,8 +2222,8 @@ class ChallengeCtlAPI:
                         logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
                         # Clear forced recording flag if no listeners available (prevents flag from staying set indefinitely)
                         with self.force_record_lock:
-                            if challenge_id in self.force_record_challenges:
-                                self.force_record_challenges.discard(challenge_id)
+                            if challenge['challenge_id'] in self.force_record_challenges:
+                                self.force_record_challenges.discard(challenge['challenge_id'])
                                 logger.debug(f"Cleared forced recording flag for challenge {challenge['name']} (no listeners available)")
                 else:
                     priority = self.calculate_recording_priority(challenge)
