@@ -569,6 +569,10 @@ def main():
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
 
+    # Suppress APScheduler routine "executed successfully" messages
+    # Only show warnings and errors from the scheduler
+    logging.getLogger('apscheduler').setLevel(logging.WARNING)
+
     logging.info(f"Logging initialized at {args.log_level} level")
 
     # Check if config file exists
