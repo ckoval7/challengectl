@@ -198,10 +198,7 @@ frequency_ranges:
 #   - name: LRS_FLAG_1
 #     frequency: 146900000
 #     modulation: lrs
-#     flag: challenges/lrs_data.bin
-#     spreading_factor: 7
-#     bandwidth: 125000
-#     coding_rate: '4/5'
+#     flag: '-s 10 -p 976 -pf 1'  # -s=systemid(0-255), -p=pagerid(0-1023), -pf=function
 #     min_delay: 60
 #     max_delay: 90
 #     enabled: true

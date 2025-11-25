@@ -963,9 +963,22 @@ Transmits using LRS pager spread spectrum modulation.
 **Additional parameters**: None (parameters embedded in flag string)
 
 **Flag format**: Command-line arguments for LRS pager transmitter. Common options:
-- `-s` - Spreading factor
-- `-p` - Preamble length
-- `-pf` - Preamble format
+- `-s` / `--systemid` - Pager System ID (0-255)
+- `-p` / `--pagerid` - Pager ID (0-1023)
+- `-pf` / `--function` - Page function code (see table below)
+
+**Page function codes**:
+| Code | Function |
+|------|----------|
+| 1 | Flash/Vibe 30 seconds |
+| 10 | Flash/Vibe 1 second |
+| 4 | Beep 3 times |
+| 2 | Flash 5 minutes |
+| 3 | Flash/Beep 5x5 |
+| 5 | Beep 5 minutes |
+| 6 | Glow 5 minutes |
+| 7 | Glow/Vib 15 times |
+| 68 | Beep 3 times |
 
 ### FreeDV (Digital Voice)
 

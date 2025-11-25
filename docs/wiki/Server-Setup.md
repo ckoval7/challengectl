@@ -263,17 +263,17 @@ Each challenge requires the following parameters:
 
 ChallengeCtl supports the following modulation types:
 
-| Modulation | Description | Typical File Type |
-|------------|-------------|-------------------|
-| `cw` | Continuous Wave (Morse Code) | `.txt` |
-| `ask` | Amplitude Shift Keying | `.bin` |
-| `nbfm` | Narrowband FM | `.wav` |
-| `ssb` | Single Sideband | `.wav` |
-| `fhss` | Frequency Hopping Spread Spectrum | `.bin` |
-| `pocsag` | POCSAG Paging | `.txt` |
-| `lrs` | LRS Pager | `.bin` |
-| `freedv` | FreeDV Digital Voice | `.raw` |
-| `paint` | SSTV/Paint | `.png` or `.jpg` |
+| Modulation | Description | Flag Format |
+|------------|-------------|-------------|
+| `cw` | Continuous Wave (Morse Code) | Text string |
+| `ask` | Amplitude Shift Keying | File path (`.bin`) |
+| `nbfm` | Narrowband FM | File path (`.wav`) |
+| `ssb` | Single Sideband | File path (`.wav`) |
+| `fhss` | Frequency Hopping Spread Spectrum | File path (`.bin`) |
+| `pocsag` | POCSAG Paging | Text string |
+| `lrs` | LRS Pager | Arguments (e.g., `-s 10 -p 976 -pf 1`) |
+| `freedv` | FreeDV Digital Voice | File path (`.raw`) |
+| `paint` | SSTV/Paint | File path (`.png` or `.jpg`) |
 
 ### Challenge File Organization
 

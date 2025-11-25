@@ -539,26 +539,16 @@
 
           <el-form-item
             v-if="challengeForm.modulation === 'lrs'"
-            label="Flag (Binary File)"
+            label="Flag (Arguments)"
           >
             <el-input
               v-model="challengeForm.flag"
-              placeholder="Path to binary file or upload below"
+              placeholder="e.g., -s 10 -p 976 -pf 1"
             />
-            <el-upload
-              ref="flagUploadRef"
-              :auto-upload="false"
-              :limit="1"
-              accept=".bin"
-              @change="handleFlagFileChange"
-            >
-              <el-button
-                size="small"
-                class="mt-10"
-              >
-                Choose File
-              </el-button>
-            </el-upload>
+            <div class="text-xs mt-5" style="color: var(--el-color-info)">
+              LRS pager arguments: -s &lt;systemid 0-255&gt; -p &lt;pagerid 0-1023&gt; -pf &lt;function&gt;<br>
+              Function codes: 1=Flash/Vibe 30s, 4=Beep 3x, 10=Flash/Vibe 1s, 2=Flash 5min, 3=Flash/Beep 5x5, 5=Beep 5min, 6=Glow 5min, 7=Glow/Vib 15x, 68=Beep 3x
+            </div>
           </el-form-item>
 
           <h3>Timing Configuration</h3>
@@ -704,62 +694,6 @@
                 v-model="challengeForm.seed"
                 placeholder="Hopping sequence seed"
               />
-            </el-form-item>
-          </template>
-
-          <!-- LRS Pager settings -->
-          <template v-if="challengeForm.modulation === 'lrs'">
-            <el-form-item label="Spreading Factor">
-              <el-input-number
-                v-model="challengeForm.spreading_factor"
-                :min="6"
-                :max="12"
-                class="w-full"
-              />
-            </el-form-item>
-
-            <el-form-item label="Bandwidth (Hz)">
-              <el-select
-                v-model="challengeForm.bandwidth"
-                placeholder="Select bandwidth"
-              >
-                <el-option
-                  label="125 kHz"
-                  :value="125000"
-                />
-                <el-option
-                  label="250 kHz"
-                  :value="250000"
-                />
-                <el-option
-                  label="500 kHz"
-                  :value="500000"
-                />
-              </el-select>
-            </el-form-item>
-
-            <el-form-item label="Coding Rate">
-              <el-select
-                v-model="challengeForm.coding_rate"
-                placeholder="Select coding rate"
-              >
-                <el-option
-                  label="4/5"
-                  value="4/5"
-                />
-                <el-option
-                  label="4/6"
-                  value="4/6"
-                />
-                <el-option
-                  label="4/7"
-                  value="4/7"
-                />
-                <el-option
-                  label="4/8"
-                  value="4/8"
-                />
-              </el-select>
             </el-form-item>
           </template>
 
@@ -1129,9 +1063,6 @@ export default {
       hop_rate: 10, // FHSS
       hop_time: 60, // FHSS
       seed: '', // FHSS
-      spreading_factor: 7, // LRS Pager
-      bandwidth: 125000, // LRS Pager
-      coding_rate: '4/5', // LRS Pager
     })
 
     const flagFile = ref(null)
@@ -1213,9 +1144,6 @@ export default {
         hop_rate: 10,
         hop_time: 60,
         seed: '',
-        spreading_factor: 7,
-        bandwidth: 125000,
-        coding_rate: '4/5',
       }
       frequencyMode.value = 'direct'
       flagFile.value = null
@@ -1344,12 +1272,6 @@ export default {
           if (challengeForm.value.seed) {
             config.seed = challengeForm.value.seed
           }
-        }
-
-        if (challengeForm.value.modulation === 'lrs') {
-          config.spreading_factor = challengeForm.value.spreading_factor
-          config.bandwidth = challengeForm.value.bandwidth
-          config.coding_rate = challengeForm.value.coding_rate
         }
 
         await api.post('/challenges', {

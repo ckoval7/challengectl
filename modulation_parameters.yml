@@ -42,6 +42,9 @@ pocsag:
   optional: []
 
 # LRS Pager
+# Note: LRS parameters are embedded in the flag field as command-line arguments
+# Format: flag: '-s <systemid> -p <pagerid> -pf <function>'
+# Example: flag: '-s 10 -p 976 -pf 1'
 lrs:
   mandatory: []
   optional: []

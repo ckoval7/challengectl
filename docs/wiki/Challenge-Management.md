@@ -89,7 +89,7 @@ The Create Challenge form provides a guided interface for configuring new challe
   - **ASK** (Amplitude Shift Keying) - Digital data
   - **POCSAG** (Pager) - Pager messages
   - **FHSS** (Frequency Hopping) - Frequency hopping challenges
-  - **LRS Pager** - Long-range spread spectrum pager
+  - **LRS Pager** - Restaurant pager system
 - The form dynamically shows relevant fields based on modulation type
 
 **Frequency Mode** (required):
@@ -154,12 +154,13 @@ The challenge content section changes based on the selected modulation type.
 - Default: 35 WPM
 - Lower = easier to decode, higher = more challenging
 
-#### Binary File Modulations (LRS Pager)
+#### LRS Pager
 
-**Flag (Binary File)**:
-- Path to binary file or upload
-- Click "Choose File" to upload a .bin file
-- Used for raw digital data transmission
+**Flag (Arguments)**:
+- Command-line arguments for LRS pager transmitter
+- Format: `-s <systemid> -p <pagerid> -pf <function>`
+- Example: `-s 10 -p 976 -pf 1`
+- See LRS Pager Settings below for parameter details
 
 ### Timing Configuration
 
@@ -211,23 +212,31 @@ The challenge content section changes based on the selected modulation type.
 
 #### LRS Pager Settings
 
-**Spreading Factor**:
-- LRS pager spreading factor
-- Range: 6-12
-- Default: 7
-- Higher = longer range, slower data rate
+LRS pager parameters are specified in the flag field as command-line arguments:
 
-**Bandwidth** (Hz):
-- LRS pager bandwidth
-- Options: 125 kHz, 250 kHz, 500 kHz
-- Default: 125000 (125 kHz)
-- Higher = faster data rate, shorter range
+**-s / --systemid**:
+- Pager System ID
+- Range: 0-255
+- Identifies the pager system
 
-**Coding Rate**:
-- Forward error correction coding rate
-- Options: 4/5, 4/6, 4/7, 4/8
-- Default: 4/5
-- Higher denominator = more error correction, slower
+**-p / --pagerid**:
+- Pager ID
+- Range: 0-1023
+- Identifies the specific pager device
+
+**-pf / --function**:
+- Page function code
+- Controls the pager alert behavior
+- Common codes:
+  - 1: Flash/Vibe 30 seconds
+  - 4: Beep 3 times
+  - 10: Flash/Vibe 1 second
+  - 2: Flash 5 minutes
+  - 3: Flash/Beep 5x5
+  - 5: Beep 5 minutes
+  - 6: Glow 5 minutes
+  - 7: Glow/Vib 15 times
+  - 68: Beep 3 times
 
 ### Submitting the Form
 
@@ -985,7 +994,7 @@ Now that you understand challenge management, you can:
 | `ask` | Text | Text string | - |
 | `pocsag` | Text | Text string | - |
 | `fhss` | Audio | WAV file | `channel_spacing`, `hop_rate`, `hop_time`, `seed`, `wav_samplerate` |
-| `lrs` | Binary | Binary file | `spreading_factor`, `bandwidth`, `coding_rate` |
+| `lrs` | Arguments | Command-line args | `-s` (systemid), `-p` (pagerid), `-pf` (function) |
 
 ## Reference: Required vs Optional Fields
 
