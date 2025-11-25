@@ -2641,6 +2641,38 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Agent not found'}), 404
 
+        @self.app.route('/api/agents/<agent_id>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def delete_agent(agent_id):
+            """Delete an agent from the system.
+
+            This will clear any active assignments, cancel pending recordings,
+            and remove the agent. Historical records are preserved.
+            """
+            # Get agent info before deletion for the WebSocket event
+            agent = self.db.get_agent(agent_id)
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+
+            agent_type = agent['agent_type']
+
+            # Delete the agent
+            success = self.db.delete_agent(agent_id)
+            if success:
+                # Broadcast deletion event via WebSocket
+                event_data = {
+                    'agent_id': agent_id,
+                    'agent_type': agent_type,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+                logger.info(f"Broadcasting agent_deleted to /agents namespace for {agent_id}")
+                self.socketio.emit('agent_deleted', event_data, namespace='/agents')
+
+                return jsonify({'status': 'deleted'}), 200
+            else:
+                return jsonify({'error': 'Failed to delete agent'}), 500
+
         @self.app.route('/api/agents/<agent_id>/devices', methods=['PUT'])
         @self.require_admin_auth
         @self.require_csrf

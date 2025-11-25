@@ -1858,6 +1858,49 @@ class Database:
                 logger.info(f"Disabled agent: {agent_id}")
             return cursor.rowcount > 0
 
+    def delete_agent(self, agent_id: str) -> bool:
+        """Delete an agent from the system.
+
+        This will:
+        - Clear any active challenge assignments
+        - Cancel any pending listener assignments
+        - Remove the agent record
+
+        Historical records (transmissions, recordings) are preserved.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # First check if agent exists
+            cursor.execute('SELECT agent_id FROM agents WHERE agent_id = ?', (agent_id,))
+            if not cursor.fetchone():
+                return False
+
+            # Clear any active challenge assignments
+            cursor.execute('''
+                UPDATE challenges
+                SET assigned_to = NULL,
+                    assigned_at = NULL,
+                    assignment_expires = NULL,
+                    status = 'queued'
+                WHERE assigned_to = ?
+            ''', (agent_id,))
+
+            # Cancel any pending listener assignments
+            cursor.execute('''
+                UPDATE listener_assignments
+                SET status = 'cancelled',
+                    cancelled_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ? AND status = 'pending'
+            ''', (agent_id,))
+
+            # Delete the agent record
+            cursor.execute('DELETE FROM agents WHERE agent_id = ?', (agent_id,))
+
+            conn.commit()
+            logger.info(f"Deleted agent: {agent_id}")
+            return True
+
     def update_agent_devices(self, agent_id: str, devices: List[Dict]) -> bool:
         """Update device configuration for an agent.
 
