@@ -66,6 +66,15 @@ html.dark body {
   align-items: center;
 }
 
+/* Ensure modals and their overlays appear above all other elements */
+.el-dialog__wrapper {
+  z-index: 3000 !important;
+}
+
+.el-overlay {
+  z-index: 2999 !important;
+}
+
 /* ============================================
    GLOBAL RESPONSIVE STYLES
    ============================================ */
