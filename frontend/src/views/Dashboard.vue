@@ -7,7 +7,11 @@
       :gutter="20"
       class="mb-xl"
     >
-      <el-col :span="6">
+      <el-col
+        :xs="24"
+        :sm="12"
+        :md="6"
+      >
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
@@ -23,7 +27,11 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
+      <el-col
+        :xs="24"
+        :sm="12"
+        :md="6"
+      >
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
@@ -39,7 +47,11 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
+      <el-col
+        :xs="24"
+        :sm="12"
+        :md="6"
+      >
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
@@ -55,7 +67,11 @@
         </el-card>
       </el-col>
 
-      <el-col :span="6">
+      <el-col
+        :xs="24"
+        :sm="12"
+        :md="6"
+      >
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
@@ -74,7 +90,10 @@
 
     <!-- Runners and Activity -->
     <el-row :gutter="20">
-      <el-col :span="12">
+      <el-col
+        :xs="24"
+        :md="12"
+      >
         <el-card class="mb-xl">
           <template #header>
             <div class="card-header">
@@ -88,6 +107,7 @@
             max-height="400"
           >
             <el-table-column
+              v-if="!isMobile"
               prop="runner_id"
               label="Runner ID"
               width="150"
@@ -95,11 +115,11 @@
             <el-table-column
               prop="hostname"
               label="Hostname"
-              width="180"
+              :width="isMobile ? undefined : '180'"
             />
             <el-table-column
               label="Status"
-              width="100"
+              :width="isMobile ? '100' : '100'"
             >
               <template #default="scope">
                 <el-tag
@@ -111,6 +131,7 @@
               </template>
             </el-table-column>
             <el-table-column
+              v-if="!isMobile"
               label="Devices"
               width="80"
             >
@@ -118,7 +139,10 @@
                 {{ scope.row.devices?.length || 0 }}
               </template>
             </el-table-column>
-            <el-table-column label="Last Heartbeat">
+            <el-table-column
+              v-if="!isMobile"
+              label="Last Heartbeat"
+            >
               <template #default="scope">
                 {{ formatTime(scope.row.last_heartbeat) }}
               </template>
@@ -193,7 +217,10 @@
         </el-card>
       </el-col>
 
-      <el-col :span="12">
+      <el-col
+        :xs="24"
+        :md="12"
+      >
         <el-card>
           <template #header>
             <div class="card-header">
@@ -207,6 +234,7 @@
             max-height="400"
           >
             <el-table-column
+              v-if="!isMobile"
               label="Time"
               width="100"
             >
@@ -215,6 +243,7 @@
               </template>
             </el-table-column>
             <el-table-column
+              v-if="!isMobile"
               prop="runner_id"
               label="Runner"
               width="120"
@@ -224,6 +253,7 @@
               label="Challenge"
             />
             <el-table-column
+              v-if="!isMobile"
               label="Frequency"
               width="120"
             >
@@ -257,6 +287,7 @@ import { api } from '../api'
 import { websocket } from '../websocket'
 import { formatTime } from '../utils/time'
 import { ElMessage } from 'element-plus'
+import { useBreakpoint } from '../composables/useBreakpoint'
 
 export default {
   name: 'Dashboard',
@@ -269,6 +300,9 @@ export default {
     const savingDayTimes = ref(false)
     const autoPauseDaily = ref(false)
     const savingAutoPause = ref(false)
+
+    // Breakpoint detection for responsive design
+    const { isMobile } = useBreakpoint()
 
     const loadDashboard = async () => {
       try {
@@ -415,6 +449,7 @@ export default {
       savingDayTimes,
       autoPauseDaily,
       savingAutoPause,
+      isMobile,
       saveDayTimes,
       clearDayTimes,
       toggleAutoPause,

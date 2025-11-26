@@ -66,9 +66,95 @@ html.dark body {
   align-items: center;
 }
 
-/* Responsive utilities */
-@media (max-width: 768px) {
-  .sidebar {
-    width: 100% !important;
+/* ============================================
+   GLOBAL RESPONSIVE STYLES
+   ============================================ */
+
+/* Mobile Styles (< 768px) */
+@media (max-width: 767px) {
+  /* Reduce padding on main content areas */
+  .el-main {
+    padding: 15px 10px !important;
+  }
+
+  /* Reduce card padding */
+  .el-card {
+    margin-bottom: 15px;
+  }
+
+  .el-card__body {
+    padding: 15px;
+  }
+
+  /* Reduce table font size for better fit */
+  .el-table {
+    font-size: 13px;
+  }
+
+  .el-table th {
+    font-size: 12px;
+    padding: 8px 0;
+  }
+
+  .el-table td {
+    padding: 8px 0;
+  }
+
+  /* Smaller buttons on mobile */
+  .el-button--small {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  /* Reduce form label width */
+  .el-form--label-top .el-form-item__label,
+  .el-form-item__label {
+    font-size: 13px;
+  }
+
+  /* Stack form items vertically */
+  .el-form-item {
+    margin-bottom: 15px;
+  }
+
+  /* Reduce heading sizes */
+  h1 {
+    font-size: 1.75em !important;
+  }
+
+  h2 {
+    font-size: 1.5em !important;
+  }
+
+  h3 {
+    font-size: 1.25em !important;
+  }
+
+  /* Make dialogs full-screen on mobile */
+  .el-dialog {
+    width: 95% !important;
+    margin-top: 5vh !important;
+  }
+
+  /* Reduce tab padding */
+  .el-tabs__item {
+    padding: 12px 15px;
+    font-size: 13px;
+  }
+
+  /* Smaller tags */
+  .el-tag {
+    font-size: 11px;
+  }
+}
+
+/* Tablet Styles (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .el-main {
+    padding: 20px 15px !important;
+  }
+
+  h1 {
+    font-size: 2em !important;
   }
 }

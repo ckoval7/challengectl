@@ -30,6 +30,7 @@
           class="w-full"
         >
           <el-table-column
+            v-if="!isMobile"
             prop="runner_id"
             label="Runner ID"
             width="180"
@@ -37,16 +38,17 @@
           <el-table-column
             prop="hostname"
             label="Hostname"
-            width="200"
+            :width="isMobile ? undefined : '200'"
           />
           <el-table-column
+            v-if="!isMobile"
             prop="ip_address"
             label="IP Address"
             width="150"
           />
           <el-table-column
             label="Status"
-            width="150"
+            :width="isMobile ? '120' : '150'"
           >
             <template #default="scope">
               <el-space>
@@ -67,6 +69,7 @@
             </template>
           </el-table-column>
           <el-table-column
+            v-if="!isMobile"
             label="Devices"
             width="100"
           >
@@ -75,6 +78,7 @@
             </template>
           </el-table-column>
           <el-table-column
+            v-if="!isMobile"
             label="Last Heartbeat"
             width="180"
           >
@@ -84,7 +88,7 @@
           </el-table-column>
           <el-table-column
             label="Actions"
-            width="120"
+            :width="isMobile ? '100' : '120'"
             align="center"
           >
             <template #default="scope">
@@ -604,6 +608,7 @@
           class="w-full"
         >
           <el-table-column
+            v-if="!isMobile"
             prop="agent_id"
             label="Listener ID"
             width="180"
@@ -611,16 +616,17 @@
           <el-table-column
             prop="hostname"
             label="Hostname"
-            width="200"
+            :width="isMobile ? undefined : '200'"
           />
           <el-table-column
+            v-if="!isMobile"
             prop="ip_address"
             label="IP Address"
             width="150"
           />
           <el-table-column
             label="Status"
-            width="150"
+            :width="isMobile ? '100' : '150'"
           >
             <template #default="scope">
               <el-space>
@@ -642,18 +648,19 @@
           </el-table-column>
           <el-table-column
             label="WebSocket"
-            width="150"
+            :width="isMobile ? '90' : '150'"
           >
             <template #default="scope">
               <el-tag
                 :type="scope.row.websocket_connected ? 'success' : 'warning'"
                 size="small"
               >
-                {{ scope.row.websocket_connected ? 'Connected' : 'Disconnected' }}
+                {{ isMobile ? (scope.row.websocket_connected ? 'WS' : 'X') : (scope.row.websocket_connected ? 'Connected' : 'Disconnected') }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column
+            v-if="!isMobile"
             label="Devices"
             width="100"
           >
@@ -662,6 +669,7 @@
             </template>
           </el-table-column>
           <el-table-column
+            v-if="!isMobile"
             label="Last Heartbeat"
             width="180"
           >
@@ -671,7 +679,7 @@
           </el-table-column>
           <el-table-column
             label="Actions"
-            width="120"
+            :width="isMobile ? '100' : '120'"
             align="center"
           >
             <template #default="scope">
@@ -1497,12 +1505,16 @@ import { userPermissions } from '../auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 import { ArrowDown, Switch as SwitchIcon, Tools, Key, Delete } from '@element-plus/icons-vue'
+import { useBreakpoint } from '../composables/useBreakpoint'
 
 export default {
   name: 'Runners',
   setup() {
     const runners = ref([])
     const listeners = ref([])
+
+    // Breakpoint detection for responsive design
+    const { isMobile } = useBreakpoint()
 
     // Runner enrollment state
     // Note: Kept separate from listener enrollment due to significantly different
@@ -2600,6 +2612,7 @@ curl -k \\
       activeTab,
       runners,
       listeners,
+      isMobile,
       loadAgents,
       addRunnerDialogVisible,
       addRunnerForm,

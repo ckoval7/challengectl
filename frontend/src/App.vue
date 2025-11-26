@@ -7,70 +7,135 @@
     >
       <el-header
         height="80px"
-        style="background: #409EFF; color: white; display: flex; align-items: center; padding: 0 20px;"
+        class="app-header"
       >
-        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-right: 20px;">
-          <h2 style="margin: 0; line-height: 1.3; font-size: 1.5em;">
-            Challengectlv2 Orchestrator<span v-if="conferenceName"> - {{ conferenceName }}</span>
+        <!-- Hamburger menu button (mobile only) -->
+        <el-button
+          v-if="isMobile"
+          circle
+          :icon="MenuIcon"
+          class="hamburger-button"
+          @click="toggleSidebar"
+        />
+
+        <!-- Title and countdown -->
+        <div class="header-title">
+          <h2 class="title-text">
+            Challengectlv2 Orchestrator<span v-if="conferenceName" class="conference-name"> - {{ conferenceName }}</span>
           </h2>
-          <div style="font-size: 0.9em; margin-top: 5px; opacity: 0.95;">
+          <div class="countdown-wrapper">
             <ConferenceCountdown />
           </div>
         </div>
+
         <div style="flex: 1" />
-        <el-button
-          circle
-          :icon="isDark ? Moon : Sunny"
-          style="margin-right: 10px"
-          @click="toggleTheme"
-        />
-        <el-button
-          v-if="systemPaused"
-          type="success"
-          style="margin-right: 10px"
-          @click="resumeSystem"
-        >
-          Resume
-        </el-button>
-        <el-button
-          v-else
-          type="warning"
-          style="margin-right: 10px"
-          @click="pauseSystem"
-        >
-          Pause
-        </el-button>
-        <el-dropdown @command="handleUserMenuCommand">
-          <span class="user-menu-trigger">
-            <el-avatar
-              :size="32"
-              style="background-color: #409EFF; margin-right: 8px;"
-            >
-              <el-icon><UserFilled /></el-icon>
-            </el-avatar>
-            {{ username }}
-            <el-icon style="margin-left: 8px;"><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="change-password">
-                <el-icon><EditPen /></el-icon>
-                Change Password
-              </el-dropdown-item>
-              <el-dropdown-item
-                command="logout"
-                divided
+
+        <!-- Header actions -->
+        <div class="header-actions">
+          <el-button
+            circle
+            :icon="isDark ? Moon : Sunny"
+            class="action-button mobile-hidden"
+            @click="toggleTheme"
+          />
+          <el-button
+            v-if="systemPaused"
+            type="success"
+            class="action-button mobile-hidden"
+            @click="resumeSystem"
+          >
+            Resume
+          </el-button>
+          <el-button
+            v-else
+            type="warning"
+            class="action-button mobile-hidden"
+            @click="pauseSystem"
+          >
+            Pause
+          </el-button>
+          <el-dropdown @command="handleUserMenuCommand">
+            <span class="user-menu-trigger">
+              <el-avatar
+                :size="isMobile ? 28 : 32"
+                style="background-color: #409EFF; margin-right: 8px;"
               >
-                <el-icon><SwitchButton /></el-icon>
-                Logout
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+                <el-icon><UserFilled /></el-icon>
+              </el-avatar>
+              <span class="mobile-hidden">{{ username }}</span>
+              <el-icon
+                class="mobile-hidden"
+                style="margin-left: 8px;"
+              ><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="change-password">
+                  <el-icon><EditPen /></el-icon>
+                  Change Password
+                </el-dropdown-item>
+                <el-dropdown-item
+                  command="logout"
+                  divided
+                >
+                  <el-icon><SwitchButton /></el-icon>
+                  Logout
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </el-header>
 
       <el-container>
+        <!-- Mobile Drawer Sidebar -->
+        <el-drawer
+          v-if="isMobile"
+          v-model="sidebarOpen"
+          direction="ltr"
+          :size="280"
+          :with-header="false"
+          class="mobile-sidebar-drawer"
+        >
+          <el-menu
+            :default-active="$route.path"
+            router
+            class="sidebar-menu"
+            @select="closeSidebar"
+          >
+            <el-menu-item index="/admin">
+              <el-icon><House /></el-icon>
+              <span>Dashboard</span>
+            </el-menu-item>
+            <el-menu-item index="/runners">
+              <el-icon><Connection /></el-icon>
+              <span>Agents</span>
+            </el-menu-item>
+            <el-menu-item index="/challenge-config">
+              <el-icon><Flag /></el-icon>
+              <span>Challenges</span>
+            </el-menu-item>
+            <el-menu-item index="/logs">
+              <el-icon><Notebook /></el-icon>
+              <span>Logs</span>
+            </el-menu-item>
+            <el-menu-item
+              v-if="userPermissions.includes('create_users')"
+              index="/users"
+            >
+              <el-icon><User /></el-icon>
+              <span>Users</span>
+            </el-menu-item>
+            <el-menu-item index="/public">
+              <el-icon><Monitor /></el-icon>
+              <span>Public Dashboard</span>
+            </el-menu-item>
+          </el-menu>
+        </el-drawer>
+
+        <!-- Desktop Sidebar -->
         <el-aside
+          v-if="!isMobile"
           width="200px"
           class="sidebar"
         >
@@ -123,12 +188,13 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton } from '@element-plus/icons-vue'
+import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth, currentUsername, userPermissions } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
+import { useBreakpoint } from './composables/useBreakpoint'
 
 export default {
   name: 'App',
@@ -147,6 +213,10 @@ export default {
     const systemPaused = ref(false)
     const isDark = ref(true) // Default to dark theme
     const conferenceName = ref('')
+    const sidebarOpen = ref(false) // Mobile sidebar state
+
+    // Breakpoint detection
+    const { isMobile, isDesktop } = useBreakpoint()
 
     // Show admin layout for authenticated routes (but not during initial setup or user setup)
     const showAdminLayout = computed(() => {
@@ -270,14 +340,26 @@ export default {
       }
     }
 
+    const toggleSidebar = () => {
+      sidebarOpen.value = !sidebarOpen.value
+    }
+
+    const closeSidebar = () => {
+      sidebarOpen.value = false
+    }
+
     return {
       showAdminLayout,
       systemPaused,
       isDark,
       conferenceName,
       username,
+      sidebarOpen,
+      isMobile,
+      isDesktop,
       Moon,
       Sunny,
+      MenuIcon,
       UserFilled,
       ArrowDown,
       EditPen,
@@ -287,13 +369,130 @@ export default {
       handleUserMenuCommand,
       pauseSystem,
       resumeSystem,
+      toggleSidebar,
+      closeSidebar,
       userPermissions
     }
   }
 }
 </script>
 
-<style>
-/* App-specific styles have been moved to /src/styles/global.css */
-/* Component-specific styles can remain here if needed */
+<style scoped>
+/* ============================================
+   RESPONSIVE HEADER STYLES
+   ============================================ */
+
+.app-header {
+  background: #409EFF;
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.hamburger-button {
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-right: 20px;
+  min-width: 0; /* Allow flex item to shrink */
+}
+
+.title-text {
+  margin: 0;
+  line-height: 1.3;
+  font-size: 1.5em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.conference-name {
+  white-space: nowrap;
+}
+
+.countdown-wrapper {
+  font-size: 0.9em;
+  margin-top: 5px;
+  opacity: 0.95;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.action-button {
+  flex-shrink: 0;
+}
+
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: white;
+}
+
+/* Mobile Responsive Adjustments */
+@media (max-width: 767px) {
+  .app-header {
+    padding: 0 10px;
+    height: 60px !important;
+  }
+
+  .header-title {
+    margin-right: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .title-text {
+    font-size: 1em;
+    line-height: 1.2;
+  }
+
+  .conference-name {
+    display: none; /* Hide conference name on very small screens */
+  }
+
+  .countdown-wrapper {
+    font-size: 0.75em;
+    margin-top: 2px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .title-text {
+    font-size: 1.2em;
+  }
+
+  .countdown-wrapper {
+    font-size: 0.85em;
+  }
+}
+
+/* ============================================
+   MOBILE SIDEBAR DRAWER STYLES
+   ============================================ */
+
+.mobile-sidebar-drawer :deep(.el-drawer__body) {
+  padding: 0;
+}
+
+.mobile-sidebar-drawer .sidebar-menu {
+  border-right: none;
+  height: 100%;
+}
 </style>

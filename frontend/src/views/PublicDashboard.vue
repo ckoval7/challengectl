@@ -73,7 +73,7 @@
           />
 
           <el-table-column
-            v-if="hasAnyModulationVisible"
+            v-if="hasAnyModulationVisible && !isMobile"
             label="Modulation"
             width="120"
           >
@@ -94,7 +94,7 @@
           </el-table-column>
 
           <el-table-column
-            v-if="hasAnyFrequencyVisible"
+            v-if="hasAnyFrequencyVisible && !isMobile"
             label="Frequency"
             width="240"
           >
@@ -119,7 +119,7 @@
           </el-table-column>
 
           <el-table-column
-            v-if="hasAnyLastTxVisible"
+            v-if="hasAnyLastTxVisible && !isMobile"
             label="Last Transmission"
             width="180"
           >
@@ -191,6 +191,7 @@ import config from '../config'
 import { Loading, Warning, Moon, Sunny } from '@element-plus/icons-vue'
 import { formatTime } from '../utils/time'
 import ConferenceCountdown from '../components/ConferenceCountdown.vue'
+import { useBreakpoint } from '../composables/useBreakpoint'
 
 export default {
   name: 'PublicDashboard',
@@ -207,6 +208,9 @@ export default {
     const isDark = ref(true) // Default to dark theme
     const wsConnected = ref(false)
     let socket = null
+
+    // Breakpoint detection for responsive design
+    const { isMobile, isDesktop } = useBreakpoint()
 
     // Conference info (could be loaded from config)
     const conference = ref({
@@ -335,6 +339,8 @@ export default {
       formatTime,
       isDark,
       wsConnected,
+      isMobile,
+      isDesktop,
       Moon,
       Sunny,
       toggleTheme
@@ -353,7 +359,7 @@ export default {
 .header {
   text-align: center;
   margin-bottom: 30px;
-  padding: 20px 0;
+  padding: 20px 60px 20px 20px; /* Add right padding to prevent overlap */
   border-bottom: 2px solid #409eff;
   position: relative;
 }
@@ -365,12 +371,15 @@ export default {
   display: flex;
   gap: 10px;
   align-items: center;
+  z-index: 10;
 }
 
 .header h1 {
   margin: 0;
   font-size: 2.5em;
   color: var(--el-text-color-primary);
+  word-wrap: break-word;
+  max-width: 100%;
 }
 
 .subtitle {
@@ -493,12 +502,54 @@ html.dark .frequency-ranges-display {
     padding: 10px;
   }
 
+  .header {
+    padding: 15px 50px 15px 10px; /* Reduce padding, keep space for button */
+    margin-bottom: 20px;
+  }
+
   .header h1 {
-    font-size: 1.8em;
+    font-size: 1.5em;
+    line-height: 1.3;
+  }
+
+  .header-controls {
+    top: 15px;
+    right: 10px;
+  }
+
+  .theme-toggle {
+    transform: scale(0.9); /* Slightly smaller on mobile */
+  }
+
+  .countdown-wrapper {
+    font-size: 0.9em;
+    margin-top: 8px;
   }
 
   .subtitle {
     font-size: 1em;
+  }
+
+  /* Reduce card header padding on mobile */
+  .card-header {
+    font-size: 1em;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .last-update {
+    font-size: 0.85em;
+  }
+}
+
+/* Tablet responsiveness */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .header h1 {
+    font-size: 2em;
+  }
+
+  .header {
+    padding: 20px 55px 20px 20px;
   }
 }
 </style>

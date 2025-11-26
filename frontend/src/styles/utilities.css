@@ -182,3 +182,146 @@
 .form-container {
   max-width: 800px;
 }
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+/* Responsive Display Utilities */
+/* Hide elements on specific breakpoints */
+@media (max-width: 767px) {
+  .mobile-hidden {
+    display: none !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .tablet-hidden {
+    display: none !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .desktop-hidden {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .desktop-only-hidden {
+    display: none !important;
+  }
+}
+
+/* Show elements only on specific breakpoints */
+.mobile-only {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+.desktop-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .desktop-only {
+    display: block !important;
+  }
+}
+
+/* Table Responsive Wrapper */
+/* Enables horizontal scrolling for tables on mobile */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  .table-responsive {
+    border-radius: var(--border-radius-md);
+  }
+}
+
+/* Touch-Friendly Utilities */
+/* Ensure minimum touch target size (44x44px) */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile Spacing Utilities */
+/* Reduce spacing on mobile for better space utilization */
+@media (max-width: 767px) {
+  .mobile-p-sm {
+    padding: var(--spacing-sm) !important;
+  }
+
+  .mobile-p-xs {
+    padding: var(--spacing-xs) !important;
+  }
+
+  .mobile-m-sm {
+    margin: var(--spacing-sm) !important;
+  }
+
+  .mobile-m-xs {
+    margin: var(--spacing-xs) !important;
+  }
+
+  .mobile-mb-sm {
+    margin-bottom: var(--spacing-sm) !important;
+  }
+
+  .mobile-mt-sm {
+    margin-top: var(--spacing-sm) !important;
+  }
+}
+
+/* Mobile Typography */
+/* Responsive text sizes that scale down on mobile */
+@media (max-width: 767px) {
+  .mobile-text-xs {
+    font-size: 11px !important;
+  }
+
+  .mobile-text-sm {
+    font-size: 13px !important;
+  }
+
+  .mobile-text-base {
+    font-size: 14px !important;
+  }
+
+  .mobile-text-lg {
+    font-size: 16px !important;
+  }
+
+  .mobile-text-xl {
+    font-size: 18px !important;
+  }
+}
+
+/* Mobile Layout Utilities */
+/* Stack elements vertically on mobile */
+@media (max-width: 767px) {
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+
+  .mobile-full-width {
+    width: 100% !important;
+  }
+
+  .mobile-text-center {
+    text-align: center !important;
+  }
+}
