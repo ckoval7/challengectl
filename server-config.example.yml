@@ -37,6 +37,9 @@ server:
   heartbeat_timeout: 90      # Mark runner offline after this many seconds
   assignment_timeout: 300    # Requeue challenge after this many seconds (5 minutes)
 
+  # Listener recording settings
+  recording_priority_threshold: 1.0  # Minimum priority score to trigger recording (default: 1.0)
+
 # Conference settings
 conference:
   name: "ExampleCon 2025"

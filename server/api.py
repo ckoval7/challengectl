@@ -226,6 +226,14 @@ class ChallengeCtlAPI:
         """
         return self.config.get('frequency_ranges', [])
 
+    def get_recording_priority_threshold(self) -> float:
+        """Get the recording priority threshold from config.
+
+        Returns:
+            Recording priority threshold (default 1.0)
+        """
+        return self.config.get('server', {}).get('recording_priority_threshold', 1.0)
+
     def select_random_frequency(self, frequency_ranges: List[str]) -> Optional[float]:
         """Select a random frequency from one or more named frequency ranges.
 
@@ -2105,7 +2113,8 @@ class ChallengeCtlAPI:
                 self.broadcast_public_challenges()
 
                 # Check if we should assign a listener to record this transmission
-                if self.should_assign_listener(challenge):
+                threshold = self.get_recording_priority_threshold()
+                if self.should_assign_listener(challenge, threshold):
                     # Find available listener agents with WebSocket connection
                     listener_agents = self.db.get_all_agents(agent_type='listener')
                     logger.debug(f"Found {len(listener_agents)} total listener agents")
@@ -2227,7 +2236,7 @@ class ChallengeCtlAPI:
                                 logger.debug(f"Cleared forced recording flag for challenge {challenge['name']} (no listeners available)")
                 else:
                     priority = self.calculate_recording_priority(challenge)
-                    logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold 1.0")
+                    logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold {threshold:.2f}")
 
                 return jsonify({
                     'task': {
@@ -3330,11 +3339,12 @@ radios:
             challenges = self.db.get_challenges_with_queue_info()
 
             # Add recording priority information for each challenge
+            threshold = self.get_recording_priority_threshold()
             for challenge in challenges:
                 if challenge['enabled']:
                     recording_priority = self.calculate_recording_priority(challenge)
                     challenge['recording_priority'] = recording_priority
-                    challenge['will_be_recorded'] = recording_priority >= 1.0
+                    challenge['will_be_recorded'] = recording_priority >= threshold
                 else:
                     challenge['recording_priority'] = 0.0
                     challenge['will_be_recorded'] = False
