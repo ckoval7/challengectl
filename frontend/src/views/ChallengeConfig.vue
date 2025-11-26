@@ -192,6 +192,7 @@
         <el-table
           v-else
           :data="playlistChallenges"
+          :default-sort="{ prop: 'queue_position', order: 'ascending' }"
           class="w-full playlist-table"
         >
           <el-table-column
@@ -199,6 +200,7 @@
             label="Queue #"
             width="90"
             align="center"
+            sortable
           >
             <template #default="scope">
               <el-tag
@@ -1138,6 +1140,63 @@ function getPlaceholders(challengeId) {
   return recordingPlaceholders.value.get(challengeId) || []
 }
 
+// Client-side queue position calculator (matches server logic)
+function recalculateQueuePositions() {
+  // Get all enabled challenges that are in the queue
+  const allChallenges = Array.from(challengesMap.value.values())
+  const queueableChallenges = allChallenges.filter(c =>
+    c.enabled && ['queued', 'waiting', 'assigned'].includes(c.status)
+  )
+
+  // Sort using same logic as server SQL ORDER BY
+  const sorted = queueableChallenges.sort((a, b) => {
+    // 1. Priority DESC (highest priority first)
+    if (a.priority !== b.priority) {
+      return b.priority - a.priority
+    }
+
+    // 2. Never-transmitted challenges first (NULL last_tx_time)
+    const aHasTx = a.last_tx_time ? 1 : 0
+    const bHasTx = b.last_tx_time ? 1 : 0
+    if (aHasTx !== bHasTx) {
+      return aHasTx - bHasTx
+    }
+
+    // 3. If both have transmissions, oldest first (ASC by last_tx_time)
+    if (a.last_tx_time && b.last_tx_time) {
+      const timeA = new Date(a.last_tx_time).getTime()
+      const timeB = new Date(b.last_tx_time).getTime()
+      if (timeA !== timeB) {
+        return timeA - timeB
+      }
+    }
+
+    // 4. Finally, alphabetically by name (ASC)
+    return (a.name || '').localeCompare(b.name || '')
+  })
+
+  // Assign queue positions to sorted challenges
+  sorted.forEach((challenge, index) => {
+    challenge.queue_position = index + 1
+    challengesMap.value.set(challenge.challenge_id, challenge)
+  })
+
+  // Clear queue_position for challenges not in queue
+  allChallenges.forEach(challenge => {
+    if (!challenge.enabled || !['queued', 'waiting', 'assigned'].includes(challenge.status)) {
+      challenge.queue_position = null
+      challengesMap.value.set(challenge.challenge_id, challenge)
+    }
+  })
+
+  console.log('Queue positions recalculated:', sorted.map(c => ({
+    name: c.name,
+    queue_position: c.queue_position,
+    priority: c.priority,
+    last_tx_time: c.last_tx_time
+  })))
+}
+
 // Data loading
 async function loadChallenges() {
   try {
@@ -1274,14 +1333,17 @@ function handleChallengeUpdated(event) {
       ...challenge,
       enabled: Boolean(challenge.enabled)
     })
+
+    // Recalculate queue positions (enabled/priority/status may have changed)
+    recalculateQueuePositions()
   }
 }
 
-async function handleChallengeAssigned(event) {
+function handleChallengeAssigned(event) {
   console.log('Challenge assigned:', event)
   const { challenge_id, runner_id, status } = event
 
-  // Update challenge status and queue positions
+  // Update challenge status
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge) {
     challenge.status = status || 'assigned'
@@ -1289,11 +1351,10 @@ async function handleChallengeAssigned(event) {
     challengesMap.value.set(challenge_id, challenge)
   }
 
-  // Reload to get fresh queue positions for Playlist tab
-  await loadChallenges()
+  // No queue recalculation needed - assignment doesn't change queue order
 }
 
-async function handleTransmissionComplete(event) {
+function handleTransmissionComplete(event) {
   console.log('Transmission complete:', event)
   const { challenge_id, success } = event
 
@@ -1305,8 +1366,8 @@ async function handleTransmissionComplete(event) {
     challengesMap.value.set(challenge_id, challenge)
   }
 
-  // Reload to get accurate recording priority and next_tx_time
-  await loadChallenges()
+  // Recalculate queue positions (this challenge just moved to back)
+  recalculateQueuePositions()
 }
 
 // Challenge actions
@@ -1320,6 +1381,9 @@ async function toggleEnabled(challengeId, enabled) {
     if (challenge) {
       challenge.enabled = enabled
       challengesMap.value.set(challengeId, challenge)
+
+      // Recalculate queue positions (enabled state affects queue)
+      recalculateQueuePositions()
     }
   } catch (error) {
     console.error('Error toggling challenge:', error)

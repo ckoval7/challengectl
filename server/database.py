@@ -625,6 +625,8 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Get all enabled challenges ordered by queue priority with recording metadata
+            # Order: priority DESC, last_tx_time ASC (NULLS FIRST - never transmitted first), name ASC
+            # This ensures recently transmitted challenges move to the back of their priority group
             cursor.execute('''
                 SELECT
                     c.*,
@@ -638,7 +640,10 @@ class Database:
                 LEFT JOIN recordings r ON c.challenge_id = r.challenge_id
                 WHERE c.enabled = 1
                 GROUP BY c.challenge_id
-                ORDER BY c.priority DESC, c.name
+                ORDER BY c.priority DESC,
+                         CASE WHEN c.last_tx_time IS NULL THEN 0 ELSE 1 END,
+                         c.last_tx_time ASC,
+                         c.name ASC
             ''')
 
             enabled_challenges = []
