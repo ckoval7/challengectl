@@ -4139,7 +4139,7 @@ radios:
             self.socketio.emit('event', {
                 'type': event_type,
                 **data
-            })
+            }, namespace='/')
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
 
