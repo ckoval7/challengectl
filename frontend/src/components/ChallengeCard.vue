@@ -17,6 +17,7 @@
             {{ challenge.status }}
           </el-tag>
           <el-switch
+            v-if="showToggle"
             v-model="challenge.enabled"
             size="small"
             @change="handleEnabledChange"
@@ -165,6 +166,10 @@ const props = defineProps({
   systemPaused: {
     type: Boolean,
     default: false
+  },
+  showToggle: {
+    type: Boolean,
+    default: true
   }
 })
 

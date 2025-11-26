@@ -33,6 +33,8 @@
         <el-table
           v-else
           :data="sortedChallenges"
+          row-key="challenge_id"
+          :expand-row-keys="expandedRowKeys"
           class="w-full"
           @expand-change="handleExpandChange"
         >
@@ -177,6 +179,7 @@
               :recordings="getRecordings(challenge.challenge_id)"
               :placeholders="getPlaceholders(challenge.challenge_id)"
               :system-paused="systemPaused"
+              :show-toggle="false"
               @toggle-enabled="toggleEnabled"
               @trigger="triggerChallenge"
               @edit="editChallenge"
@@ -1121,6 +1124,11 @@ const playlistChallenges = computed(() => {
     .sort((a, b) => (a.queue_position || 999) - (b.queue_position || 999))
 })
 
+// Computed property for expanded row keys (for el-table expand state persistence)
+const expandedRowKeys = computed(() => {
+  return Array.from(expandedChallenges.value)
+})
+
 // Helper functions to get recordings and placeholders
 function getRecordings(challengeId) {
   return recordingsMap.value.get(challengeId) || []
@@ -1221,12 +1229,28 @@ function handleRecordingComplete(event) {
 
 function handleRecordingImageUploaded(event) {
   console.log('Recording image uploaded:', event)
-  const { challenge_id, recording } = event
+  const { challenge_id, recording_id, width, height, image_url, timestamp } = event
+
+  if (!challenge_id || !recording_id) {
+    console.warn('Missing required fields in recording_image_uploaded event:', event)
+    return
+  }
 
   // Remove placeholder
   const placeholders = recordingPlaceholders.value.get(challenge_id) || []
-  const filteredPlaceholders = placeholders.filter(p => p.recording_id !== recording.recording_id)
+  const filteredPlaceholders = placeholders.filter(p => p.recording_id !== recording_id)
   recordingPlaceholders.value.set(challenge_id, filteredPlaceholders)
+
+  // Create recording object from event data
+  const recording = {
+    recording_id,
+    challenge_id,
+    status: 'completed',
+    image_path: image_url,  // The server sends image_url
+    image_width: width,
+    image_height: height,
+    completed_at: timestamp
+  }
 
   // Add to recordings list (prepend to show newest first)
   const recordings = recordingsMap.value.get(challenge_id) || []
@@ -1253,7 +1277,7 @@ function handleChallengeUpdated(event) {
   }
 }
 
-function handleChallengeAssigned(event) {
+async function handleChallengeAssigned(event) {
   console.log('Challenge assigned:', event)
   const { challenge_id, runner_id, status } = event
 
@@ -1266,10 +1290,10 @@ function handleChallengeAssigned(event) {
   }
 
   // Reload to get fresh queue positions for Playlist tab
-  loadChallenges()
+  await loadChallenges()
 }
 
-function handleTransmissionComplete(event) {
+async function handleTransmissionComplete(event) {
   console.log('Transmission complete:', event)
   const { challenge_id, success } = event
 
@@ -1282,7 +1306,7 @@ function handleTransmissionComplete(event) {
   }
 
   // Reload to get accurate recording priority and next_tx_time
-  loadChallenges()
+  await loadChallenges()
 }
 
 // Challenge actions
