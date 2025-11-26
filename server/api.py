@@ -2537,6 +2537,7 @@ class ChallengeCtlAPI:
                     'challenge_id': recording['challenge_id'],
                     'width': width,
                     'height': height,
+                    'image_url': f'/api/recordings/{recording_id}/image',
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 })
 

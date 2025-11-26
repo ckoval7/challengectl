@@ -6,23 +6,33 @@
       v-model="activeTab"
       type="border-card"
     >
-      <!-- Live Status Tab -->
+      <!-- Live Status Tab (REWRITTEN) -->
       <el-tab-pane
         label="Live Status"
         name="status"
       >
-        <!-- <div class="mb-xl">
-          <el-button
-            type="primary"
-            @click="reloadChallenges"
-          >
-            Reload from Config
-          </el-button>
-        </div> -->
+        <!-- Mobile View: Card-based layout -->
+        <div v-if="isMobile" class="cards-layout">
+          <TransitionGroup name="challenge-list">
+            <ChallengeCard
+              v-for="challenge in sortedChallenges"
+              :key="challenge.challenge_id"
+              :challenge="challenge"
+              :recordings="getRecordings(challenge.challenge_id)"
+              :placeholders="getPlaceholders(challenge.challenge_id)"
+              :system-paused="systemPaused"
+              @toggle-enabled="toggleEnabled"
+              @trigger="triggerChallenge"
+              @edit="editChallenge"
+              @delete="deleteChallenge"
+            />
+          </TransitionGroup>
+        </div>
 
+        <!-- Desktop View: Table with expandable rows -->
         <el-table
-          ref="liveStatusTableRef"
-          :data="challenges"
+          v-else
+          :data="sortedChallenges"
           class="w-full"
           @expand-change="handleExpandChange"
         >
@@ -30,54 +40,11 @@
             <template #default="props">
               <div class="recordings-section">
                 <h3>Recordings</h3>
-                <div v-if="loadingRecordings[props.row.challenge_id]" class="loading">
-                  <el-icon class="is-loading"><Loading /></el-icon>
-                  Loading recordings...
-                </div>
-                <div v-else-if="!recordings[props.row.challenge_id] || recordings[props.row.challenge_id].length === 0" class="no-recordings">
-                  No recordings available for this challenge.
-                </div>
-                <div v-else class="recordings-grid">
-                  <div
-                    v-for="recording in getDisplayedRecordings(props.row.challenge_id)"
-                    :key="recording.recording_id"
-                    class="recording-card"
-                  >
-                    <div class="recording-header">
-                      <span class="recording-title">Recording #{{ recording.recording_id }}</span>
-                      <el-tag
-                        :type="recording.status === 'completed' ? 'success' : recording.status === 'failed' ? 'danger' : 'warning'"
-                        size="small"
-                      >
-                        {{ recording.status }}
-                      </el-tag>
-                    </div>
-                    <div class="recording-info">
-                      <div><strong>Listener:</strong> {{ recording.listener_id }}</div>
-                      <div><strong>Frequency:</strong> {{ formatFrequency(recording.frequency) }}</div>
-                      <div><strong>Duration:</strong> {{ recording.duration_seconds ? recording.duration_seconds.toFixed(1) : '0.0' }}s</div>
-                      <div><strong>Started:</strong> {{ formatTimestamp(recording.started_at) }}</div>
-                      <div v-if="recording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}</div>
-                    </div>
-                    <div v-if="recording.image_path && recording.status === 'completed'" class="recording-image">
-                      <img
-                        :src="`/api/recordings/${recording.recording_id}/image`"
-                        :alt="`Waterfall for recording ${recording.recording_id}`"
-                        @click="showImageModal(recording)"
-                      />
-                    </div>
-                    <div v-else-if="recording.error_message" class="recording-error">
-                      <el-alert type="error" :closable="false">
-                        {{ recording.error_message }}
-                      </el-alert>
-                    </div>
-                  </div>
-                </div>
-                <div v-if="shouldShowViewAllLink(props.row.challenge_id)" class="view-all-link">
-                  <router-link :to="`/recordings/${props.row.challenge_id}`">
-                    View All {{ recordings[props.row.challenge_id].length }} Recordings →
-                  </router-link>
-                </div>
+                <RecordingGallery
+                  :recordings="getRecordings(props.row.challenge_id)"
+                  :placeholders="getPlaceholders(props.row.challenge_id)"
+                  :max-recordings="6"
+                />
               </div>
             </template>
           </el-table-column>
@@ -153,7 +120,7 @@
             <template #default="scope">
               <el-switch
                 v-model="scope.row.enabled"
-                @change="toggleChallenge(scope.row)"
+                @change="toggleEnabled(scope.row.challenge_id, scope.row.enabled)"
               />
             </template>
           </el-table-column>
@@ -181,6 +148,7 @@
               <el-button
                 size="small"
                 type="primary"
+                :disabled="systemPaused"
                 @click="triggerChallenge(scope.row.challenge_id)"
               >
                 Trigger Now
@@ -190,7 +158,7 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- Playlist Tab -->
+      <!-- Playlist Tab (REWRITTEN) -->
       <el-tab-pane
         label="Playlist"
         name="playlist"
@@ -199,7 +167,27 @@
           <p>View the transmission queue order and recording schedule for all enabled challenges.</p>
         </div>
 
+        <!-- Mobile View: Card-based layout -->
+        <div v-if="isMobile" class="cards-layout playlist-cards">
+          <TransitionGroup name="playlist">
+            <ChallengeCard
+              v-for="challenge in playlistChallenges"
+              :key="challenge.challenge_id"
+              :challenge="challenge"
+              :recordings="getRecordings(challenge.challenge_id)"
+              :placeholders="getPlaceholders(challenge.challenge_id)"
+              :system-paused="systemPaused"
+              @toggle-enabled="toggleEnabled"
+              @trigger="triggerChallenge"
+              @edit="editChallenge"
+              @delete="deleteChallenge"
+            />
+          </TransitionGroup>
+        </div>
+
+        <!-- Desktop View: Table -->
         <el-table
+          v-else
           :data="playlistChallenges"
           class="w-full playlist-table"
         >
@@ -313,7 +301,7 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- Create/Edit Challenge Tab -->
+      <!-- Create/Edit Challenge Tab (PRESERVED) -->
       <el-tab-pane
         label="Create Challenge"
         name="create"
@@ -760,7 +748,7 @@
         </el-form>
       </el-tab-pane>
 
-      <!-- Import from YAML Tab -->
+      <!-- Import from YAML Tab (PRESERVED) -->
       <el-tab-pane
         label="Import from YAML"
         name="import"
@@ -874,7 +862,7 @@ print(response.json())</code></pre>
         </div>
       </el-tab-pane>
 
-      <!-- Manage Challenges Tab -->
+      <!-- Manage Challenges Tab (PRESERVED) -->
       <el-tab-pane
         label="Manage Challenges"
         name="manage"
@@ -889,7 +877,7 @@ print(response.json())</code></pre>
         </div>
 
         <el-table
-          :data="challenges"
+          :data="sortedChallenges"
           class="w-full"
         >
           <el-table-column
@@ -1035,761 +1023,699 @@ print(response.json())</code></pre>
         </el-button>
       </template>
     </el-dialog>
-
-    <!-- Recording Image Modal -->
-    <el-dialog
-      v-model="imageModalVisible"
-      :title="`Recording #${selectedRecording?.recording_id} - Waterfall`"
-      width="90%"
-      @close="closeImageModal"
-    >
-      <div v-if="selectedRecording" class="modal-content">
-        <div class="modal-info">
-          <p><strong>Challenge:</strong> {{ challenges.find(c => c.challenge_id === selectedRecording.challenge_id)?.name || 'Unknown' }}</p>
-          <p><strong>Listener:</strong> {{ selectedRecording.listener_id }}</p>
-          <p><strong>Frequency:</strong> {{ formatFrequency(selectedRecording.frequency) }}</p>
-          <p><strong>Duration:</strong> {{ selectedRecording.duration_seconds ? selectedRecording.duration_seconds.toFixed(1) : '0.0' }}s</p>
-          <p><strong>Started:</strong> {{ formatTimestamp(selectedRecording.started_at) }}</p>
-          <p v-if="selectedRecording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}</p>
-        </div>
-        <div class="modal-image">
-          <img
-            :src="`/api/recordings/${selectedRecording.recording_id}/image`"
-            :alt="`Waterfall for recording ${selectedRecording.recording_id}`"
-          />
-        </div>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
-<script>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../api'
 import { websocket } from '../websocket'
-import { ElMessage } from 'element-plus'
 import { formatDateTime, parseServerTime } from '../utils/time'
-import { Loading } from '@element-plus/icons-vue'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
+import ChallengeCard from '../components/ChallengeCard.vue'
+import RecordingGallery from '../components/RecordingGallery.vue'
 
-export default {
-  name: 'ChallengeConfig',
-  components: {
-    Loading
-  },
-  setup() {
-    const activeTab = ref('status')
-    const challenges = ref([])
-    const importing = ref(false)
+// Props (system paused state from parent)
+const props = defineProps({
+  systemPaused: {
+    type: Boolean,
+    default: false
+  }
+})
 
-    // Live Status table ref and expanded state tracking
-    const liveStatusTableRef = ref(null)
-    const expandedChallengeIds = ref(new Set())
+// Composables
+const { isMobile } = useBreakpoint()
 
-    // Recordings
-    const recordings = ref({})
-    const loadingRecordings = ref({})
-    const imageModalVisible = ref(false)
-    const selectedRecording = ref(null)
+// UI State
+const activeTab = ref('status')
+const importing = ref(false)
+const loadingRanges = ref(false)
+const editDialogVisible = ref(false)
+const editForm = ref({})
+const editConfigJson = ref('')
 
-    // Frequency ranges
-    const availableFrequencyRanges = ref([])
-    const frequencyMode = ref('direct') // 'direct' or 'ranges'
-    const loadingRanges = ref(false)
+// WebSocket-first state management with Maps
+const challengesMap = ref(new Map())
+const recordingsMap = ref(new Map())
+const recordingPlaceholders = ref(new Map())
+const expandedChallenges = ref(new Set())
 
-    // Create form
-    const challengeForm = ref({
-      name: '',
-      modulation: 'nbfm',
-      frequency_mhz: 146.550, // Stored in MHz for UI
-      frequency_ranges: [], // Array of named frequency ranges
-      manual_min_mhz: null, // Manual range minimum in MHz
-      manual_max_mhz: null, // Manual range maximum in MHz
-      enabled: true,
-      flag: '',
-      min_delay: 60,
-      max_delay: 90,
-      priority: 0,
-      public_fields: ['name', 'modulation', 'frequency', 'status'], // Default public fields
-      wav_samplerate: 48000,
-      mode: 'usb', // SSB/FreeDV mode (usb or lsb)
-      speed: 35, // CW
-      channel_spacing: 10000, // FHSS
-      hop_rate: 10, // FHSS
-      hop_time: 60, // FHSS
-      seed: '', // FHSS
+// Frequency ranges
+const availableFrequencyRanges = ref([])
+const frequencyMode = ref('direct')
+
+// Create form
+const challengeForm = ref({
+  name: '',
+  modulation: 'nbfm',
+  frequency_mhz: 146.550,
+  frequency_ranges: [],
+  manual_min_mhz: null,
+  manual_max_mhz: null,
+  enabled: true,
+  flag: '',
+  min_delay: 60,
+  max_delay: 90,
+  priority: 0,
+  public_fields: ['name', 'modulation', 'frequency', 'status'],
+  wav_samplerate: 48000,
+  mode: 'usb',
+  speed: 35,
+  channel_spacing: 10000,
+  hop_rate: 10,
+  hop_time: 60,
+  seed: '',
+})
+
+const flagFile = ref(null)
+const flagUploadRef = ref(null)
+
+// Import form
+const yamlFile = ref(null)
+const challengeFiles = ref([])
+const yamlUploadRef = ref(null)
+const filesUploadRef = ref(null)
+
+// Computed properties
+const showModulationSpecificFields = computed(() => {
+  return challengeForm.value.modulation !== ''
+})
+
+// Sorted challenges: enabled first (alphabetically), then disabled (alphabetically)
+const sortedChallenges = computed(() => {
+  const challenges = Array.from(challengesMap.value.values())
+  return challenges.sort((a, b) => {
+    if (a.enabled !== b.enabled) {
+      return b.enabled - a.enabled // Enabled first
+    }
+    return (a.name || '').localeCompare(b.name || '')
+  })
+})
+
+// Playlist challenges: enabled only, sorted by queue_position
+const playlistChallenges = computed(() => {
+  const challenges = Array.from(challengesMap.value.values())
+  return challenges
+    .filter(c => c.enabled && c.queue_position !== null)
+    .sort((a, b) => (a.queue_position || 999) - (b.queue_position || 999))
+})
+
+// Helper functions to get recordings and placeholders
+function getRecordings(challengeId) {
+  return recordingsMap.value.get(challengeId) || []
+}
+
+function getPlaceholders(challengeId) {
+  return recordingPlaceholders.value.get(challengeId) || []
+}
+
+// Data loading
+async function loadChallenges() {
+  try {
+    const response = await api.get('/challenges')
+    const challenges = response.data.challenges || []
+
+    // Populate Map
+    challengesMap.value.clear()
+    challenges.forEach(challenge => {
+      challengesMap.value.set(challenge.challenge_id, {
+        ...challenge,
+        enabled: Boolean(challenge.enabled)
+      })
     })
 
-    const flagFile = ref(null)
-    const flagUploadRef = ref(null)
+    // Load initial recordings for each challenge (most recent 6)
+    for (const challenge of challenges) {
+      await loadChallengeRecordings(challenge.challenge_id)
+    }
+  } catch (error) {
+    console.error('Failed to load challenges:', error)
+    ElMessage.error('Failed to load challenges')
+  }
+}
 
-    // Import form
-    const yamlFile = ref(null)
-    const challengeFiles = ref([])
-    const yamlUploadRef = ref(null)
-    const filesUploadRef = ref(null)
-
-    // Edit dialog
-    const editDialogVisible = ref(false)
-    const editForm = ref({})
-    const editConfigJson = ref('')
-
-    const showModulationSpecificFields = computed(() => {
-      return challengeForm.value.modulation !== ''
+async function loadChallengeRecordings(challengeId) {
+  try {
+    const response = await api.get(`/challenges/${challengeId}/recordings`, {
+      params: { limit: 6 }
     })
+    const recordings = response.data.recordings || []
+    recordingsMap.value.set(challengeId, recordings)
+  } catch (error) {
+    console.error(`Failed to load recordings for challenge ${challengeId}:`, error)
+    recordingsMap.value.set(challengeId, [])
+  }
+}
 
-    // Computed property for playlist view (only enabled challenges sorted by queue position)
-    const playlistChallenges = computed(() => {
-      return challenges.value
-        .filter(c => c.enabled && c.queue_position !== null)
-        .sort((a, b) => (a.queue_position || 999) - (b.queue_position || 999))
+async function loadFrequencyRanges() {
+  try {
+    const response = await api.get('/frequency-ranges')
+    availableFrequencyRanges.value = response.data || []
+  } catch (error) {
+    console.error('Failed to load frequency ranges:', error)
+  }
+}
+
+async function reloadFrequencyRanges() {
+  loadingRanges.value = true
+  try {
+    const response = await api.post('/frequency-ranges/reload')
+    availableFrequencyRanges.value = response.data.ranges || []
+    ElMessage.success(`Reloaded ${response.data.count} frequency ranges`)
+  } catch (error) {
+    console.error('Failed to reload frequency ranges:', error)
+    ElMessage.error(error.response?.data?.error || 'Failed to reload frequency ranges')
+  } finally {
+    loadingRanges.value = false
+  }
+}
+
+// WebSocket event handlers (granular updates)
+function handleRecordingStarted(event) {
+  console.log('Recording started:', event)
+  const { challenge_id, recording_id, listener_id, frequency } = event
+
+  // Add placeholder
+  const placeholders = recordingPlaceholders.value.get(challenge_id) || []
+  placeholders.unshift({
+    recording_id,
+    listener_id,
+    frequency,
+    status: 'in_progress'
+  })
+  recordingPlaceholders.value.set(challenge_id, placeholders)
+}
+
+function handleRecordingComplete(event) {
+  console.log('Recording complete:', event)
+  const { challenge_id, recording_id, status } = event
+
+  // Update placeholder status
+  const placeholders = recordingPlaceholders.value.get(challenge_id) || []
+  const placeholder = placeholders.find(p => p.recording_id === recording_id)
+  if (placeholder) {
+    placeholder.status = status
+  }
+}
+
+function handleRecordingImageUploaded(event) {
+  console.log('Recording image uploaded:', event)
+  const { challenge_id, recording } = event
+
+  // Remove placeholder
+  const placeholders = recordingPlaceholders.value.get(challenge_id) || []
+  const filteredPlaceholders = placeholders.filter(p => p.recording_id !== recording.recording_id)
+  recordingPlaceholders.value.set(challenge_id, filteredPlaceholders)
+
+  // Add to recordings list (prepend to show newest first)
+  const recordings = recordingsMap.value.get(challenge_id) || []
+  recordings.unshift(recording)
+
+  // Keep only most recent 6
+  if (recordings.length > 6) {
+    recordings.splice(6)
+  }
+
+  recordingsMap.value.set(challenge_id, recordings)
+}
+
+function handleChallengeUpdated(event) {
+  console.log('Challenge updated:', event)
+  const { challenge } = event
+
+  // Update single challenge in Map
+  if (challenge && challenge.challenge_id) {
+    challengesMap.value.set(challenge.challenge_id, {
+      ...challenge,
+      enabled: Boolean(challenge.enabled)
     })
+  }
+}
 
-    // Convert public_fields array to public_view object format
-    const convertPublicFieldsToView = (publicFields) => {
-      // Always explicitly set all fields (default to false if not in array)
-      // This ensures unchecked fields are hidden, not shown by backend defaults
-      const fields = publicFields || []
-      return {
-        show_modulation: fields.includes('modulation'),
-        show_frequency: fields.includes('frequency'),
-        show_last_tx_time: fields.includes('last_tx_time'),
-        show_active_status: fields.includes('status')
-      }
+function handleChallengeAssigned(event) {
+  console.log('Challenge assigned:', event)
+  const { challenge_id, runner_id, status } = event
+
+  // Update challenge status and queue positions
+  const challenge = challengesMap.value.get(challenge_id)
+  if (challenge) {
+    challenge.status = status || 'assigned'
+    challenge.assigned_to = runner_id
+    challengesMap.value.set(challenge_id, challenge)
+  }
+
+  // Reload to get fresh queue positions for Playlist tab
+  loadChallenges()
+}
+
+function handleTransmissionComplete(event) {
+  console.log('Transmission complete:', event)
+  const { challenge_id, success } = event
+
+  const challenge = challengesMap.value.get(challenge_id)
+  if (challenge) {
+    challenge.transmission_count = (challenge.transmission_count || 0) + 1
+    challenge.status = success ? 'queued' : 'waiting'
+    challenge.last_tx_time = new Date().toISOString()
+    challengesMap.value.set(challenge_id, challenge)
+  }
+
+  // Reload to get accurate recording priority and next_tx_time
+  loadChallenges()
+}
+
+// Challenge actions
+async function toggleEnabled(challengeId, enabled) {
+  try {
+    await api.post(`/challenges/${challengeId}/enable`, { enabled })
+    ElMessage.success(`Challenge ${enabled ? 'enabled' : 'disabled'}`)
+
+    // Update locally
+    const challenge = challengesMap.value.get(challengeId)
+    if (challenge) {
+      challenge.enabled = enabled
+      challengesMap.value.set(challengeId, challenge)
     }
-
-    const onModulationChange = () => {
-      // Reset flag when modulation changes
-      challengeForm.value.flag = ''
-      flagFile.value = null
-      if (flagUploadRef.value) {
-        flagUploadRef.value.clearFiles()
-      }
-    }
-
-    const handleFlagFileChange = (file) => {
-      flagFile.value = file.raw
-    }
-
-    const handleYamlChange = (file) => {
-      yamlFile.value = file.raw
-    }
-
-    const handleFilesChange = (file, fileList) => {
-      challengeFiles.value = fileList
-    }
-
-    const resetForm = () => {
-      challengeForm.value = {
-        name: '',
-        modulation: 'nbfm',
-        frequency_mhz: 146.550,
-        frequency_ranges: [],
-        manual_min_mhz: null,
-        manual_max_mhz: null,
-        enabled: true,
-        flag: '',
-        min_delay: 60,
-        max_delay: 90,
-        priority: 0,
-        public_fields: ['name', 'modulation', 'frequency', 'status'],
-        wav_samplerate: 48000,
-        mode: 'usb',
-        speed: 35,
-        channel_spacing: 10000,
-        hop_rate: 10,
-        hop_time: 60,
-        seed: '',
-      }
-      frequencyMode.value = 'direct'
-      flagFile.value = null
-      if (flagUploadRef.value) {
-        flagUploadRef.value.clearFiles()
-      }
-    }
-
-    const clearImportForm = () => {
-      yamlFile.value = null
-      challengeFiles.value = []
-      if (yamlUploadRef.value) {
-        yamlUploadRef.value.clearFiles()
-      }
-      if (filesUploadRef.value) {
-        filesUploadRef.value.clearFiles()
-      }
-    }
-
-    const createChallenge = async () => {
-      if (!challengeForm.value.name) {
-        ElMessage.error('Challenge name is required')
-        return
-      }
-
-      if (!challengeForm.value.modulation) {
-        ElMessage.error('Modulation is required')
-        return
-      }
-
-      // Validate frequency or frequency_ranges
-      if (frequencyMode.value === 'direct') {
-        if (!challengeForm.value.frequency_mhz) {
-          ElMessage.error('Frequency is required')
-          return
-        }
-      } else if (frequencyMode.value === 'ranges') {
-        if (!challengeForm.value.frequency_ranges || challengeForm.value.frequency_ranges.length === 0) {
-          ElMessage.error('At least one frequency range is required')
-          return
-        }
-      } else if (frequencyMode.value === 'manual') {
-        if (!challengeForm.value.manual_min_mhz || !challengeForm.value.manual_max_mhz) {
-          ElMessage.error('Both minimum and maximum frequencies are required')
-          return
-        }
-        if (challengeForm.value.manual_min_mhz >= challengeForm.value.manual_max_mhz) {
-          ElMessage.error('Minimum frequency must be less than maximum frequency')
-          return
-        }
-      }
-
-      if (challengeForm.value.min_delay > challengeForm.value.max_delay) {
-        ElMessage.error('Min delay must be less than or equal to max delay')
-        return
-      }
-
-      try {
-        // Build config object based on modulation type
-        const config = {
-          name: challengeForm.value.name,
-          modulation: challengeForm.value.modulation,
-          enabled: challengeForm.value.enabled,
-          min_delay: challengeForm.value.min_delay,
-          max_delay: challengeForm.value.max_delay,
-          priority: challengeForm.value.priority,
-          public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
-        }
-
-        // Add frequency or frequency_ranges based on mode (convert MHz to Hz)
-        if (frequencyMode.value === 'direct') {
-          config.frequency = Math.round(challengeForm.value.frequency_mhz * 1000000)
-        } else if (frequencyMode.value === 'ranges') {
-          config.frequency_ranges = challengeForm.value.frequency_ranges
-        } else if (frequencyMode.value === 'manual') {
-          config.manual_frequency_range = {
-            min_hz: Math.round(challengeForm.value.manual_min_mhz * 1000000),
-            max_hz: Math.round(challengeForm.value.manual_max_mhz * 1000000)
-          }
-        }
-
-        // Handle file upload if a file was selected
-        if (flagFile.value) {
-          try {
-            // Upload the file first
-            const formData = new FormData()
-            formData.append('file', flagFile.value)
-
-            const uploadResponse = await api.post('/files/upload', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
-            })
-
-            // Store the file hash in the config
-            config.flag_file_hash = uploadResponse.data.file_hash
-            // Also store the original filename for reference
-            if (!challengeForm.value.flag) {
-              config.flag = uploadResponse.data.filename
-            }
-          } catch (uploadError) {
-            console.error('Failed to upload file:', uploadError)
-            ElMessage.error(uploadError.response?.data?.error || 'Failed to upload file')
-            return
-          }
-        }
-
-        // Add flag text if provided (and no file was uploaded)
-        if (challengeForm.value.flag && !flagFile.value) {
-          config.flag = challengeForm.value.flag
-        }
-
-        // Add modulation-specific fields
-        if (['nbfm', 'ssb', 'freedv', 'fhss'].includes(challengeForm.value.modulation)) {
-          config.wav_samplerate = challengeForm.value.wav_samplerate
-        }
-
-        if (['ssb', 'freedv'].includes(challengeForm.value.modulation)) {
-          config.mode = challengeForm.value.mode
-        }
-
-        if (challengeForm.value.modulation === 'cw') {
-          config.speed = challengeForm.value.speed
-        }
-
-        if (challengeForm.value.modulation === 'fhss') {
-          config.channel_spacing = challengeForm.value.channel_spacing
-          config.hop_rate = challengeForm.value.hop_rate
-          config.hop_time = challengeForm.value.hop_time
-          if (challengeForm.value.seed) {
-            config.seed = challengeForm.value.seed
-          }
-        }
-
-        await api.post('/challenges', {
-          name: challengeForm.value.name,
-          config: config
-        })
-
-        ElMessage.success('Challenge created successfully')
-        resetForm()
-        loadChallenges()
-        activeTab.value = 'manage'
-      } catch (error) {
-        console.error('Failed to create challenge:', error)
-        ElMessage.error(error.response?.data?.error || 'Failed to create challenge')
-      }
-    }
-
-    const importChallenges = async () => {
-      if (!yamlFile.value) {
-        ElMessage.error('Please select a YAML file')
-        return
-      }
-
-      importing.value = true
-
-      try {
-        const formData = new FormData()
-        formData.append('yaml_file', yamlFile.value)
-
-        // Add challenge files
-        challengeFiles.value.forEach(file => {
-          formData.append(file.name, file.raw)
-        })
-
-        const response = await api.post('/challenges/import', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        })
-
-        const result = response.data
-        let message = `Imported successfully: ${result.added} added, ${result.updated} updated`
-        if (result.files_uploaded > 0) {
-          message += `, ${result.files_uploaded} files uploaded`
-        }
-
-        ElMessage.success(message)
-
-        if (result.errors && result.errors.length > 0) {
-          ElMessage.warning(`Some errors occurred: ${result.errors.join(', ')}`)
-        }
-
-        clearImportForm()
-        loadChallenges()
-        activeTab.value = 'manage'
-      } catch (error) {
-        console.error('Failed to import challenges:', error)
-        ElMessage.error(error.response?.data?.error || 'Failed to import challenges')
-      } finally {
-        importing.value = false
-      }
-    }
-
-    const restoreExpandedRows = () => {
-      // Restore expanded state after data refresh
-      if (!liveStatusTableRef.value || expandedChallengeIds.value.size === 0) {
-        return
-      }
-
-      // Use nextTick to ensure DOM is updated before toggling rows
-      setTimeout(() => {
-        challenges.value.forEach(challenge => {
-          if (expandedChallengeIds.value.has(challenge.challenge_id)) {
-            liveStatusTableRef.value?.toggleRowExpansion(challenge, true)
-          }
-        })
-      }, 0)
-    }
-
-    const loadChallenges = async () => {
-      try {
-        const response = await api.get('/challenges')
-        // Ensure enabled is a proper boolean
-        challenges.value = (response.data.challenges || []).map(c => ({
-          ...c,
-          enabled: Boolean(c.enabled)
-        }))
-        // Restore expanded rows after data is loaded
-        restoreExpandedRows()
-      } catch (error) {
-        console.error('Failed to load challenges:', error)
-        ElMessage.error('Failed to load challenges')
-      }
-    }
-
-    const loadFrequencyRanges = async () => {
-      try {
-        const response = await api.get('/frequency-ranges')
-        availableFrequencyRanges.value = response.data || []
-      } catch (error) {
-        console.error('Failed to load frequency ranges:', error)
-        // Don't show error message - frequency ranges are optional
-      }
-    }
-
-    const reloadFrequencyRanges = async () => {
-      loadingRanges.value = true
-      try {
-        const response = await api.post('/frequency-ranges/reload')
-        availableFrequencyRanges.value = response.data.ranges || []
-        ElMessage.success(`Reloaded ${response.data.count} frequency ranges`)
-      } catch (error) {
-        console.error('Failed to reload frequency ranges:', error)
-        ElMessage.error(error.response?.data?.error || 'Failed to reload frequency ranges')
-      } finally {
-        loadingRanges.value = false
-      }
-    }
-
-    // const reloadChallenges = async () => {
-    //   try {
-    //     const response = await api.post('/challenges/reload')
-    //     ElMessage.success(`Reloaded challenges: ${response.data.added} added`)
-    //     loadChallenges()
-    //   } catch (error) {
-    //     console.error('Error reloading challenges:', error)
-    //     ElMessage.error('Failed to reload challenges')
-    //   }
-    // }
-
-    const toggleChallenge = async (challenge) => {
-      try {
-        await api.post(`/challenges/${challenge.challenge_id}/enable`, {
-          enabled: challenge.enabled
-        })
-        ElMessage.success(`Challenge ${challenge.enabled ? 'enabled' : 'disabled'}`)
-        // Reload to ensure UI is in sync with database
-        await loadChallenges()
-      } catch (error) {
-        console.error('Error toggling challenge:', error)
-        ElMessage.error('Failed to update challenge')
-        loadChallenges()  // Reload to reset state
-      }
-    }
-
-    const triggerChallenge = async (challengeId) => {
-      try {
-        await api.post(`/challenges/${challengeId}/trigger`)
-        ElMessage.success('Challenge triggered')
-        loadChallenges()
-      } catch (error) {
-        console.error('Error triggering challenge:', error)
-        ElMessage.error('Failed to trigger challenge')
-      }
-    }
-
-    const getStatusType = (challenge) => {
-      if (!challenge.enabled) return 'info'
-      switch (challenge.status) {
-        case 'queued': return 'success'  // Green - ready
-        case 'waiting': return 'warning' // Orange - delay timer
-        case 'assigned': return ''       // Default - transmitting
-        default: return 'info'
-      }
-    }
-
-    const editChallenge = (challenge) => {
-      editForm.value = { ...challenge }
-      editConfigJson.value = JSON.stringify(challenge.config, null, 2)
-      editDialogVisible.value = true
-    }
-
-    const saveEditedChallenge = async () => {
-      try {
-        const config = JSON.parse(editConfigJson.value)
-
-        await api.put(`/challenges/${editForm.value.challenge_id}`, {
-          config: config
-        })
-
-        ElMessage.success('Challenge updated successfully')
-        editDialogVisible.value = false
-        loadChallenges()
-      } catch (error) {
-        console.error('Failed to update challenge:', error)
-        if (error instanceof SyntaxError) {
-          ElMessage.error('Invalid JSON format')
-        } else {
-          ElMessage.error(error.response?.data?.error || 'Failed to update challenge')
-        }
-      }
-    }
-
-    const deleteChallenge = async (challengeId) => {
-      try {
-        await api.delete(`/challenges/${challengeId}`)
-        ElMessage.success('Challenge deleted successfully')
-        loadChallenges()
-      } catch (error) {
-        console.error('Failed to delete challenge:', error)
-        ElMessage.error(error.response?.data?.error || 'Failed to delete challenge')
-      }
-    }
-
-    const formatFrequency = (freq) => {
-      if (!freq) return 'N/A'
-      if (freq >= 1000000000) {
-        return `${(freq / 1000000000).toFixed(3)} GHz`
-      } else if (freq >= 1000000) {
-        return `${(freq / 1000000).toFixed(3)} MHz`
-      } else if (freq >= 1000) {
-        return `${(freq / 1000).toFixed(3)} kHz`
-      }
-      return `${freq} Hz`
-    }
-
-    const getDisplayNameForRange = (rangeName) => {
-      const range = availableFrequencyRanges.value.find(r => r.name === rangeName)
-      return range?.display_name || rangeName
-    }
-
-    const formatFrequencyRanges = (ranges) => {
-      if (!ranges || ranges.length === 0) return 'N/A'
-      return ranges.map(r => getDisplayNameForRange(r)).join(', ')
-    }
-
-    // Format relative time for next available transmission
-    const formatNextAvailable = (isoTimestamp) => {
-      if (!isoTimestamp) {
-        return 'Ready now'
-      }
-
-      const targetTime = parseServerTime(isoTimestamp)
-      const now = new Date()
-      const diffMs = targetTime - now
-
-      if (diffMs <= 0) {
-        return 'Ready now'
-      }
-
-      const diffSec = Math.floor(diffMs / 1000)
-      const diffMin = Math.floor(diffSec / 60)
-      const diffHour = Math.floor(diffMin / 60)
-      const diffDay = Math.floor(diffHour / 24)
-
-      if (diffDay > 0) {
-        return `Ready in ${diffDay}d ${diffHour % 24}h`
-      } else if (diffHour > 0) {
-        return `Ready in ${diffHour}h ${diffMin % 60}m`
-      } else if (diffMin > 0) {
-        return `Ready in ${diffMin}m`
-      } else {
-        return `Ready in ${diffSec}s`
-      }
-    }
-
-    // Format recording priority number
-    const formatRecordingPriority = (priority) => {
-      if (priority === null || priority === undefined) {
-        return 'N/A'
-      }
-      if (priority >= 1000) {
-        return '1000+'
-      }
-      return priority.toFixed(1)
-    }
-
-    // Get Element Plus tag type for recording priority
-    const getRecordingPriorityType = (priority) => {
-      if (priority === null || priority === undefined) {
-        return 'info'
-      }
-      if (priority >= 1000) {
-        return 'danger' // Never recorded or forced
-      } else if (priority >= 10) {
-        return 'warning' // High priority
-      } else if (priority >= 1.0) {
-        return 'success' // Will be recorded
-      } else {
-        return 'info' // Won't be recorded
-      }
-    }
-
-    // Get Element Plus tag type for challenge priority
-    const getPriorityType = (priority) => {
-      if (priority >= 75) {
-        return 'danger'
-      } else if (priority >= 50) {
-        return 'warning'
-      } else if (priority >= 25) {
-        return 'success'
-      } else {
-        return 'info'
-      }
-    }
-
-    const loadRecordings = async (challengeId) => {
-      if (recordings.value[challengeId]) {
-        // Already loaded
-        return
-      }
-
-      loadingRecordings.value[challengeId] = true
-      try {
-        const response = await api.get(`/challenges/${challengeId}/recordings`)
-        recordings.value[challengeId] = response.data.recordings || []
-      } catch (error) {
-        console.error('Error loading recordings:', error)
-        ElMessage.error('Failed to load recordings')
-        recordings.value[challengeId] = []
-      } finally {
-        loadingRecordings.value[challengeId] = false
-      }
-    }
-
-    const getDisplayedRecordings = (challengeId) => {
-      const recordingList = recordings.value[challengeId]
-      if (!recordingList || recordingList.length === 0) {
-        return []
-      }
-
-      // Check if there's an in-progress recording
-      const hasInProgress = recordingList.some(r => r.status === 'in_progress')
-
-      // Show last 5, or last 6 if there's an in-progress recording
-      const limit = hasInProgress ? 6 : 5
-      return recordingList.slice(0, limit)
-    }
-
-    const shouldShowViewAllLink = (challengeId) => {
-      const recordingList = recordings.value[challengeId]
-      if (!recordingList) {
-        return false
-      }
-
-      // Check if there's an in-progress recording
-      const hasInProgress = recordingList.some(r => r.status === 'in_progress')
-
-      // Show link if more than 5 (or more than 6 if in-progress)
-      const threshold = hasInProgress ? 6 : 5
-      return recordingList.length > threshold
-    }
-
-    const showImageModal = (recording) => {
-      selectedRecording.value = recording
-      imageModalVisible.value = true
-    }
-
-    const closeImageModal = () => {
-      imageModalVisible.value = false
-      selectedRecording.value = null
-    }
-
-    const handleExpandChange = (row, expandedRows) => {
-      // Track which challenges are expanded
-      if (expandedRows.includes(row)) {
-        // Row is now expanded
-        expandedChallengeIds.value.add(row.challenge_id)
-        loadRecordings(row.challenge_id)
-      } else {
-        // Row is now collapsed
-        expandedChallengeIds.value.delete(row.challenge_id)
-      }
-    }
-
-    // WebSocket event handlers
-    const handleChallengeUpdated = (event) => {
-      console.log('Challenge updated event:', event)
-      // Reload challenges to get latest data
-      loadChallenges()
-    }
-
-    const handleChallengeAssigned = (event) => {
-      console.log('Challenge assigned event:', event)
-      // Reload challenges to get full updated data including queue positions
-      loadChallenges()
-    }
-
-    const handleTransmissionComplete = (event) => {
-      console.log('Transmission complete event:', event)
-      // Reload to get accurate status, transmission count, and timing
-      loadChallenges()
-    }
-
-    onMounted(() => {
-      loadChallenges()
-      loadFrequencyRanges()
-
-      // Connect WebSocket for real-time updates
-      websocket.connect()
-      websocket.on('challenge_updated', handleChallengeUpdated)
-      websocket.on('challenge_assigned', handleChallengeAssigned)
-      websocket.on('transmission_complete', handleTransmissionComplete)
-    })
-
-    onUnmounted(() => {
-      // Clean up WebSocket listeners
-      websocket.off('challenge_updated', handleChallengeUpdated)
-      websocket.off('challenge_assigned', handleChallengeAssigned)
-      websocket.off('transmission_complete', handleTransmissionComplete)
-    })
-
-    return {
-      activeTab,
-      challenges,
-      importing,
-      liveStatusTableRef,
-      recordings,
-      loadingRecordings,
-      imageModalVisible,
-      selectedRecording,
-      availableFrequencyRanges,
-      frequencyMode,
-      loadingRanges,
-      challengeForm,
-      flagFile,
-      flagUploadRef,
-      yamlFile,
-      challengeFiles,
-      yamlUploadRef,
-      filesUploadRef,
-      editDialogVisible,
-      editForm,
-      editConfigJson,
-      showModulationSpecificFields,
-      playlistChallenges,
-      onModulationChange,
-      handleFlagFileChange,
-      handleYamlChange,
-      handleFilesChange,
-      resetForm,
-      clearImportForm,
-      createChallenge,
-      importChallenges,
-      loadChallenges,
-      loadFrequencyRanges,
-      reloadFrequencyRanges,
-      toggleChallenge,
-      triggerChallenge,
-      getStatusType,
-      getPriorityType,
-      formatTimestamp: formatDateTime,
-      formatNextAvailable,
-      formatRecordingPriority,
-      getRecordingPriorityType,
-      editChallenge,
-      saveEditedChallenge,
-      deleteChallenge,
-      formatFrequency,
-      formatFrequencyRanges,
-      loadRecordings,
-      getDisplayedRecordings,
-      shouldShowViewAllLink,
-      showImageModal,
-      closeImageModal,
-      handleExpandChange,
+  } catch (error) {
+    console.error('Error toggling challenge:', error)
+    ElMessage.error('Failed to update challenge')
+    loadChallenges() // Reload on error
+  }
+}
+
+async function triggerChallenge(challengeId) {
+  try {
+    await api.post(`/challenges/${challengeId}/trigger`)
+    ElMessage.success('Challenge triggered')
+    loadChallenges()
+  } catch (error) {
+    console.error('Error triggering challenge:', error)
+    ElMessage.error('Failed to trigger challenge')
+  }
+}
+
+function editChallenge(challenge) {
+  editForm.value = { ...challenge }
+  editConfigJson.value = JSON.stringify(challenge.config, null, 2)
+  editDialogVisible.value = true
+}
+
+async function saveEditedChallenge() {
+  try {
+    const config = JSON.parse(editConfigJson.value)
+    await api.put(`/challenges/${editForm.value.challenge_id}`, { config })
+    ElMessage.success('Challenge updated successfully')
+    editDialogVisible.value = false
+    loadChallenges()
+  } catch (error) {
+    console.error('Failed to update challenge:', error)
+    if (error instanceof SyntaxError) {
+      ElMessage.error('Invalid JSON format')
+    } else {
+      ElMessage.error(error.response?.data?.error || 'Failed to update challenge')
     }
   }
 }
+
+async function deleteChallenge(challengeId) {
+  try {
+    await api.delete(`/challenges/${challengeId}`)
+    ElMessage.success('Challenge deleted successfully')
+    challengesMap.value.delete(challengeId)
+    recordingsMap.value.delete(challengeId)
+    recordingPlaceholders.value.delete(challengeId)
+  } catch (error) {
+    console.error('Failed to delete challenge:', error)
+    ElMessage.error(error.response?.data?.error || 'Failed to delete challenge')
+  }
+}
+
+// Form handlers (preserved from backup)
+function onModulationChange() {
+  challengeForm.value.flag = ''
+  flagFile.value = null
+  if (flagUploadRef.value) {
+    flagUploadRef.value.clearFiles()
+  }
+}
+
+function handleFlagFileChange(file) {
+  flagFile.value = file.raw
+}
+
+function handleYamlChange(file) {
+  yamlFile.value = file.raw
+}
+
+function handleFilesChange(file, fileList) {
+  challengeFiles.value = fileList
+}
+
+function resetForm() {
+  challengeForm.value = {
+    name: '',
+    modulation: 'nbfm',
+    frequency_mhz: 146.550,
+    frequency_ranges: [],
+    manual_min_mhz: null,
+    manual_max_mhz: null,
+    enabled: true,
+    flag: '',
+    min_delay: 60,
+    max_delay: 90,
+    priority: 0,
+    public_fields: ['name', 'modulation', 'frequency', 'status'],
+    wav_samplerate: 48000,
+    mode: 'usb',
+    speed: 35,
+    channel_spacing: 10000,
+    hop_rate: 10,
+    hop_time: 60,
+    seed: '',
+  }
+  frequencyMode.value = 'direct'
+  flagFile.value = null
+  if (flagUploadRef.value) {
+    flagUploadRef.value.clearFiles()
+  }
+}
+
+function clearImportForm() {
+  yamlFile.value = null
+  challengeFiles.value = []
+  if (yamlUploadRef.value) {
+    yamlUploadRef.value.clearFiles()
+  }
+  if (filesUploadRef.value) {
+    filesUploadRef.value.clearFiles()
+  }
+}
+
+function convertPublicFieldsToView(publicFields) {
+  const fields = publicFields || []
+  return {
+    show_modulation: fields.includes('modulation'),
+    show_frequency: fields.includes('frequency'),
+    show_last_tx_time: fields.includes('last_tx_time'),
+    show_active_status: fields.includes('status')
+  }
+}
+
+async function createChallenge() {
+  if (!challengeForm.value.name) {
+    ElMessage.error('Challenge name is required')
+    return
+  }
+
+  if (!challengeForm.value.modulation) {
+    ElMessage.error('Modulation is required')
+    return
+  }
+
+  // Validate frequency
+  if (frequencyMode.value === 'direct') {
+    if (!challengeForm.value.frequency_mhz) {
+      ElMessage.error('Frequency is required')
+      return
+    }
+  } else if (frequencyMode.value === 'ranges') {
+    if (!challengeForm.value.frequency_ranges || challengeForm.value.frequency_ranges.length === 0) {
+      ElMessage.error('At least one frequency range is required')
+      return
+    }
+  } else if (frequencyMode.value === 'manual') {
+    if (!challengeForm.value.manual_min_mhz || !challengeForm.value.manual_max_mhz) {
+      ElMessage.error('Both minimum and maximum frequencies are required')
+      return
+    }
+    if (challengeForm.value.manual_min_mhz >= challengeForm.value.manual_max_mhz) {
+      ElMessage.error('Minimum frequency must be less than maximum frequency')
+      return
+    }
+  }
+
+  if (challengeForm.value.min_delay > challengeForm.value.max_delay) {
+    ElMessage.error('Min delay must be less than or equal to max delay')
+    return
+  }
+
+  try {
+    const config = {
+      name: challengeForm.value.name,
+      modulation: challengeForm.value.modulation,
+      enabled: challengeForm.value.enabled,
+      min_delay: challengeForm.value.min_delay,
+      max_delay: challengeForm.value.max_delay,
+      priority: challengeForm.value.priority,
+      public_view: convertPublicFieldsToView(challengeForm.value.public_fields),
+    }
+
+    // Add frequency
+    if (frequencyMode.value === 'direct') {
+      config.frequency = Math.round(challengeForm.value.frequency_mhz * 1000000)
+    } else if (frequencyMode.value === 'ranges') {
+      config.frequency_ranges = challengeForm.value.frequency_ranges
+    } else if (frequencyMode.value === 'manual') {
+      config.manual_frequency_range = {
+        min_hz: Math.round(challengeForm.value.manual_min_mhz * 1000000),
+        max_hz: Math.round(challengeForm.value.manual_max_mhz * 1000000)
+      }
+    }
+
+    // Handle file upload
+    if (flagFile.value) {
+      try {
+        const formData = new FormData()
+        formData.append('file', flagFile.value)
+        const uploadResponse = await api.post('/files/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        config.flag_file_hash = uploadResponse.data.file_hash
+        if (!challengeForm.value.flag) {
+          config.flag = uploadResponse.data.filename
+        }
+      } catch (uploadError) {
+        console.error('Failed to upload file:', uploadError)
+        ElMessage.error(uploadError.response?.data?.error || 'Failed to upload file')
+        return
+      }
+    }
+
+    if (challengeForm.value.flag && !flagFile.value) {
+      config.flag = challengeForm.value.flag
+    }
+
+    // Add modulation-specific fields
+    if (['nbfm', 'ssb', 'freedv', 'fhss'].includes(challengeForm.value.modulation)) {
+      config.wav_samplerate = challengeForm.value.wav_samplerate
+    }
+    if (['ssb', 'freedv'].includes(challengeForm.value.modulation)) {
+      config.mode = challengeForm.value.mode
+    }
+    if (challengeForm.value.modulation === 'cw') {
+      config.speed = challengeForm.value.speed
+    }
+    if (challengeForm.value.modulation === 'fhss') {
+      config.channel_spacing = challengeForm.value.channel_spacing
+      config.hop_rate = challengeForm.value.hop_rate
+      config.hop_time = challengeForm.value.hop_time
+      if (challengeForm.value.seed) {
+        config.seed = challengeForm.value.seed
+      }
+    }
+
+    await api.post('/challenges', {
+      name: challengeForm.value.name,
+      config: config
+    })
+
+    ElMessage.success('Challenge created successfully')
+    resetForm()
+    loadChallenges()
+    activeTab.value = 'manage'
+  } catch (error) {
+    console.error('Failed to create challenge:', error)
+    ElMessage.error(error.response?.data?.error || 'Failed to create challenge')
+  }
+}
+
+async function importChallenges() {
+  if (!yamlFile.value) {
+    ElMessage.error('Please select a YAML file')
+    return
+  }
+
+  importing.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('yaml_file', yamlFile.value)
+
+    challengeFiles.value.forEach(file => {
+      formData.append(file.name, file.raw)
+    })
+
+    const response = await api.post('/challenges/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+
+    const result = response.data
+    let message = `Imported successfully: ${result.added} added, ${result.updated} updated`
+    if (result.files_uploaded > 0) {
+      message += `, ${result.files_uploaded} files uploaded`
+    }
+
+    ElMessage.success(message)
+
+    if (result.errors && result.errors.length > 0) {
+      ElMessage.warning(`Some errors occurred: ${result.errors.join(', ')}`)
+    }
+
+    clearImportForm()
+    loadChallenges()
+    activeTab.value = 'manage'
+  } catch (error) {
+    console.error('Failed to import challenges:', error)
+    ElMessage.error(error.response?.data?.error || 'Failed to import challenges')
+  } finally {
+    importing.value = false
+  }
+}
+
+// Expand/collapse tracking
+function handleExpandChange(row, expandedRows) {
+  if (expandedRows.includes(row)) {
+    expandedChallenges.value.add(row.challenge_id)
+  } else {
+    expandedChallenges.value.delete(row.challenge_id)
+  }
+}
+
+// Formatting helpers
+function formatFrequency(freq) {
+  if (!freq) return 'N/A'
+  if (freq >= 1000000000) {
+    return `${(freq / 1000000000).toFixed(3)} GHz`
+  } else if (freq >= 1000000) {
+    return `${(freq / 1000000).toFixed(3)} MHz`
+  } else if (freq >= 1000) {
+    return `${(freq / 1000).toFixed(3)} kHz`
+  }
+  return `${freq} Hz`
+}
+
+function getDisplayNameForRange(rangeName) {
+  const range = availableFrequencyRanges.value.find(r => r.name === rangeName)
+  return range?.display_name || rangeName
+}
+
+function formatFrequencyRanges(ranges) {
+  if (!ranges || ranges.length === 0) return 'N/A'
+  return ranges.map(r => getDisplayNameForRange(r)).join(', ')
+}
+
+function formatNextAvailable(isoTimestamp) {
+  if (!isoTimestamp) {
+    return 'Ready now'
+  }
+
+  const targetTime = parseServerTime(isoTimestamp)
+  const now = new Date()
+  const diffMs = targetTime - now
+
+  if (diffMs <= 0) {
+    return 'Ready now'
+  }
+
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffDay > 0) {
+    return `Ready in ${diffDay}d ${diffHour % 24}h`
+  } else if (diffHour > 0) {
+    return `Ready in ${diffHour}h ${diffMin % 60}m`
+  } else if (diffMin > 0) {
+    return `Ready in ${diffMin}m`
+  } else {
+    return `Ready in ${diffSec}s`
+  }
+}
+
+function formatRecordingPriority(priority) {
+  if (priority === null || priority === undefined) {
+    return 'N/A'
+  }
+  if (priority >= 1000) {
+    return '1000+'
+  }
+  return priority.toFixed(1)
+}
+
+function getRecordingPriorityType(priority) {
+  if (priority === null || priority === undefined) {
+    return 'info'
+  }
+  if (priority >= 1000) {
+    return 'danger'
+  } else if (priority >= 10) {
+    return 'warning'
+  } else if (priority >= 1.0) {
+    return 'success'
+  } else {
+    return 'info'
+  }
+}
+
+function getPriorityType(priority) {
+  if (priority >= 75) {
+    return 'danger'
+  } else if (priority >= 50) {
+    return 'warning'
+  } else if (priority >= 25) {
+    return 'success'
+  } else {
+    return 'info'
+  }
+}
+
+function getStatusType(challenge) {
+  if (!challenge.enabled) return 'info'
+  switch (challenge.status) {
+    case 'queued': return 'success'
+    case 'waiting': return 'warning'
+    case 'assigned': return ''
+    default: return 'info'
+  }
+}
+
+const formatTimestamp = formatDateTime
+
+// Lifecycle hooks
+onMounted(() => {
+  loadChallenges()
+  loadFrequencyRanges()
+
+  // WebSocket setup
+  websocket.connect()
+  websocket.on('recording_started', handleRecordingStarted)
+  websocket.on('recording_complete', handleRecordingComplete)
+  websocket.on('recording_image_uploaded', handleRecordingImageUploaded)
+  websocket.on('challenge_updated', handleChallengeUpdated)
+  websocket.on('challenge_assigned', handleChallengeAssigned)
+  websocket.on('transmission_complete', handleTransmissionComplete)
+})
+
+onUnmounted(() => {
+  websocket.off('recording_started', handleRecordingStarted)
+  websocket.off('recording_complete', handleRecordingComplete)
+  websocket.off('recording_image_uploaded', handleRecordingImageUploaded)
+  websocket.off('challenge_updated', handleChallengeUpdated)
+  websocket.off('challenge_assigned', handleChallengeAssigned)
+  websocket.off('transmission_complete', handleTransmissionComplete)
+})
 </script>
 
 <style scoped>
@@ -1820,10 +1746,17 @@ h3 {
   color: var(--el-text-color-primary);
 }
 
-/* Recordings section */
+/* Cards layout for mobile */
+.cards-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Recordings section in expanded rows */
 .recordings-section {
   padding: 20px;
-  background-color: #f5f7fa;
+  background-color: var(--el-fill-color-lighter);
   border-radius: 4px;
   margin: 10px 0;
 }
@@ -1831,189 +1764,6 @@ h3 {
 .recordings-section h3 {
   margin-top: 0;
   margin-bottom: 15px;
-  color: #303133;
-}
-
-.loading {
-  text-align: center;
-  padding: 20px;
-  color: #909399;
-}
-
-.no-recordings {
-  text-align: center;
-  padding: 20px;
-  color: #909399;
-  font-style: italic;
-}
-
-.recordings-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 20px;
-}
-
-.recording-card {
-  background: white;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  padding: 15px;
-  transition: box-shadow 0.3s;
-}
-
-.recording-card:hover {
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-}
-
-.recording-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.recording-title {
-  font-weight: bold;
-  color: #303133;
-}
-
-.recording-info {
-  margin-bottom: 15px;
-  font-size: 13px;
-  color: #606266;
-  line-height: 1.8;
-}
-
-.recording-info strong {
-  color: #303133;
-  margin-right: 5px;
-}
-
-.recording-image {
-  margin-top: 15px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.recording-image img {
-  max-width: 100%;
-  height: auto;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  transition: transform 0.2s;
-}
-
-.recording-image img:hover {
-  transform: scale(1.02);
-}
-
-.recording-error {
-  margin-top: 10px;
-}
-
-.view-all-link {
-  text-align: center;
-  margin-top: 20px;
-  padding-top: 15px;
-  border-top: 1px solid #ebeef5;
-}
-
-.view-all-link a {
-  color: #409eff;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  transition: color 0.3s;
-}
-
-.view-all-link a:hover {
-  color: #66b1ff;
-  text-decoration: underline;
-}
-
-.modal-content {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.modal-info {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 15px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.modal-info p {
-  margin: 0;
-  font-size: 14px;
-  color: #606266;
-}
-
-.modal-info strong {
-  color: #303133;
-}
-
-.modal-image {
-  text-align: center;
-}
-
-.modal-image img {
-  max-width: 100%;
-  height: auto;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-}
-
-/* Dark mode adjustments */
-html.dark .code-example {
-  background: #2d2d2d;
-  color: var(--el-text-color-primary);
-  border: 1px solid var(--el-border-color);
-}
-
-html.dark .recordings-section {
-  background-color: #1a1a1a;
-}
-
-html.dark .recordings-section h3 {
-  color: var(--el-text-color-primary);
-}
-
-html.dark .recording-card {
-  background: #2d2d2d;
-  border: 1px solid var(--el-border-color);
-}
-
-html.dark .recording-title {
-  color: var(--el-text-color-primary);
-}
-
-html.dark .recording-info {
-  color: var(--el-text-color-regular);
-}
-
-html.dark .recording-info strong {
-  color: var(--el-text-color-primary);
-}
-
-html.dark .view-all-link {
-  border-top-color: var(--el-border-color);
-}
-
-html.dark .modal-info {
-  background-color: #1a1a1a;
-}
-
-html.dark .modal-info p {
-  color: var(--el-text-color-regular);
-}
-
-html.dark .modal-info strong {
   color: var(--el-text-color-primary);
 }
 
@@ -2050,6 +1800,50 @@ html.dark .modal-info strong {
   align-items: center;
 }
 
+/* Animations */
+.challenge-list-move,
+.challenge-list-enter-active,
+.challenge-list-leave-active {
+  transition: all 0.3s ease;
+}
+
+.challenge-list-enter-from {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.challenge-list-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.playlist-move,
+.playlist-enter-active,
+.playlist-leave-active {
+  transition: all 0.4s cubic-bezier(0.55, 0, 0.1, 1);
+}
+
+.playlist-enter-from {
+  opacity: 0;
+  transform: scaleY(0.8);
+}
+
+.playlist-leave-to {
+  opacity: 0;
+  transform: scaleY(0.8);
+}
+
+/* Dark mode adjustments */
+html.dark .code-example {
+  background: #2d2d2d;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
+}
+
+html.dark .recordings-section {
+  background-color: var(--el-fill-color-dark);
+}
+
 html.dark .playlist-description {
   background-color: var(--el-fill-color-dark);
 }
@@ -2060,7 +1854,7 @@ html.dark .playlist-description p {
 </style>
 
 <style>
-/* Non-scoped styles for dropdown popper (rendered outside component) */
+/* Non-scoped styles for dropdown popper */
 .frequency-ranges-dropdown {
   min-width: 400px !important;
   max-width: 600px !important;

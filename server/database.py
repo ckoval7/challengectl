@@ -618,14 +618,27 @@ class Database:
             List of challenge dictionaries with additional fields:
             - queue_position: Position in queue (1-indexed), None if not enabled
             - next_available_time: ISO timestamp when challenge becomes ready, None if ready now
+            - last_recording_at: ISO timestamp of most recent recording, None if never recorded
+            - recording_count: Total number of completed recordings
+            - latest_recording_id: ID of most recent recording, None if never recorded
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Get all enabled challenges ordered by queue priority
+            # Get all enabled challenges ordered by queue priority with recording metadata
             cursor.execute('''
-                SELECT * FROM challenges
-                WHERE enabled = 1
-                ORDER BY priority DESC, name
+                SELECT
+                    c.*,
+                    MAX(r.completed_at) as last_recording_at,
+                    COUNT(CASE WHEN r.status = 'completed' THEN 1 END) as recording_count,
+                    (SELECT recording_id FROM recordings
+                     WHERE challenge_id = c.challenge_id
+                     AND status = 'completed'
+                     ORDER BY completed_at DESC LIMIT 1) as latest_recording_id
+                FROM challenges c
+                LEFT JOIN recordings r ON c.challenge_id = r.challenge_id
+                WHERE c.enabled = 1
+                GROUP BY c.challenge_id
+                ORDER BY c.priority DESC, c.name
             ''')
 
             enabled_challenges = []
@@ -660,11 +673,21 @@ class Database:
                     else:
                         challenge['queue_position'] = None
 
-            # Also get disabled challenges
+            # Also get disabled challenges with recording metadata
             cursor.execute('''
-                SELECT * FROM challenges
-                WHERE enabled = 0
-                ORDER BY name
+                SELECT
+                    c.*,
+                    MAX(r.completed_at) as last_recording_at,
+                    COUNT(CASE WHEN r.status = 'completed' THEN 1 END) as recording_count,
+                    (SELECT recording_id FROM recordings
+                     WHERE challenge_id = c.challenge_id
+                     AND status = 'completed'
+                     ORDER BY completed_at DESC LIMIT 1) as latest_recording_id
+                FROM challenges c
+                LEFT JOIN recordings r ON c.challenge_id = r.challenge_id
+                WHERE c.enabled = 0
+                GROUP BY c.challenge_id
+                ORDER BY c.name
             ''')
 
             disabled_challenges = []
