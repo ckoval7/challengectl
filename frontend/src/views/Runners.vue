@@ -84,41 +84,32 @@
           </el-table-column>
           <el-table-column
             label="Actions"
-            width="300"
+            width="120"
+            align="center"
           >
             <template #default="scope">
-              <el-space>
-                <el-button
-                  v-if="scope.row.enabled"
-                  size="small"
-                  type="warning"
-                  @click="disableRunner(scope.row.runner_id)"
-                >
-                  Disable
+              <el-dropdown @command="(command) => handleRunnerAction(command, scope.row)">
+                <el-button size="small" type="primary">
+                  Actions
+                  <el-icon class="ml-5"><ArrowDown /></el-icon>
                 </el-button>
-                <el-button
-                  v-else
-                  size="small"
-                  type="success"
-                  @click="enableRunner(scope.row.runner_id)"
-                >
-                  Enable
-                </el-button>
-                <el-button
-                  size="small"
-                  type="primary"
-                  @click="showReEnrollDialog(scope.row.runner_id)"
-                >
-                  Re-enroll
-                </el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  @click="kickRunner(scope.row.runner_id)"
-                >
-                  Kick
-                </el-button>
-              </el-space>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
+                      <el-icon><SwitchIcon /></el-icon>
+                      {{ scope.row.enabled ? 'Disable Runner' : 'Enable Runner' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="re-enroll" divided>
+                      <el-icon><Key /></el-icon>
+                      Re-enroll
+                    </el-dropdown-item>
+                    <el-dropdown-item command="kick" divided>
+                      <el-icon><Delete /></el-icon>
+                      <span style="color: var(--el-color-danger);">Kick</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
           <el-table-column type="expand">
@@ -680,48 +671,36 @@
           </el-table-column>
           <el-table-column
             label="Actions"
-            width="350"
+            width="120"
+            align="center"
           >
             <template #default="scope">
-              <el-space>
-                <el-button
-                  v-if="scope.row.enabled"
-                  size="small"
-                  type="warning"
-                  @click="disableListener(scope.row.agent_id)"
-                >
-                  Disable
+              <el-dropdown @command="(command) => handleListenerAction(command, scope.row)">
+                <el-button size="small" type="primary">
+                  Actions
+                  <el-icon class="ml-5"><ArrowDown /></el-icon>
                 </el-button>
-                <el-button
-                  v-else
-                  size="small"
-                  type="success"
-                  @click="enableListener(scope.row.agent_id)"
-                >
-                  Enable
-                </el-button>
-                <el-button
-                  size="small"
-                  type="info"
-                  @click="showEditListenerDevicesDialog(scope.row)"
-                >
-                  Edit Devices
-                </el-button>
-                <el-button
-                  size="small"
-                  type="primary"
-                  @click="showReEnrollListenerDialog(scope.row.agent_id)"
-                >
-                  Re-enroll
-                </el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  @click="kickListener(scope.row.agent_id)"
-                >
-                  Kick
-                </el-button>
-              </el-space>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
+                      <el-icon><SwitchIcon /></el-icon>
+                      {{ scope.row.enabled ? 'Disable Listener' : 'Enable Listener' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="edit-devices" divided>
+                      <el-icon><Tools /></el-icon>
+                      Edit Devices
+                    </el-dropdown-item>
+                    <el-dropdown-item command="re-enroll">
+                      <el-icon><Key /></el-icon>
+                      Re-enroll
+                    </el-dropdown-item>
+                    <el-dropdown-item command="kick" divided>
+                      <el-icon><Delete /></el-icon>
+                      <span style="color: var(--el-color-danger);">Kick</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>
@@ -1517,6 +1496,7 @@ import { websocket } from '../websocket'
 import { userPermissions } from '../auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateTime } from '../utils/time'
+import { ArrowDown, Switch as SwitchIcon, Tools, Key, Delete } from '@element-plus/icons-vue'
 
 export default {
   name: 'Runners',
@@ -2369,6 +2349,43 @@ logging:
       }
     }
 
+    const handleRunnerAction = (command, runner) => {
+      switch (command) {
+        case 'enable':
+          enableRunner(runner.runner_id)
+          break
+        case 'disable':
+          disableRunner(runner.runner_id)
+          break
+        case 're-enroll':
+          showReEnrollDialog(runner.runner_id)
+          break
+        case 'kick':
+          kickRunner(runner.runner_id)
+          break
+      }
+    }
+
+    const handleListenerAction = (command, listener) => {
+      switch (command) {
+        case 'enable':
+          enableListener(listener.agent_id)
+          break
+        case 'disable':
+          disableListener(listener.agent_id)
+          break
+        case 'edit-devices':
+          showEditListenerDevicesDialog(listener)
+          break
+        case 're-enroll':
+          showReEnrollListenerDialog(listener.agent_id)
+          break
+        case 'kick':
+          kickListener(listener.agent_id)
+          break
+      }
+    }
+
     const handleRunnerStatusEvent = (event) => {
       console.log('Runners page received runner_status event:', event)
 
@@ -2618,6 +2635,8 @@ curl -k \\
       disableListener,
       kickRunner,
       kickListener,
+      handleRunnerAction,
+      handleListenerAction,
       addListenerDialogVisible,
       addListenerForm,
       listenerEnrollmentData,
@@ -2640,7 +2659,13 @@ curl -k \\
       deleteProvKey,
       provisioningKeyUsageExample,
       userPermissions,
-      formatTimestamp: formatDateTime
+      formatTimestamp: formatDateTime,
+      // Icons
+      ArrowDown,
+      SwitchIcon,
+      Tools,
+      Key,
+      Delete
     }
   }
 }
