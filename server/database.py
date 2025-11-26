@@ -636,7 +636,7 @@ class Database:
                 enabled_challenges.append(challenge)
 
             # Calculate queue positions with timing information
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             queue_position = 1
 
             with self.timing_lock:
@@ -711,7 +711,7 @@ class Database:
                 rows = cursor.fetchall()
 
                 # Filter by timing from in-memory tracking
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 row = None
                 with self.timing_lock:
                     for r in rows:
@@ -736,7 +736,7 @@ class Database:
                     challenge_id = challenge['challenge_id']
 
                     # Mark as assigned atomically
-                    expires_at = datetime.now() + timedelta(minutes=timeout_minutes)
+                    expires_at = datetime.now(timezone.utc) + timedelta(minutes=timeout_minutes)
                     cursor.execute('''
                         UPDATE challenges
                         SET status = 'assigned',
@@ -783,7 +783,7 @@ class Database:
 
                 # Calculate next transmission time (use average delay)
                 avg_delay = (min_delay + max_delay) / 2
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 next_tx = now + timedelta(seconds=avg_delay)
 
                 # Update in-memory timing

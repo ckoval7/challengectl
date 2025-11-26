@@ -1068,7 +1068,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
 import { ElMessage } from 'element-plus'
-import { formatDateTime } from '../utils/time'
+import { formatDateTime, parseServerTime } from '../utils/time'
 import { Loading } from '@element-plus/icons-vue'
 
 export default {
@@ -1563,7 +1563,7 @@ export default {
         return 'Ready now'
       }
 
-      const targetTime = new Date(isoTimestamp)
+      const targetTime = parseServerTime(isoTimestamp)
       const now = new Date()
       const diffMs = targetTime - now
 

@@ -3568,7 +3568,7 @@ radios:
                 # Clear timing so it's immediately available
                 with self.db.timing_lock:
                     if challenge_id in self.db.challenge_timing:
-                        self.db.challenge_timing[challenge_id]['next_tx'] = datetime.now()
+                        self.db.challenge_timing[challenge_id]['next_tx'] = datetime.now(timezone.utc)
 
                 # Update status to queued
                 with self.db.get_connection() as conn:
