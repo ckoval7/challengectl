@@ -1356,13 +1356,22 @@ function handleChallengeAssigned(event) {
 
 function handleTransmissionComplete(event) {
   console.log('Transmission complete:', event)
-  const { challenge_id, success } = event
+  const { challenge_id, success, recording_priority, will_be_recorded } = event
 
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge) {
     challenge.transmission_count = (challenge.transmission_count || 0) + 1
     challenge.status = success ? 'queued' : 'waiting'
     challenge.last_tx_time = new Date().toISOString()
+
+    // Update recording priority from server calculation
+    if (recording_priority !== undefined) {
+      challenge.recording_priority = recording_priority
+    }
+    if (will_be_recorded !== undefined) {
+      challenge.will_be_recorded = will_be_recorded
+    }
+
     challengesMap.value.set(challenge_id, challenge)
   }
 

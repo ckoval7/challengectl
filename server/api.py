@@ -2291,6 +2291,17 @@ class ChallengeCtlAPI:
             if not config:
                 return jsonify({'error': 'Challenge not found'}), 404
 
+            # Get updated challenge info (with fresh transmission counts)
+            updated_challenge = self.db.get_challenge(challenge_id)
+
+            # Calculate recording priority for real-time updates
+            recording_priority = 0.0
+            will_be_recorded = False
+            if updated_challenge:
+                recording_priority = self.calculate_recording_priority(updated_challenge)
+                threshold = self.get_recording_priority_threshold()
+                will_be_recorded = recording_priority >= threshold
+
             # Add to in-memory transmission buffer
             timestamp = datetime.now(timezone.utc).isoformat()
             transmission = {
@@ -2315,7 +2326,7 @@ class ChallengeCtlAPI:
                     del self.active_transmissions[challenge_id]
                     logger.debug(f"Removed completed transmission for challenge {challenge_id} from active tracking")
 
-            # Broadcast completion event
+            # Broadcast completion event with recording priority updates
             self.broadcast_event('transmission_complete', {
                 'runner_id': agent_id,
                 'agent_id': agent_id,
@@ -2326,7 +2337,9 @@ class ChallengeCtlAPI:
                 'error_message': error_message,
                 'timestamp': timestamp,
                 'transmission_id': transmission_id,
-                'device_id': device_id
+                'device_id': device_id,
+                'recording_priority': recording_priority,
+                'will_be_recorded': will_be_recorded
             })
 
             # Broadcast updated public challenges
