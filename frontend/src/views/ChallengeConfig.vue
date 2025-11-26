@@ -21,6 +21,7 @@
         </div> -->
 
         <el-table
+          ref="liveStatusTableRef"
           :data="challenges"
           class="w-full"
           @expand-change="handleExpandChange"
@@ -1080,6 +1081,10 @@ export default {
     const challenges = ref([])
     const importing = ref(false)
 
+    // Live Status table ref and expanded state tracking
+    const liveStatusTableRef = ref(null)
+    const expandedChallengeIds = ref(new Set())
+
     // Recordings
     const recordings = ref({})
     const loadingRecordings = ref({})
@@ -1389,6 +1394,22 @@ export default {
       }
     }
 
+    const restoreExpandedRows = () => {
+      // Restore expanded state after data refresh
+      if (!liveStatusTableRef.value || expandedChallengeIds.value.size === 0) {
+        return
+      }
+
+      // Use nextTick to ensure DOM is updated before toggling rows
+      setTimeout(() => {
+        challenges.value.forEach(challenge => {
+          if (expandedChallengeIds.value.has(challenge.challenge_id)) {
+            liveStatusTableRef.value?.toggleRowExpansion(challenge, true)
+          }
+        })
+      }, 0)
+    }
+
     const loadChallenges = async () => {
       try {
         const response = await api.get('/challenges')
@@ -1397,6 +1418,8 @@ export default {
           ...c,
           enabled: Boolean(c.enabled)
         }))
+        // Restore expanded rows after data is loaded
+        restoreExpandedRows()
       } catch (error) {
         console.error('Failed to load challenges:', error)
         ElMessage.error('Failed to load challenges')
@@ -1662,9 +1685,14 @@ export default {
     }
 
     const handleExpandChange = (row, expandedRows) => {
-      // If row is in expanded rows, load its recordings
+      // Track which challenges are expanded
       if (expandedRows.includes(row)) {
+        // Row is now expanded
+        expandedChallengeIds.value.add(row.challenge_id)
         loadRecordings(row.challenge_id)
+      } else {
+        // Row is now collapsed
+        expandedChallengeIds.value.delete(row.challenge_id)
       }
     }
 
@@ -1677,17 +1705,8 @@ export default {
 
     const handleChallengeAssigned = (event) => {
       console.log('Challenge assigned event:', event)
-      // Update the specific challenge status
-      const index = challenges.value.findIndex(c => c.challenge_id === event.challenge_id)
-      if (index !== -1) {
-        // Create a new challenge object to ensure reactivity
-        challenges.value[index] = {
-          ...challenges.value[index],
-          status: 'assigned',
-          assigned_to: event.agent_id || event.runner_id
-        }
-        console.log(`Updated challenge ${event.challenge_id} status to assigned`)
-      }
+      // Reload challenges to get full updated data including queue positions
+      loadChallenges()
     }
 
     const handleTransmissionComplete = (event) => {
@@ -1718,6 +1737,7 @@ export default {
       activeTab,
       challenges,
       importing,
+      liveStatusTableRef,
       recordings,
       loadingRecordings,
       imageModalVisible,
