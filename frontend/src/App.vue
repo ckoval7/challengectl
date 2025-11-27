@@ -307,7 +307,7 @@ export default {
         logout()
         ElMessage.success('Logged out successfully')
         router.push('/public')
-      } catch (error) {
+      } catch {
         // Even if API call fails, clear local state
         logout()
         ElMessage.warning('Logged out (session may still be active)')
@@ -328,7 +328,7 @@ export default {
         await api.post('/control/pause')
         systemPaused.value = true
         ElMessage.success('System paused')
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to pause system')
       }
     }
@@ -338,7 +338,7 @@ export default {
         await api.post('/control/resume')
         systemPaused.value = false
         ElMessage.success('System resumed')
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to resume system')
       }
     }

@@ -57,7 +57,7 @@
           clearable
         >
           <template #prefix>
-            <el-icon><Search /></el-icon>
+            <el-icon><SearchIcon /></el-icon>
           </template>
         </el-input>
 
@@ -132,7 +132,7 @@
 
 <script>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search as SearchIcon } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { websocket } from '../websocket'
 import { api } from '../api'
@@ -141,7 +141,7 @@ import { formatTime } from '../utils/time'
 export default {
   name: 'Logs',
   components: {
-    Search
+    SearchIcon
   },
   setup() {
     const logs = ref([])

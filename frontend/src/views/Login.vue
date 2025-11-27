@@ -156,7 +156,7 @@ export default {
 
       try {
         await formRef.value.validate()
-      } catch (error) {
+      } catch {
         return
       }
 
@@ -218,7 +218,7 @@ export default {
 
       try {
         await totpFormRef.value.validate()
-      } catch (error) {
+      } catch {
         return
       }
 

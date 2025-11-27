@@ -121,7 +121,7 @@ export default {
 
       try {
         await formRef.value.validate()
-      } catch (error) {
+      } catch {
         return
       }
 

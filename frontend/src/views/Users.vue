@@ -511,7 +511,7 @@ export default {
       try {
         const response = await api.get('/users')
         users.value = response.data.users
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to load users')
       } finally {
         loading.value = false
@@ -523,7 +523,7 @@ export default {
 
       try {
         await createFormRef.value.validate()
-      } catch (error) {
+      } catch {
         return
       }
 
@@ -708,7 +708,7 @@ export default {
       try {
         await navigator.clipboard.writeText(text)
         ElMessage.success('Copied to clipboard')
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to copy to clipboard')
       }
     }
@@ -724,7 +724,7 @@ export default {
       try {
         const response = await api.get(`/users/${username}/permissions`)
         userPermissions.value = response.data.permissions || []
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to load permissions')
         userPermissions.value = []
       }

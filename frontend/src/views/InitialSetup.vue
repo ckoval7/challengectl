@@ -204,7 +204,7 @@ export default {
 
       try {
         await formRef.value.validate()
-      } catch (error) {
+      } catch {
         return
       }
 
@@ -290,7 +290,7 @@ export default {
       try {
         await navigator.clipboard.writeText(text)
         ElMessage.success('Copied to clipboard')
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to copy to clipboard')
       }
     }

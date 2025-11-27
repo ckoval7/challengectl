@@ -1611,7 +1611,7 @@ export default {
         try {
           const response = await api.get('/agents')
           agentsData = response.data.agents || []
-        } catch (err) {
+        } catch {
           // Fallback to old endpoint
           const response = await api.get('/runners')
           agentsData = (response.data.runners || []).map(r => ({

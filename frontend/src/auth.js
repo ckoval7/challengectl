@@ -60,7 +60,7 @@ export async function validateSession() {
       sessionChecked = true
       return true
     }
-  } catch (error) {
+  } catch {
     // Session is invalid or expired
     isAuthenticatedFlag.value = false
     initialSetupRequired.value = false
