@@ -47,7 +47,7 @@
         </div>
         <div class="detail-item">
           <el-icon><Promotion /></el-icon>
-          <span>{{ formatFrequency(challenge.config?.frequency) }}</span>
+          <span>{{ formatFrequency(challenge.assigned_frequency || challenge.config?.frequency) }}</span>
         </div>
       </div>
     </div>

@@ -249,7 +249,9 @@
             width="180"
           >
             <template #default="scope">
-              {{ scope.row.config?.frequency ? formatFrequency(scope.row.config.frequency) : 'N/A' }}
+              {{ scope.row.assigned_frequency ? formatFrequency(scope.row.assigned_frequency)
+                 : scope.row.config?.frequency ? formatFrequency(scope.row.config.frequency)
+                 : 'N/A' }}
             </template>
           </el-table-column>
           <el-table-column
@@ -1370,13 +1372,17 @@ function handleChallengeUpdated(event) {
 
 function handleChallengeAssigned(event) {
   console.log('Challenge assigned:', event)
-  const { challenge_id, runner_id, status } = event
+  const { challenge_id, runner_id, status, frequency } = event
 
   // Update challenge status
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge) {
     challenge.status = status || 'assigned'
     challenge.assigned_to = runner_id
+    // Store the actual selected frequency for display in playlist
+    if (frequency) {
+      challenge.assigned_frequency = frequency
+    }
     challengesMap.value.set(challenge_id, challenge)
   }
 
@@ -1392,6 +1398,9 @@ function handleTransmissionComplete(event) {
     challenge.transmission_count = (challenge.transmission_count || 0) + 1
     challenge.status = success ? 'queued' : 'waiting'
     challenge.last_tx_time = new Date().toISOString()
+
+    // Clear the assigned frequency since transmission is complete
+    delete challenge.assigned_frequency
 
     // Update recording priority from server calculation
     if (recording_priority !== undefined) {
