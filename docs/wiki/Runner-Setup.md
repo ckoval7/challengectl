@@ -348,23 +348,83 @@ radios:
 
 #### Devices Section
 
-Each runner can manage one or more SDR devices. For each device:
+Each runner can manage one or more SDR devices. For each device, you can use one of two configuration formats:
 
-- **name**: Device identifier (typically 0, 1, 2, etc.)
+**Legacy Format (single antenna per device):**
+- **name**: Device identifier (typically 0, 1, 2, or serial number)
 - **model**: Device type (`hackrf`, `limesdr`, `usrp`, `bladerf`)
+- **antenna**: Antenna name (optional, device-specific)
 - **frequency_limits**: Array of frequency ranges in Hz (format: "start-end")
+
+**New Format (per-antenna frequency limits for multi-antenna devices):**
+- **name**: Device identifier (typically serial number for precision)
+- **model**: Device type (`hackrf`, `limesdr`, `usrp`, `bladerf`)
+- **antennas**: Dictionary of antenna configurations, where each antenna can have:
+  - **enabled**: Boolean to enable/disable antenna (default: true)
+  - **frequency_limits**: Array of frequency ranges for this specific antenna
 
 ### Frequency Limits
 
-Frequency limits define which challenges this runner can accept. A runner will only be assigned challenges whose transmission frequencies fall within its configured ranges.
+Frequency limits define which challenges this runner can accept. The runner will only be assigned challenges whose transmission frequencies fall within its configured ranges.
 
-Example:
+**Legacy Format Example (device-level frequency limits):**
 ```yaml
-frequency_limits:
-  - "144000000-148000000"   # 2-meter amateur band
-  - "420000000-450000000"   # 70-centimeter amateur band
-  - "902000000-928000000"   # 33-centimeter band
+devices:
+  - name: 0
+    model: hackrf
+    frequency_limits:
+      - "144000000-148000000"   # 2-meter amateur band
+      - "420000000-450000000"   # 70-centimeter amateur band
 ```
+
+**New Format Example (per-antenna frequency limits):**
+```yaml
+devices:
+  - name: "1234567890abcdef"
+    model: bladerf
+    antennas:
+      TX1:
+        enabled: true  # Optional, defaults to true
+        frequency_limits:
+          - "144000000-148000000"   # 2m on TX1
+          - "420000000-450000000"   # 70cm on TX1
+      TX2:
+        enabled: true
+        frequency_limits:
+          - "900000000-915000000"   # 900 MHz on TX2
+          - "2400000000-2500000000" # 2.4 GHz on TX2
+```
+
+**Automatic Antenna Selection:**
+
+When using the new per-antenna format, the runner automatically selects the appropriate antenna based on the challenge frequency. The server validates frequency compatibility before assigning challenges, and the runner double-checks before executing transmissions.
+
+**Disabling Antennas:**
+
+You can temporarily disable antennas by setting `enabled: false`. This is useful for:
+- Antenna maintenance or repairs
+- Testing specific configurations
+- Temporarily taking an antenna offline without removing its configuration
+
+Example with disabled antenna:
+```yaml
+devices:
+  - name: "abcdef1234567890"
+    model: bladerf
+    antennas:
+      TX1:
+        enabled: true
+        frequency_limits:
+          - "144000000-148000000"
+          - "420000000-450000000"
+      TX2:
+        enabled: false  # Temporarily disabled (e.g., maintenance)
+        frequency_limits:
+          - "900000000-915000000"
+          - "2400000000-2500000000"
+```
+
+Disabled antennas will be skipped during automatic antenna selection.
 
 **Important**: Only configure frequency ranges that are legal to transmit on in your jurisdiction and for which you have the appropriate license.
 
@@ -565,6 +625,7 @@ CPUQuota=50%
 
 Configure multiple SDR devices on a single runner:
 
+**Legacy Format:**
 ```yaml
 devices:
   - name: 0
@@ -579,7 +640,56 @@ devices:
       - "902000000-928000000"
 ```
 
-The runner will handle devices independently and can execute transmissions on multiple devices simultaneously.
+**Multi-Antenna Format:**
+```yaml
+devices:
+  - name: 0
+    model: hackrf
+    frequency_limits:
+      - "144000000-148000000"
+
+  - name: "1234567890abcdef"
+    model: bladerf
+    antennas:
+      TX1:
+        frequency_limits:
+          - "420000000-450000000"
+      TX2:
+        frequency_limits:
+          - "900000000-928000000"
+          - "2400000000-2500000000"
+```
+
+The runner will handle devices independently and can execute transmissions on multiple devices simultaneously. When using per-antenna frequency limits, the runner automatically selects the correct antenna for each challenge based on the transmission frequency.
+
+### Mixed Configuration
+
+You can mix legacy single-antenna devices with multi-antenna devices in the same runner:
+
+```yaml
+devices:
+  # HackRF with legacy format (single antenna)
+  - name: 0
+    model: hackrf
+    frequency_limits:
+      - "144000000-148000000"
+      - "420000000-450000000"
+
+  # BladeRF with multi-antenna format
+  - name: "1234567890abcdef"
+    model: bladerf
+    antennas:
+      TX1:
+        enabled: true
+        frequency_limits:
+          - "144000000-148000000"
+      TX2:
+        enabled: true
+        frequency_limits:
+          - "2400000000-2500000000"
+```
+
+This flexibility allows you to migrate to the new format gradually or use it only for devices that actually have multiple antennas.
 
 ### Custom Cache Directory
 
@@ -659,9 +769,12 @@ This provides detailed information about:
 
 **Solutions**:
 - Verify challenges are enabled on the server
-- Check that challenge frequencies match your frequency_limits
+- Check that challenge frequencies match your frequency_limits or antenna frequency_limits
+- If using per-antenna configuration, ensure at least one antenna is enabled for the required frequency
+- Verify that antennas are not all disabled (`enabled: false`)
 - Review the Challenges page on the server for challenge states
 - Ensure at least one challenge is queued or waiting
+- Check runner logs for "doesn't support frequency" messages
 
 ### File Download Failures
 
@@ -704,6 +817,34 @@ This provides detailed information about:
 - Review server logs for timeout messages
 - Verify system resources are adequate (CPU, memory)
 - Check for process suspensions or scheduling issues
+
+### Antenna Selection Issues
+
+**Problem**: Runner reports "No antenna supporting frequency" or similar errors.
+
+**Solutions**:
+- Verify that at least one antenna in your configuration supports the challenge frequency
+- Check that the antenna is enabled (`enabled: true` or field omitted)
+- Review your `frequency_limits` for each antenna to ensure they cover the required range
+- Ensure frequency ranges don't have typos (use format "144000000-148000000")
+- If using legacy format, verify `frequency_limits` at device level are correct
+- Check runner logs for which antenna was attempted and why it was rejected
+
+**Problem**: Wrong antenna is being selected for transmissions.
+
+**Solutions**:
+- Review the frequency_limits for each antenna - they may overlap
+- The runner selects the first matching antenna, so order matters in the config
+- Consider reorganizing frequency_limits to avoid overlaps
+- Enable debug logging to see antenna selection decisions
+
+**Problem**: Disabled antenna is still being used.
+
+**Solutions**:
+- Verify the `enabled: false` flag is properly formatted in YAML
+- Restart the runner after configuration changes
+- Check for YAML syntax errors (indentation, etc.)
+- Review runner startup logs to confirm antenna configuration was loaded correctly
 
 ## Next Steps
 

@@ -823,14 +823,17 @@ class Database:
             conn.execute('BEGIN IMMEDIATE')
 
             try:
-                # Check if agent is enabled
-                cursor.execute('SELECT enabled FROM agents WHERE agent_id = ?', (agent_id,))
+                # Check if agent is enabled and get device info for frequency validation
+                cursor.execute('SELECT enabled, devices FROM agents WHERE agent_id = ?', (agent_id,))
                 agent_row = cursor.fetchone()
 
                 if not agent_row or not agent_row['enabled']:
                     conn.rollback()
                     logger.debug(f"Agent {agent_id} is disabled or not found, skipping task assignment")
                     return None
+
+                # Parse agent devices for frequency validation
+                agent_devices = json.loads(agent_row['devices']) if agent_row['devices'] else []
 
                 # Find next available challenge (queued or waiting with expired delay)
                 cursor.execute('''
@@ -862,20 +865,33 @@ class Database:
                     reverse=True
                 )
 
-                # Select highest priority challenge
+                # Filter by frequency compatibility and select highest priority challenge
                 row = None
-                if ready_challenges:
-                    row = ready_challenges[0]
+                for challenge in ready_challenges:
+                    # Parse challenge config to get frequency
+                    config = json.loads(challenge['config'])
+                    frequency = config.get('frequency')
+
+                    # If frequency specified, validate agent supports it
+                    if frequency and agent_devices:
+                        if not self.agent_supports_frequency(agent_devices, frequency):
+                            logger.debug(f"Agent {agent_id} doesn't support frequency {frequency} Hz for challenge {challenge['name']}, skipping")
+                            continue
+
+                    # Found a compatible challenge
+                    row = challenge
+                    break
+
+                if row:
+                    challenge = dict(row)
+
                     # Update waiting -> queued if delay has passed
-                    if row['status'] == 'waiting':
+                    if challenge['status'] == 'waiting':
                         cursor.execute('''
                             UPDATE challenges
                             SET status = 'queued'
                             WHERE challenge_id = ?
-                        ''', (row['challenge_id'],))
-
-                if row:
-                    challenge = dict(row)
+                        ''', (challenge['challenge_id'],))
                     challenge_id = challenge['challenge_id']
 
                     # Mark as assigned atomically
@@ -2111,6 +2127,73 @@ class Database:
             conn.commit()
             logger.info(f"Deleted agent: {agent_id}")
             return True
+
+    def agent_supports_frequency(self, agent_devices: List[Dict], frequency: int) -> bool:
+        """Check if any of an agent's devices support a given frequency.
+
+        Args:
+            agent_devices: List of device dicts from agent record
+            frequency: Target frequency in Hz
+
+        Returns:
+            True if at least one device has an antenna supporting the frequency, False otherwise
+        """
+        if not agent_devices:
+            return False
+
+        for device in agent_devices:
+            # Support both new format (antennas_config) and legacy format (frequency_limits)
+            antennas_config = device.get('antennas_config')
+
+            if antennas_config:
+                # New format: check each antenna's frequency limits
+                for antenna_name, antenna_info in antennas_config.items():
+                    # Skip disabled antennas (default to enabled if not specified)
+                    if not antenna_info.get('enabled', True):
+                        continue
+
+                    freq_limits = antenna_info.get('frequency_limits', [])
+
+                    # No limits means accept any frequency
+                    if not freq_limits:
+                        return True
+
+                    # Check if frequency falls within any range
+                    for freq_range in freq_limits:
+                        try:
+                            if '-' not in freq_range:
+                                continue
+                            min_freq_str, max_freq_str = freq_range.split('-', 1)
+                            min_freq = int(min_freq_str.strip())
+                            max_freq = int(max_freq_str.strip())
+
+                            if min_freq <= frequency <= max_freq:
+                                return True
+                        except (ValueError, AttributeError):
+                            continue
+            else:
+                # Legacy format: device-level frequency_limits
+                freq_limits = device.get('frequency_limits', [])
+
+                # No limits means accept any frequency
+                if not freq_limits:
+                    return True
+
+                # Check if frequency falls within any range
+                for freq_range in freq_limits:
+                    try:
+                        if '-' not in freq_range:
+                            continue
+                        min_freq_str, max_freq_str = freq_range.split('-', 1)
+                        min_freq = int(min_freq_str.strip())
+                        max_freq = int(max_freq_str.strip())
+
+                        if min_freq <= frequency <= max_freq:
+                            return True
+                    except (ValueError, AttributeError):
+                        continue
+
+        return False
 
     def update_agent_devices(self, agent_id: str, devices: List[Dict]) -> bool:
         """Update device configuration for an agent.

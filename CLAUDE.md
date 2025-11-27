@@ -358,14 +358,54 @@ with db.begin_immediate():
 7. Runner reports completion to `/api/complete`
 8. Server updates: `status='waiting'`, clears assignment, sets `last_tx_time`, increments `transmission_count`
 
-### Frequency Validation
-Runner devices have `frequency_limits` in their config:
+### Frequency Validation and Per-Antenna Configuration
+
+Runner devices support two configuration formats for frequency limits and antenna selection:
+
+**Legacy Format (single antenna per device):**
 ```yaml
-frequency_limits:
-  - "144000000-148000000"  # 2m band
-  - "420000000-450000000"  # 70cm band
+devices:
+  - name: 0
+    model: hackrf
+    antenna: ""
+    frequency_limits:
+      - "144000000-148000000"  # 2m band
+      - "420000000-450000000"  # 70cm band
 ```
-Server only assigns challenges within runner's frequency range.
+
+**New Format (per-antenna frequency limits):**
+```yaml
+devices:
+  - name: "1234567890abcdef"
+    model: bladerf
+    antennas:
+      TX1:
+        enabled: true  # Optional, defaults to true
+        frequency_limits:
+          - "144000000-148000000"  # 2m on TX1
+          - "420000000-450000000"  # 70cm on TX1
+      TX2:
+        enabled: false  # Temporarily disabled (e.g., maintenance)
+        frequency_limits:
+          - "900000000-915000000"  # 900 MHz on TX2
+          - "2400000000-2500000000"  # 2.4 GHz on TX2
+```
+
+**Disabling Antennas:**
+Antennas can be temporarily disabled by setting `enabled: false`. This is useful for:
+- Antenna maintenance or repairs
+- Testing specific antenna configurations
+- Temporarily taking an antenna offline without removing its configuration
+
+Disabled antennas are skipped during automatic antenna selection on both the runner and server side.
+
+**Automatic Antenna Selection:**
+- Runner automatically selects the appropriate antenna based on challenge frequency
+- Server validates frequency compatibility before assigning challenges to runners
+- Runner double-checks frequency compatibility and refuses incompatible challenges
+- If no antenna supports the required frequency, the challenge is refused and requeued
+
+This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different antennas for different frequency bands, optimizing RF performance and preventing hardware damage from out-of-band transmissions.
 
 ### Error Handling
 - Runner failures: Automatic requeue via heartbeat timeout or assignment expiry

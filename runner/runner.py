@@ -227,19 +227,95 @@ class ChallengeCtlRunner:
             if device_conf.get('bias_t') or model_def.get('bias_t'):
                 device_string += ",biastee=1"
 
+            # Parse antenna configuration (supports both old and new formats)
+            antennas_config = {}
+
+            if 'antennas' in device_conf:
+                # New format: dict of antennas with frequency limits per antenna
+                if 'antenna' in device_conf or 'frequency_limits' in device_conf:
+                    logger.error(f"Device {idx} ({device_string}): Cannot use both 'antennas' dict and legacy 'antenna'/'frequency_limits' fields")
+                    sys.exit(1)
+                antennas_config = device_conf['antennas']
+                logger.info(f"Device {idx} configured with {len(antennas_config)} antennas: {', '.join(antennas_config.keys())}")
+            else:
+                # Old format: single antenna with device-level frequency limits (backward compatibility)
+                antenna = device_conf.get('antenna', model_def.get('antenna', ''))
+                frequency_limits = device_conf.get('frequency_limits', [])
+                if antenna:
+                    antennas_config[antenna] = {'frequency_limits': frequency_limits}
+                    logger.info(f"Device {idx} configured with single antenna: {antenna} (legacy format)")
+                elif frequency_limits:
+                    # Edge case: frequency_limits specified but no antenna
+                    # Create a default antenna entry with empty name
+                    antennas_config[''] = {'frequency_limits': frequency_limits}
+                    logger.warning(f"Device {idx} has frequency_limits but no antenna specified")
+
             device_info = {
                 'device_id': idx,
                 'model': model,
                 'name': name,
                 'device_string': device_string,
-                'antenna': device_conf.get('antenna', model_def.get('antenna', '')),
-                'frequency_limits': device_conf.get('frequency_limits', [])
+                'antennas_config': antennas_config  # {antenna_name: {frequency_limits: [...]}}
             }
 
             devices.append(device_info)
             logger.info(f"Configured device {idx}: {device_string}")
 
         return devices
+
+    def select_antenna_for_frequency(self, device: Dict, frequency: int) -> Optional[str]:
+        """Select the appropriate antenna for a given frequency based on device configuration.
+
+        Args:
+            device: Device dict with 'antennas_config' key
+            frequency: Target frequency in Hz
+
+        Returns:
+            Antenna name (string) if a compatible antenna is found, None otherwise
+        """
+        antennas_config = device.get('antennas_config', {})
+
+        if not antennas_config:
+            logger.warning(f"Device {device.get('name')} has no antenna configuration")
+            return None
+
+        # Check each antenna's frequency limits
+        for antenna_name, antenna_config in antennas_config.items():
+            # Skip disabled antennas (default to enabled if not specified)
+            if not antenna_config.get('enabled', True):
+                logger.debug(f"Antenna '{antenna_name}' is disabled, skipping")
+                continue
+
+            frequency_limits = antenna_config.get('frequency_limits', [])
+
+            # If no frequency limits specified, this antenna accepts any frequency
+            if not frequency_limits:
+                logger.debug(f"Antenna '{antenna_name}' has no frequency limits, accepting frequency {frequency}")
+                return antenna_name
+
+            # Check if frequency falls within any of the antenna's ranges
+            for freq_range in frequency_limits:
+                try:
+                    # Parse "min-max" format
+                    if '-' not in freq_range:
+                        logger.warning(f"Invalid frequency range format: {freq_range}")
+                        continue
+
+                    min_freq_str, max_freq_str = freq_range.split('-', 1)
+                    min_freq = int(min_freq_str.strip())
+                    max_freq = int(max_freq_str.strip())
+
+                    if min_freq <= frequency <= max_freq:
+                        logger.debug(f"Frequency {frequency} Hz matches antenna '{antenna_name}' range {freq_range}")
+                        return antenna_name
+
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Error parsing frequency range '{freq_range}': {e}")
+                    continue
+
+        # No antenna supports this frequency
+        logger.debug(f"No antenna on device {device.get('name')} supports frequency {frequency} Hz")
+        return None
 
     def enroll(self) -> bool:
         """Enroll this runner with the server using an enrollment token.
@@ -267,7 +343,7 @@ class ChallengeCtlRunner:
                     'device_id': dev['device_id'],
                     'model': dev['model'],
                     'name': dev['name'],
-                    'frequency_limits': dev['frequency_limits']
+                    'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
                 })
 
             # Create a session without authentication for enrollment
@@ -333,7 +409,7 @@ class ChallengeCtlRunner:
                     'device_id': dev['device_id'],
                     'model': dev['model'],
                     'name': dev['name'],
-                    'frequency_limits': dev['frequency_limits']
+                    'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
                 })
 
             response = self.session.post(
@@ -531,16 +607,30 @@ class ChallengeCtlRunner:
             logger.error(f"Error running spectrum paint: {e}", exc_info=True)
             return False
 
-    def get_available_device(self) -> Optional[Dict]:
-        """Get next available (non-busy, non-offline) device.
+    def get_available_device(self, frequency: Optional[int] = None) -> Optional[Dict]:
+        """Get next available (non-busy, non-offline) device, optionally filtered by frequency.
+
+        Args:
+            frequency: Optional target frequency in Hz. If provided, only returns devices
+                      with antennas that support this frequency.
 
         Returns:
-            Device dict or None if all devices are busy or offline
+            Device dict or None if all devices are busy, offline, or incompatible
         """
         with self.device_lock:
             for device in self.devices:
                 device_id = device['device_id']
+
+                # Check if device is available (not busy or offline)
                 if device_id not in self.busy_devices and device_id not in self.offline_devices:
+                    # If frequency specified, verify device has compatible antenna
+                    if frequency is not None:
+                        antenna = self.select_antenna_for_frequency(device, frequency)
+                        if antenna is None:
+                            # Device doesn't support this frequency, skip it
+                            logger.debug(f"Device {device.get('name')} doesn't support frequency {frequency} Hz")
+                            continue
+
                     return device
             return None
 
@@ -700,17 +790,24 @@ class ChallengeCtlRunner:
 
         logger.info(f"Executing challenge: {name} ({modulation}) on {frequency} Hz")
 
-        # Use provided device or select first available
+        # Use provided device or select first available that supports the frequency
         if device is None:
-            device = self.get_available_device()
+            device = self.get_available_device(frequency=frequency)
 
         if not device:
-            logger.error("No devices available")
+            logger.error(f"No devices available that support frequency {frequency} Hz")
             return (False, 0, frequency or 0)
 
         device_id = device['device_id']
         device_string = device['device_string']
-        antenna = device['antenna']
+
+        # Select appropriate antenna for this frequency
+        antenna = self.select_antenna_for_frequency(device, frequency)
+        if antenna is None:
+            logger.error(f"Device {device.get('name')} has no antenna supporting frequency {frequency} Hz")
+            return (False, device_id, frequency or 0)
+
+        logger.info(f"Using device {device.get('name')} with antenna '{antenna}' for frequency {frequency} Hz")
 
         try:
             # Run spectrum paint before challenge if configured

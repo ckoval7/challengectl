@@ -392,17 +392,57 @@ Device names can be:
 
 #### Frequency Limits
 
-Frequency limits define which challenges this device can handle.
+Frequency limits define which challenges this device can handle. Two configuration formats are supported:
 
+**Legacy Format (device-level frequency limits):**
 ```yaml
-frequency_limits:
-  - "144000000-148000000"   # 144.0 - 148.0 MHz
-  - "420000000-450000000"   # 420.0 - 450.0 MHz
-  - "902000000-928000000"   # 902.0 - 928.0 MHz
+devices:
+  - name: 0
+    model: hackrf
+    frequency_limits:
+      - "144000000-148000000"   # 144.0 - 148.0 MHz
+      - "420000000-450000000"   # 420.0 - 450.0 MHz
 ```
 
-**Omitting frequency limits**:
-If not specified, the device can handle any frequency within its hardware capabilities.
+**New Format (per-antenna frequency limits):**
+```yaml
+devices:
+  - name: "1234567890abcdef"
+    model: bladerf
+    antennas:
+      TX1:
+        enabled: true  # Optional, defaults to true
+        frequency_limits:
+          - "144000000-148000000"   # 2m on TX1
+          - "420000000-450000000"   # 70cm on TX1
+      TX2:
+        enabled: true
+        frequency_limits:
+          - "900000000-915000000"   # 900 MHz on TX2
+          - "2400000000-2500000000" # 2.4 GHz on TX2
+```
+
+**Per-Antenna Configuration Benefits:**
+- Assign different frequency ranges to different antenna ports
+- Temporarily disable specific antennas without removing configuration (`enabled: false`)
+- Automatic antenna selection based on challenge frequency
+- Optimized RF performance by matching antenna to frequency band
+
+**Disabling Antennas:**
+
+Temporarily disable antennas for maintenance or testing:
+```yaml
+antennas:
+  TX1:
+    enabled: true
+    frequency_limits: ["144000000-148000000"]
+  TX2:
+    enabled: false  # Disabled for maintenance
+    frequency_limits: ["2400000000-2500000000"]
+```
+
+**Omitting frequency limits:**
+If not specified, the antenna/device can handle any frequency within its hardware capabilities.
 
 ```yaml
 - name: 0
@@ -414,6 +454,7 @@ If not specified, the device can handle any frequency within its hardware capabi
 - Legal to transmit on in your jurisdiction
 - Covered by your license (if required)
 - Within your antenna's specifications
+- Supported by your SDR hardware
 
 ## Listener Configuration
 
