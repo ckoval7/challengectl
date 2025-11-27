@@ -35,10 +35,10 @@
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
-              {{ stats.challenges_queued || 0 }}
+              {{ stats.challenges_queued || 0 }} / {{ stats.challenges_waiting || 0 }}
             </div>
             <div class="stat-label">
-              Challenges Queued
+              Queued / Waiting
             </div>
             <div class="stat-sublabel">
               {{ stats.challenges_total || 0 }} Total
