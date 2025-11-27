@@ -137,8 +137,8 @@ const selectedPreviewRecording = ref(null)
 // Display only the most recent N recordings (newest first)
 const displayRecordings = computed(() => {
   const sorted = [...props.recordings].sort((a, b) => {
-    const timeA = new Date(b.completed_at || b.created_at)
-    const timeB = new Date(a.completed_at || a.created_at)
+    const timeA = new Date(b.started_at || b.created_at)
+    const timeB = new Date(a.started_at || a.created_at)
     return timeA - timeB
   })
   return sorted.slice(0, props.maxRecordings)

@@ -47,6 +47,11 @@
                   :placeholders="getPlaceholders(props.row.challenge_id)"
                   :max-recordings="6"
                 />
+                <div v-if="shouldShowViewAllLink(props.row.challenge_id)" class="view-all-link">
+                  <router-link :to="`/recordings/${props.row.challenge_id}`">
+                    View All {{ getRecordings(props.row.challenge_id).length }} Recordings →
+                  </router-link>
+                </div>
               </div>
             </template>
           </el-table-column>
@@ -1140,6 +1145,11 @@ function getPlaceholders(challengeId) {
   return recordingPlaceholders.value.get(challengeId) || []
 }
 
+function shouldShowViewAllLink(challengeId) {
+  const recordings = getRecordings(challengeId)
+  return recordings.length > 6
+}
+
 // Client-side queue position calculator (matches server logic)
 function recalculateQueuePositions() {
   // Get all enabled challenges that are in the queue
@@ -1290,7 +1300,7 @@ function handleRecordingComplete(event) {
 
 function handleRecordingImageUploaded(event) {
   console.log('Recording image uploaded:', event)
-  const { challenge_id, recording_id, width, height, image_url, timestamp } = event
+  const { challenge_id, recording_id, width, height, image_url, started_at, timestamp } = event
 
   if (!challenge_id || !recording_id) {
     console.warn('Missing required fields in recording_image_uploaded event:', event)
@@ -1310,6 +1320,7 @@ function handleRecordingImageUploaded(event) {
     image_path: image_url,  // The server sends image_url
     image_width: width,
     image_height: height,
+    started_at: started_at,
     completed_at: timestamp
   }
 
@@ -1866,6 +1877,25 @@ h3 {
   margin-top: 0;
   margin-bottom: 15px;
   color: var(--el-text-color-primary);
+}
+
+.view-all-link {
+  margin-top: 12px;
+  text-align: center;
+  padding: 8px;
+}
+
+.view-all-link a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.view-all-link a:hover {
+  color: var(--el-color-primary-light-3);
+  text-decoration: underline;
 }
 
 /* Playlist Tab Styles */

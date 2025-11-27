@@ -98,6 +98,11 @@
             :placeholders="placeholders"
             :max-recordings="6"
           />
+          <div v-if="recordings.length > 6" class="view-all-link">
+            <router-link :to="`/recordings/${challenge.challenge_id}`">
+              View All {{ recordings.length }} Recordings →
+            </router-link>
+          </div>
         </div>
 
         <!-- Actions Section -->
@@ -366,6 +371,25 @@ function formatTimestamp(timestamp) {
   font-size: 14px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+}
+
+.view-all-link {
+  margin-top: 12px;
+  text-align: center;
+  padding: 8px;
+}
+
+.view-all-link a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.view-all-link a:hover {
+  color: var(--el-color-primary-light-3);
+  text-decoration: underline;
 }
 
 .actions-section {
