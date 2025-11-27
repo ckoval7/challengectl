@@ -652,6 +652,7 @@ class Database:
             # Calculate queue positions with timing and dynamic priority information
             now = datetime.now(timezone.utc)
 
+            # Acquire timing lock once and calculate all priorities
             with self.timing_lock:
                 for challenge in enabled_challenges:
                     cid = challenge['challenge_id']
@@ -666,8 +667,10 @@ class Database:
                     else:
                         challenge['next_available_time'] = next_tx.isoformat()  # Waiting
 
-                    # Calculate dynamic priority for all enabled challenges
-                    challenge['dynamic_priority'] = self.calculate_dynamic_priority(challenge, now)
+                    # Calculate dynamic priority (pass timing to avoid re-locking)
+                    challenge['dynamic_priority'] = self._calculate_dynamic_priority_with_timing(
+                        challenge, now, timing
+                    )
 
             # Sort by dynamic priority (highest first), then by name for tiebreaking
             enabled_challenges.sort(
@@ -714,6 +717,42 @@ class Database:
 
             # Combine and return all challenges
             return enabled_challenges + disabled_challenges
+
+    def _calculate_dynamic_priority_with_timing(self, challenge: Dict, now: datetime, timing: Dict) -> float:
+        """Calculate dynamic priority given pre-fetched timing info (internal helper).
+
+        This version does NOT acquire timing_lock - caller must hold it.
+
+        Args:
+            challenge: Challenge dictionary
+            now: Current time
+            timing: Pre-fetched timing dict from challenge_timing
+
+        Returns:
+            Float priority value
+        """
+        base_priority = challenge.get('priority', 0)
+        last_tx_str = challenge.get('last_tx_time')
+
+        if last_tx_str is None:
+            # Never transmitted - give maximum boost
+            minutes_waiting = 1000.0
+        else:
+            next_tx = timing.get('next_tx')
+
+            if next_tx is None:
+                # Ready immediately after last transmission
+                last_tx = datetime.fromisoformat(last_tx_str)
+                if last_tx.tzinfo is None:
+                    last_tx = last_tx.replace(tzinfo=timezone.utc)
+                minutes_waiting = (now - last_tx).total_seconds() / 60.0
+            else:
+                # Ready after delay expired
+                if next_tx.tzinfo is None:
+                    next_tx = next_tx.replace(tzinfo=timezone.utc)
+                minutes_waiting = max(0, (now - next_tx).total_seconds() / 60.0)
+
+        return base_priority + minutes_waiting
 
     def calculate_dynamic_priority(self, challenge: Dict, now: Optional[datetime] = None) -> float:
         """Calculate dynamic priority for a challenge based on time waiting.
