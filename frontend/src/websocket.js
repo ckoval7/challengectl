@@ -18,7 +18,11 @@ class WebSocketManager {
 
     this.socket = io(wsUrl, {
       transports: ['websocket', 'polling'],
-      withCredentials: true  // Send cookies (session token) with WebSocket connection
+      withCredentials: true,        // Send cookies (session token) with WebSocket connection
+      reconnection: true,            // Enable automatic reconnection
+      reconnectionDelay: 1000,       // Start with 1 second delay
+      reconnectionDelayMax: 5000,    // Maximum 5 second delay between attempts
+      reconnectionAttempts: Infinity // Keep trying to reconnect indefinitely
     })
 
     this.socket.on('connect', () => {
@@ -44,9 +48,6 @@ class WebSocketManager {
       // Only log non-log events to avoid console spam
       if (data.type !== 'log') {
         console.log('WebSocket event:', data.type, data)
-      } else {
-        // Temporary debug logging for log events
-        console.debug('Log event received, dispatching to', this.listeners['log']?.length || 0, 'listeners')
       }
 
       // Emit to listeners

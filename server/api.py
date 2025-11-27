@@ -126,7 +126,12 @@ class ChallengeCtlAPI:
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins=allowed_origins,
-            cookie='session_token'  # Tie to session cookie for additional security
+            cookie='session_token',  # Tie to session cookie for additional security
+            ping_timeout=60,         # Allow 60 seconds for ping response (prevent aggressive disconnects)
+            ping_interval=25,        # Send ping every 25 seconds for keepalive
+            async_mode='threading',  # Explicit async mode for consistency
+            logger=False,            # Disable verbose SocketIO logging
+            engineio_logger=False    # Disable verbose Engine.IO logging
         )
 
         # Initialize rate limiter with default limits for security
