@@ -358,65 +358,19 @@ class ChallengeCtlServer:
         print("Background tasks started")
         logger.info("Background tasks started")
 
-        # Check if config and database are in sync
+        # Check database for challenges
         # Only run this check in the main process (not in Flask reloader's subprocess)
         # Flask sets WERKZEUG_RUN_MAIN in the reloader's child process
         is_reloader_process = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
 
         if not is_reloader_process or not debug:
-            sync_status = self.api.check_config_sync()
-
-            # Only check sync if there are challenges defined in the config file
-            # If total_config is 0, user is using database-only challenge management
-            if sync_status.get('total_config', 0) > 0:
-                if sync_status.get('in_sync') is False:
-                    # Concise log message for syslog
-                    logger.warning(f"Configuration out of sync: {len(sync_status.get('new', []))} new, {len(sync_status.get('removed', []))} removed, {len(sync_status.get('updated', []))} updated challenges")
-
-                    # Detailed console output
-                    print("\n" + "="*60)
-                    print("CONFIG OUT OF SYNC WARNING")
-                    print("="*60)
-                    print("The configuration file has changes not reflected in the database:")
-                    print()
-
-                    if sync_status['new']:
-                        print(f"  New challenges in config ({len(sync_status['new'])}):")
-                        for name in sync_status['new']:
-                            print(f"    - {name}")
-                        print()
-
-                    if sync_status['removed']:
-                        print(f"  Challenges removed from config ({len(sync_status['removed'])}):")
-                        for name in sync_status['removed']:
-                            print(f"    - {name}")
-                        print()
-
-                    if sync_status['updated']:
-                        print(f"  Challenges with updated config ({len(sync_status['updated'])}):")
-                        for name in sync_status['updated']:
-                            print(f"    - {name}")
-                        print()
-
-                    print("RECOMMENDED ACTIONS:")
-                    print("  1. Use the web UI: Go to Manage Challenges > Live Status and click 'Reload from Config'")
-                    print("  2. OR restart the server after reviewing your configuration file")
-                    print("="*60 + "\n")
-                elif sync_status.get('in_sync') is True:
-                    print(f"Configuration in sync: {sync_status['total_config']} challenges")
-                    logger.info(f"Configuration in sync: {sync_status['total_config']} challenges")
-                elif sync_status.get('error'):
-                    print(f"Warning: Could not check config sync: {sync_status['error']}")
-                    logger.error(f"Could not check config sync: {sync_status['error']}")
+            total_db = len(self.db.get_all_challenges())
+            if total_db > 0:
+                print(f"Challenge management: {total_db} challenge(s) in database")
+                logger.info(f"Challenge management: {total_db} challenges in database")
             else:
-                # Database-only challenge management (no challenges in config file)
-                total_db = sync_status.get('total_db', 0)
-                if total_db > 0:
-                    print(f"Challenge management: Database-only mode ({total_db} challenges in database)")
-                    logger.info(f"Database-only challenge management: {total_db} challenges")
-                else:
-                    print("Challenge management: No challenges configured")
-                    logger.info("No challenges configured in database or config file")
+                print("Challenge management: No challenges configured")
+                logger.info("No challenges configured in database")
 
         # Handle shutdown gracefully
         def shutdown_handler(signum, frame):
@@ -631,26 +585,16 @@ server:
   heartbeat_timeout: 90  # seconds
   assignment_timeout: 300  # seconds (5 minutes)
 
+  # Listener recording settings
+  recording_priority_threshold: 1.0  # Minimum priority score to trigger recording (default: 1.0)
+
 conference:
   name: "ExampleCon 2025"
   start: "2025-04-05 09:00:00"
   stop: "2025-04-07 18:00:00"
 
-# Challenges are configured through the Web UI at /challenge-config
-# You can also configure challenges in this file if preferred:
-#
-# challenges:
-#   - name: NBFM_FLAG_1
-#     frequency: 146550000
-#     modulation: nbfm
-#     flag: challenges/examples/example_voice.wav
-#     wav_samplerate: 48000
-#     min_delay: 60
-#     max_delay: 90
-#     enabled: true
-#
-# See the Challenge Management guide for more information:
-# https://github.com/ckoval7/challengectl/wiki/Challenge-Management
+# Challenges are managed through the Web UI
+# Upload example-challenges.yml via: Manage Challenges > Import/Export
 """
 
     with open(config_path, 'w') as f:

@@ -263,44 +263,26 @@ class ChallengeCtlAPI:
         return None
 
     def check_config_sync(self) -> Dict:
-        """Check if database challenges are in sync with config file.
+        """Check database challenges (config file sync no longer supported).
 
         Returns:
-            Dict with 'in_sync' boolean and details about differences
+            Dict with database challenge count
         """
         try:
-            # Load challenges from config
-            config_challenges = {}
-            for challenge in self.config.get('challenges', []):
-                if isinstance(challenge, dict) and 'name' in challenge:
-                    config_challenges[challenge['name']] = challenge
-
             # Get challenges from database
-            db_challenges = {c['name']: c for c in self.db.get_all_challenges()}
-
-            # Find differences
-            new_in_config = set(config_challenges.keys()) - set(db_challenges.keys())
-            removed_from_config = set(db_challenges.keys()) - set(config_challenges.keys())
-
-            # Check for updated challenges (same name but different config)
-            updated = []
-            for name in set(config_challenges.keys()) & set(db_challenges.keys()):
-                if config_challenges[name] != db_challenges[name]['config']:
-                    updated.append(name)
-
-            in_sync = not (new_in_config or removed_from_config or updated)
+            db_challenges = self.db.get_all_challenges()
 
             return {
-                'in_sync': in_sync,
-                'new': sorted(new_in_config),
-                'removed': sorted(removed_from_config),
-                'updated': sorted(updated),
-                'total_config': len(config_challenges),
+                'in_sync': True,
+                'new': [],
+                'removed': [],
+                'updated': [],
+                'total_config': 0,
                 'total_db': len(db_challenges)
             }
         except Exception as e:
-            logger.error(f"Error checking config sync: {e}")
-            return {'in_sync': None, 'error': 'Failed to check configuration sync'}
+            logger.error(f"Error checking database challenges: {e}")
+            return {'in_sync': None, 'error': 'Failed to check database challenges'}
 
     def _parse_runner_devices(self, runner: Dict) -> Dict:
         """Parse devices JSON field in runner dict.
@@ -3740,48 +3722,6 @@ radios:
             except Exception as e:
                 logger.error(f"Error importing challenges: {e}", exc_info=True)
                 return jsonify({'error': f'Failed to import challenges: {str(e)}'}), 500
-
-        @self.app.route('/api/challenges/reload', methods=['POST'])
-        @self.require_admin_auth
-        @self.require_csrf
-        def reload_challenges():
-            """Reload challenges from configuration file."""
-            try:
-                config = self.load_config(self.config_path)
-                challenges_config = config.get('challenges', [])
-
-                # Get existing challenges by name
-                existing_challenges = {c['name']: c for c in self.db.get_all_challenges()}
-
-                added = 0
-                updated = 0
-                for challenge in challenges_config:
-                    if isinstance(challenge, dict) and 'name' in challenge:
-                        name = challenge['name']
-
-                        if name in existing_challenges:
-                            # Update existing challenge
-                            challenge_id = existing_challenges[name]['challenge_id']
-                            if self.db.update_challenge(challenge_id, challenge):
-                                updated += 1
-                                logger.info(f"Updated challenge: {name}")
-                        else:
-                            # Add new challenge
-                            challenge_id = str(uuid.uuid4())
-                            if self.db.add_challenge(challenge_id, name, challenge):
-                                added += 1
-
-                # Broadcast updated challenges to public dashboard
-                self.broadcast_public_challenges()
-
-                return jsonify({
-                    'status': 'reloaded',
-                    'added': added,
-                    'updated': updated
-                }), 200
-            except Exception as e:
-                logger.error(f"Error reloading challenges: {e}")
-                return jsonify({'error': 'Failed to reload challenges'}), 500
 
         @self.app.route('/api/transmissions', methods=['GET'])
         @self.require_admin_auth
