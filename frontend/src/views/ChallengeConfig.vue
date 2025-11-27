@@ -1283,6 +1283,8 @@ function handleRecordingComplete(event) {
   const placeholder = placeholders.find(p => p.recording_id === recording_id)
   if (placeholder) {
     placeholder.status = status
+    // Create new array reference to trigger Vue reactivity
+    recordingPlaceholders.value.set(challenge_id, [...placeholders])
   }
 }
 
@@ -1313,14 +1315,16 @@ function handleRecordingImageUploaded(event) {
 
   // Add to recordings list (prepend to show newest first)
   const recordings = recordingsMap.value.get(challenge_id) || []
-  recordings.unshift(recording)
+
+  // Create new array reference to trigger Vue reactivity
+  const updatedRecordings = [recording, ...recordings]
 
   // Keep only most recent 6
-  if (recordings.length > 6) {
-    recordings.splice(6)
+  if (updatedRecordings.length > 6) {
+    updatedRecordings.splice(6)
   }
 
-  recordingsMap.value.set(challenge_id, recordings)
+  recordingsMap.value.set(challenge_id, updatedRecordings)
 }
 
 function handleChallengeUpdated(event) {

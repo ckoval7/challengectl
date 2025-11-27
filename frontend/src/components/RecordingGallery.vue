@@ -17,7 +17,7 @@
               <Loading />
             </el-icon>
             <div class="placeholder-text">
-              <div class="recording-status">Recording in progress...</div>
+              <div class="recording-status">{{ getPlaceholderStatusText(placeholder.status) }}</div>
               <div class="recording-meta">
                 <span v-if="placeholder.listener_id">Listener: {{ placeholder.listener_id }}</span>
                 <span v-if="placeholder.frequency">{{ formatFrequency(placeholder.frequency) }}</span>
@@ -143,6 +143,16 @@ const displayRecordings = computed(() => {
   })
   return sorted.slice(0, props.maxRecordings)
 })
+
+// Get status text for placeholder based on status
+function getPlaceholderStatusText(status) {
+  const statusMap = {
+    'in_progress': 'Recording in progress...',
+    'completed': 'Processing...',
+    'failed': 'Recording failed'
+  }
+  return statusMap[status] || 'Recording in progress...'
+}
 
 function getImageUrl(recordingId) {
   return `/api/recordings/${recordingId}/image`

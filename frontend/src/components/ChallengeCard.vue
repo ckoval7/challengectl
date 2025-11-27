@@ -18,9 +18,8 @@
           </el-tag>
           <el-switch
             v-if="showToggle"
-            v-model="challenge.enabled"
+            v-model="challengeEnabled"
             size="small"
-            @change="handleEnabledChange"
             @click.stop
           />
         </div>
@@ -177,12 +176,16 @@ const emit = defineEmits(['toggle-enabled', 'trigger', 'edit', 'delete'])
 
 const isExpanded = ref(false)
 
+// Computed property for enabled state to avoid prop mutation
+const challengeEnabled = computed({
+  get: () => props.challenge.enabled,
+  set: (value) => {
+    emit('toggle-enabled', props.challenge.challenge_id, value)
+  }
+})
+
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
-}
-
-function handleEnabledChange(value) {
-  emit('toggle-enabled', props.challenge.challenge_id, value)
 }
 
 function handleTrigger() {
