@@ -20,6 +20,9 @@ center_freq = 0
 dev = "0a"
 ask = ()
 ask_code = '0,'
+ant = ""
+rf_gain_val = 37  # Default RF gain
+if_gain_val = 32  # Default IF gain
 
 
 class russ_test(gr.top_block):
@@ -44,8 +47,8 @@ class russ_test(gr.top_block):
         self.osmosdr_sink_0.set_sample_rate(samp_rate)
         self.osmosdr_sink_0.set_center_freq(center_freq, 0)
         self.osmosdr_sink_0.set_freq_corr(0, 0)
-        self.osmosdr_sink_0.set_gain(37, 0)
-        self.osmosdr_sink_0.set_if_gain(32, 0)
+        self.osmosdr_sink_0.set_gain(rf_gain_val, 0)
+        self.osmosdr_sink_0.set_if_gain(if_gain_val, 0)
         self.osmosdr_sink_0.set_bb_gain(32, 0)
         self.osmosdr_sink_0.set_antenna(ant, 0)
         self.osmosdr_sink_0.set_bandwidth(2000000, 0)
@@ -107,12 +110,14 @@ class russ_test(gr.top_block):
         self.blocks_vector_source_x_0.set_data(self.ask, [])
 
 
-def main(msg, freq, device, antenna, top_block_cls=russ_test, options=None):
+def main(msg, freq, device, antenna, rf_gain=None, if_gain=None, top_block_cls=russ_test, options=None):
 
     global center_freq
     global dev
     global ask
     global ant
+    global rf_gain_val
+    global if_gain_val
 
     # parser = OptionParser(option_class=eng_option, usage="%prog: [options]")
     # parser.add_option("-m", "--msg", dest="msg",
@@ -133,6 +138,10 @@ def main(msg, freq, device, antenna, top_block_cls=russ_test, options=None):
     dev = device
     #msg = ""
     ant = str(antenna)
+    if rf_gain is not None:
+        rf_gain_val = rf_gain
+    if if_gain is not None:
+        if_gain_val = if_gain
 
     ask_code = '0,'
     #for char in options.msg:

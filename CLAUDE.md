@@ -360,32 +360,37 @@ with db.begin_immediate():
 
 ### Frequency Validation and Per-Antenna Configuration
 
-Runner devices support two configuration formats for frequency limits and antenna selection:
+Runner devices support two configuration formats for frequency limits, gain, and antenna selection:
 
 **Legacy Format (single antenna per device):**
 ```yaml
 devices:
   - name: 0
     model: hackrf
+    rf_gain: 14  # Device-level gain
+    if_gain: 32  # Device-level IF gain (HackRF only)
     antenna: ""
     frequency_limits:
       - "144000000-148000000"  # 2m band
       - "420000000-450000000"  # 70cm band
 ```
 
-**New Format (per-antenna frequency limits):**
+**New Format (per-antenna frequency limits and gain):**
 ```yaml
 devices:
   - name: "1234567890abcdef"
     model: bladerf
+    rf_gain: 43  # Default gain (fallback if not specified per-antenna)
     antennas:
       TX1:
         enabled: true  # Optional, defaults to true
+        rf_gain: 43    # Optimal gain for VHF/UHF
         frequency_limits:
           - "144000000-148000000"  # 2m on TX1
           - "420000000-450000000"  # 70cm on TX1
       TX2:
         enabled: false  # Temporarily disabled (e.g., maintenance)
+        rf_gain: 50    # Higher gain for microwave frequencies
         frequency_limits:
           - "900000000-915000000"  # 900 MHz on TX2
           - "2400000000-2500000000"  # 2.4 GHz on TX2
@@ -399,13 +404,21 @@ Antennas can be temporarily disabled by setting `enabled: false`. This is useful
 
 Disabled antennas are skipped during automatic antenna selection on both the runner and server side.
 
-**Automatic Antenna Selection:**
+**Automatic Antenna Selection and Gain Application:**
 - Runner automatically selects the appropriate antenna based on challenge frequency
 - Server validates frequency compatibility before assigning challenges to runners
 - Runner double-checks frequency compatibility and refuses incompatible challenges
 - If no antenna supports the required frequency, the challenge is refused and requeued
+- Per-antenna `rf_gain` is automatically applied when the antenna is selected
+- Gain values are passed to fire functions (NBFM, CW, spectrum_paint) for transmission
 
-This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different antennas for different frequency bands, optimizing RF performance and preventing hardware damage from out-of-band transmissions.
+**Gain Configuration:**
+- **Per-antenna rf_gain** (recommended): Optimize gain for different frequency bands
+- **Device-level rf_gain**: Fallback value if not specified per-antenna
+- **if_gain** (HackRF only): Specified at device level, not per-antenna
+- Device-level gains were previously configured but not used (bug fixed in gain implementation)
+
+This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different antennas and optimal gain values for different frequency bands, optimizing RF performance and preventing hardware damage from out-of-band transmissions.
 
 ### Error Handling
 - Runner failures: Automatic requeue via heartbeat timeout or assignment expiry

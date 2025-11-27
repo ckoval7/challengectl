@@ -227,27 +227,48 @@ class ChallengeCtlRunner:
             if device_conf.get('bias_t') or model_def.get('bias_t'):
                 device_string += ",biastee=1"
 
+            # Get gain settings (device-level, for legacy format or fallback)
+            device_rf_gain = device_conf.get('rf_gain', model_def.get('rf_gain'))
+            device_if_gain = device_conf.get('if_gain', model_def.get('if_gain'))
+
             # Parse antenna configuration (supports both old and new formats)
             antennas_config = {}
 
             if 'antennas' in device_conf:
-                # New format: dict of antennas with frequency limits per antenna
+                # New format: dict of antennas with frequency limits and optional rf_gain per antenna
                 if 'antenna' in device_conf or 'frequency_limits' in device_conf:
                     logger.error(f"Device {idx} ({device_string}): Cannot use both 'antennas' dict and legacy 'antenna'/'frequency_limits' fields")
                     sys.exit(1)
-                antennas_config = device_conf['antennas']
+
+                # Parse each antenna's configuration
+                for antenna_name, antenna_conf in device_conf['antennas'].items():
+                    # Get per-antenna rf_gain, fall back to device-level if not specified
+                    antenna_rf_gain = antenna_conf.get('rf_gain', device_rf_gain)
+
+                    antennas_config[antenna_name] = {
+                        'frequency_limits': antenna_conf.get('frequency_limits', []),
+                        'enabled': antenna_conf.get('enabled', True),
+                        'rf_gain': antenna_rf_gain
+                    }
+
                 logger.info(f"Device {idx} configured with {len(antennas_config)} antennas: {', '.join(antennas_config.keys())}")
             else:
                 # Old format: single antenna with device-level frequency limits (backward compatibility)
                 antenna = device_conf.get('antenna', model_def.get('antenna', ''))
                 frequency_limits = device_conf.get('frequency_limits', [])
                 if antenna:
-                    antennas_config[antenna] = {'frequency_limits': frequency_limits}
+                    antennas_config[antenna] = {
+                        'frequency_limits': frequency_limits,
+                        'rf_gain': device_rf_gain
+                    }
                     logger.info(f"Device {idx} configured with single antenna: {antenna} (legacy format)")
                 elif frequency_limits:
                     # Edge case: frequency_limits specified but no antenna
                     # Create a default antenna entry with empty name
-                    antennas_config[''] = {'frequency_limits': frequency_limits}
+                    antennas_config[''] = {
+                        'frequency_limits': frequency_limits,
+                        'rf_gain': device_rf_gain
+                    }
                     logger.warning(f"Device {idx} has frequency_limits but no antenna specified")
 
             device_info = {
@@ -255,7 +276,9 @@ class ChallengeCtlRunner:
                 'model': model,
                 'name': name,
                 'device_string': device_string,
-                'antennas_config': antennas_config  # {antenna_name: {frequency_limits: [...]}}
+                'antennas_config': antennas_config,  # {antenna_name: {frequency_limits: [...], rf_gain: X}}
+                'rf_gain': device_rf_gain,  # Device-level gain for legacy support
+                'if_gain': device_if_gain   # Device-level if_gain (HackRF only)
             }
 
             devices.append(device_info)
@@ -581,17 +604,24 @@ class ChallengeCtlRunner:
             parent_dir = os.path.join(os.path.dirname(__file__), '..')
             return os.path.join(parent_dir, flag_value)
 
-    def run_spectrum_paint(self, frequency: int, device_string: str, antenna: str) -> bool:
+    def run_spectrum_paint(self, frequency: int, device_string: str, antenna: str, rf_gain=None, if_gain=None) -> bool:
         """
         Run spectrum paint before a challenge.
         This matches the behavior of the original challengectl.
+
+        Args:
+            frequency: Frequency in Hz
+            device_string: Device string (e.g., "hackrf=0,biastee=1")
+            antenna: Antenna name
+            rf_gain: RF gain value (optional)
+            if_gain: IF gain value (optional)
 
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             logger.info(f"Running spectrum paint on {frequency} Hz before challenge")
-            p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
+            p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna, rf_gain, if_gain))
             p.start()
             p.join()
             success = (p.exitcode == 0)
@@ -807,13 +837,19 @@ class ChallengeCtlRunner:
             logger.error(f"Device {device.get('name')} has no antenna supporting frequency {frequency} Hz")
             return (False, device_id, frequency or 0)
 
-        logger.info(f"Using device {device.get('name')} with antenna '{antenna}' for frequency {frequency} Hz")
+        # Get gain settings for this antenna/device
+        antennas_config = device.get('antennas_config', {})
+        antenna_config = antennas_config.get(antenna, {})
+        rf_gain = antenna_config.get('rf_gain', device.get('rf_gain'))  # Per-antenna or device-level
+        if_gain = device.get('if_gain')  # Device-level only (HackRF specific)
+
+        logger.info(f"Using device {device.get('name')} with antenna '{antenna}' for frequency {frequency} Hz (rf_gain={rf_gain})")
 
         try:
             # Run spectrum paint before challenge if configured
             if self.spectrum_paint_before_challenge and modulation != 'paint':
                 logger.info("Spectrum paint before challenge is enabled")
-                self.run_spectrum_paint(frequency, device_string, antenna)
+                self.run_spectrum_paint(frequency, device_string, antenna, rf_gain, if_gain)
             # Resolve file paths if needed
             if modulation in ['nbfm', 'ssb', 'fhss', 'freedv', 'paint']:
                 flag_path = self.resolve_file_path(flag)
@@ -825,13 +861,13 @@ class ChallengeCtlRunner:
             # Execute based on modulation type
             if modulation == 'cw':
                 speed = config.get('speed', 35)
-                p = Process(target=cw.main, args=(flag, speed, frequency, device_string, antenna))
+                p = Process(target=cw.main, args=(flag, speed, frequency, device_string, antenna, rf_gain, if_gain))
                 p.start()
                 p.join()
                 success = (p.exitcode == 0)
 
             elif modulation == 'ask':
-                ask.main(flag.encode("utf-8").hex(), frequency, device_string, antenna)
+                ask.main(flag.encode("utf-8").hex(), frequency, device_string, antenna, rf_gain, if_gain)
                 success = True
 
             elif modulation == 'nbfm':
@@ -844,6 +880,11 @@ class ChallengeCtlRunner:
                     nbfm_opts.wav_file = flag
                     nbfm_opts.wav_samp_rate = wav_rate
                     nbfm_opts.antenna = antenna
+                    # Pass gain settings (fixes bug where gains weren't being used)
+                    if rf_gain is not None:
+                        nbfm_opts.rf_gain = rf_gain
+                    if if_gain is not None:
+                        nbfm_opts.if_gain = if_gain
                     nbfm.main(options=nbfm_opts)
 
                 p = Process(target=run_nbfm)
@@ -863,6 +904,11 @@ class ChallengeCtlRunner:
                     ssb_opts.wav_samp_rate = wav_rate
                     ssb_opts.mode = mode
                     ssb_opts.antenna = antenna
+                    # Pass gain settings
+                    if rf_gain is not None:
+                        ssb_opts.rf_gain = rf_gain
+                    if if_gain is not None:
+                        ssb_opts.if_gain = if_gain
                     ssb_tx.main(options=ssb_opts)
 
                 p = Process(target=run_ssb)
@@ -888,6 +934,11 @@ class ChallengeCtlRunner:
                     fhss_opts.hop_time = hop_time
                     fhss_opts.seed = seed
                     fhss_opts.antenna = antenna
+                    # Pass gain settings
+                    if rf_gain is not None:
+                        fhss_opts.rf_gain = rf_gain
+                    if if_gain is not None:
+                        fhss_opts.if_gain = if_gain
                     fhss_tx.main(options=fhss_opts)
 
                 p = Process(target=run_fhss)
@@ -908,6 +959,11 @@ class ChallengeCtlRunner:
                     freedv_opts.wav_samp_rate = wav_rate
                     freedv_opts.mode = mode
                     freedv_opts.text = text
+                    # Pass gain settings
+                    if rf_gain is not None:
+                        freedv_opts.rf_gain = rf_gain
+                    if if_gain is not None:
+                        freedv_opts.if_gain = if_gain
                     # Note: freedv_tx doesn't support antenna parameter yet
                     freedv_tx.main(options=freedv_opts)
 
@@ -925,6 +981,11 @@ class ChallengeCtlRunner:
                 pocsag_opts.capcode = capcode
                 pocsag_opts.message = flag
                 pocsag_opts.antenna = antenna
+                # Pass gain settings
+                if rf_gain is not None:
+                    pocsag_opts.rf_gain = rf_gain
+                if if_gain is not None:
+                    pocsag_opts.if_gain = if_gain
                 pocsagtx_osmocom.main(options=pocsag_opts)
                 success = True
 
@@ -938,12 +999,17 @@ class ChallengeCtlRunner:
                 lrsopts.deviceargs = device_string
                 lrsopts.freq = frequency
                 lrsopts.antenna = antenna
+                # Pass gain settings
+                if rf_gain is not None:
+                    lrsopts.rf_gain = rf_gain
+                if if_gain is not None:
+                    lrsopts.if_gain = if_gain
                 lrs_tx.main(options=lrsopts, data=pager_data)
 
                 success = True
 
             elif modulation == 'paint':
-                p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna))
+                p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna, rf_gain, if_gain))
                 p.start()
                 p.join()
                 success = (p.exitcode == 0)

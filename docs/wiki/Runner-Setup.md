@@ -356,11 +356,13 @@ Each runner can manage one or more SDR devices. For each device, you can use one
 - **antenna**: Antenna name (optional, device-specific)
 - **frequency_limits**: Array of frequency ranges in Hz (format: "start-end")
 
-**New Format (per-antenna frequency limits for multi-antenna devices):**
+**New Format (per-antenna frequency limits and gain for multi-antenna devices):**
 - **name**: Device identifier (typically serial number for precision)
 - **model**: Device type (`hackrf`, `limesdr`, `usrp`, `bladerf`)
+- **rf_gain**: Device-level RF gain (optional, used as fallback if not specified per-antenna)
 - **antennas**: Dictionary of antenna configurations, where each antenna can have:
   - **enabled**: Boolean to enable/disable antenna (default: true)
+  - **rf_gain**: RF gain value for this antenna (optional, overrides device-level)
   - **frequency_limits**: Array of frequency ranges for this specific antenna
 
 ### Frequency Limits
@@ -377,19 +379,22 @@ devices:
       - "420000000-450000000"   # 70-centimeter amateur band
 ```
 
-**New Format Example (per-antenna frequency limits):**
+**New Format Example (per-antenna frequency limits and gain):**
 ```yaml
 devices:
   - name: "1234567890abcdef"
     model: bladerf
+    rf_gain: 43  # Default gain (used if not specified per-antenna)
     antennas:
       TX1:
         enabled: true  # Optional, defaults to true
+        rf_gain: 43    # Optimal gain for VHF/UHF
         frequency_limits:
           - "144000000-148000000"   # 2m on TX1
           - "420000000-450000000"   # 70cm on TX1
       TX2:
         enabled: true
+        rf_gain: 50    # Higher gain for 900 MHz/2.4 GHz
         frequency_limits:
           - "900000000-915000000"   # 900 MHz on TX2
           - "2400000000-2500000000" # 2.4 GHz on TX2
@@ -425,6 +430,47 @@ devices:
 ```
 
 Disabled antennas will be skipped during automatic antenna selection.
+
+###  RF Gain Configuration
+
+RF gain controls the transmission power of the SDR device. You can configure gain at two levels:
+
+**Device-Level Gain (Legacy and Fallback):**
+- Specified at the device level using `rf_gain` (and `if_gain` for HackRF)
+- Applies to all transmissions on that device
+- Used as fallback if per-antenna gain is not specified
+
+**Per-Antenna Gain (Recommended for Multi-Antenna Devices):**
+- Specified within each antenna configuration
+- Allows optimizing gain for different frequency bands
+- Overrides device-level gain for that specific antenna
+
+Example with different gains per antenna:
+```yaml
+devices:
+  - name: "1234567890abcdef"
+    model: bladerf
+    rf_gain: 43  # Fallback gain
+    antennas:
+      TX1:
+        rf_gain: 43    # Lower gain for VHF/UHF (144-450 MHz)
+        frequency_limits:
+          - "144000000-148000000"
+          - "420000000-450000000"
+      TX2:
+        rf_gain: 55    # Higher gain for microwave (900 MHz, 2.4 GHz)
+        frequency_limits:
+          - "900000000-915000000"
+          - "2400000000-2500000000"
+```
+
+**Gain Value Guidelines:**
+- HackRF: rf_gain (0-47 dB), if_gain (0-40 dB)
+- BladeRF: rf_gain (0-66 dB), no if_gain
+- USRP: rf_gain (device-dependent), no if_gain
+- Higher frequencies often require higher gain for same effective range
+- Adjust based on antenna characteristics and transmission requirements
+- Too high gain can cause distortion; too low reduces transmission range
 
 **Important**: Only configure frequency ranges that are legal to transmit on in your jurisdiction and for which you have the appropriate license.
 

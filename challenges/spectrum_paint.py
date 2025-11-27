@@ -19,6 +19,13 @@ import paint
 import pmt
 import time
 
+# Global variables
+frequency = 148e6
+dev = "hackrf=0"
+ant = ""
+rf_gain_val = 50  # Default RF gain
+if_gain_val = 20  # Default IF gain
+
 
 class spectrum_paint(gr.top_block):
 
@@ -42,8 +49,8 @@ class spectrum_paint(gr.top_block):
         self.osmosdr_sink_0.set_sample_rate(samp_rate)
         self.osmosdr_sink_0.set_center_freq(frequency, 0)
         self.osmosdr_sink_0.set_freq_corr(0, 0)
-        self.osmosdr_sink_0.set_gain(50, 0)
-        self.osmosdr_sink_0.set_if_gain(20, 0)
+        self.osmosdr_sink_0.set_gain(rf_gain_val, 0)
+        self.osmosdr_sink_0.set_if_gain(if_gain_val, 0)
         self.osmosdr_sink_0.set_bb_gain(20, 0)
         self.osmosdr_sink_0.set_antenna(ant, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
@@ -87,14 +94,20 @@ class spectrum_paint(gr.top_block):
 #     main.tb.stop()
 
 
-def main(freq, device, antenna, top_block_cls=spectrum_paint, options=None):
+def main(freq, device, antenna, rf_gain=None, if_gain=None, top_block_cls=spectrum_paint, options=None):
 
     global frequency
     global dev
     global ant
+    global rf_gain_val
+    global if_gain_val
     frequency = freq
     dev = str(device)
     ant = str(antenna)
+    if rf_gain is not None:
+        rf_gain_val = rf_gain
+    if if_gain is not None:
+        if_gain_val = if_gain
 
     tb = top_block_cls()
     tb.start()

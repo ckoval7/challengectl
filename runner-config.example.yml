@@ -86,17 +86,19 @@ radios:
       - "420000000-450000000"  # 70cm ham band
 
   # BladeRF Example - Multi-antenna format (NEW)
-  # This format allows different frequency limits per antenna
+  # This format allows different frequency limits and gain per antenna
   # - name: "1234567890abcdef"
   #   model: bladerf
-  #   rf_gain: 43
+  #   rf_gain: 43  # Default gain (used if not specified per-antenna)
   #   bias_t: true
   #   antennas:
   #     TX1:
+  #       rf_gain: 43  # Optimal gain for VHF/UHF
   #       frequency_limits:
   #         - "144000000-148000000"  # 2m on TX1
   #         - "420000000-450000000"  # 70cm on TX1
   #     TX2:
+  #       rf_gain: 50  # Higher gain for 900 MHz/2.4 GHz
   #       frequency_limits:
   #         - "900000000-915000000"  # 900 MHz on TX2
   #         - "2400000000-2500000000"  # 2.4 GHz on TX2
@@ -104,9 +106,10 @@ radios:
   # USRP Example - Multi-antenna format
   # - name: "type=b200"
   #   model: usrp
-  #   rf_gain: 20
+  #   rf_gain: 20  # Default gain
   #   antennas:
   #     TX/RX:
+  #       rf_gain: 25  # Specific gain for this antenna
   #       frequency_limits:
   #         - "70000000-6000000000"  # Full range on TX/RX port
 
@@ -118,11 +121,13 @@ radios:
   #   antennas:
   #     TX1:
   #       enabled: true
+  #       rf_gain: 40
   #       frequency_limits:
   #         - "144000000-148000000"
   #         - "420000000-450000000"
   #     TX2:
   #       enabled: false  # Temporarily disabled (antenna under maintenance)
+  #       rf_gain: 50
   #       frequency_limits:
   #         - "900000000-915000000"
   #         - "2400000000-2500000000"
@@ -138,10 +143,14 @@ radios:
 # - Device names can be index numbers (0, 1, 2) or serial numbers/identifiers
 # - Two configuration formats are supported:
 #   1. Legacy: 'antenna' + 'frequency_limits' (single antenna per device)
-#   2. New: 'antennas' dict with per-antenna frequency_limits (multi-antenna devices)
+#   2. New: 'antennas' dict with per-antenna frequency_limits and rf_gain (multi-antenna devices)
 # - The runner automatically selects the appropriate antenna based on challenge frequency
 # - frequency_limits are optional - if not set, antenna accepts any frequency
 # - Antennas can be temporarily disabled by setting 'enabled: false' (default is true)
 # - Disabled antennas will be skipped during antenna selection
 # - bias_t and other device settings are still specified at device level
-# - rf_gain and if_gain values depend on device type and setup
+# - Gain configuration:
+#   * rf_gain can be specified per-antenna (recommended) or at device level
+#   * Per-antenna rf_gain overrides device-level rf_gain
+#   * if_gain is device-level only (HackRF specific)
+#   * rf_gain values depend on device type and frequency band

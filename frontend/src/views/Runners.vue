@@ -162,9 +162,54 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Frequency Limits">
+                  <el-table-column label="Frequency Limits & Gain">
                     <template #default="devScope">
-                      {{ devScope.row.frequency_limits?.join(', ') || 'Any' }}
+                      <div v-if="devScope.row.antennas_config">
+                        <!-- New format: per-antenna frequency limits and gain -->
+                        <div
+                          v-for="(antennaInfo, antennaName) in devScope.row.antennas_config"
+                          :key="antennaName"
+                          style="margin-bottom: 4px;"
+                        >
+                          <el-tag
+                            size="small"
+                            :type="antennaInfo.enabled === false ? 'info' : 'success'"
+                            style="margin-right: 8px;"
+                          >
+                            {{ antennaName || 'Default' }}
+                          </el-tag>
+                          <span style="font-size: 13px;">
+                            {{ formatFrequencyLimits(antennaInfo.frequency_limits) }}
+                          </span>
+                          <span
+                            v-if="antennaInfo.rf_gain !== undefined"
+                            style="font-size: 12px; color: #606266; margin-left: 8px;"
+                          >
+                            (Gain: {{ antennaInfo.rf_gain }} dB)
+                          </span>
+                          <el-tag
+                            v-if="antennaInfo.enabled === false"
+                            size="small"
+                            type="warning"
+                            style="margin-left: 4px;"
+                          >
+                            disabled
+                          </el-tag>
+                        </div>
+                      </div>
+                      <div v-else>
+                        <!-- Legacy format: device-level frequency limits and gain -->
+                        <div>
+                          {{ formatFrequencyLimits(devScope.row.frequency_limits) }}
+                        </div>
+                        <div
+                          v-if="devScope.row.rf_gain !== undefined || devScope.row.if_gain !== undefined"
+                          style="font-size: 12px; color: #606266; margin-top: 4px;"
+                        >
+                          <span v-if="devScope.row.rf_gain !== undefined">RF Gain: {{ devScope.row.rf_gain }} dB</span>
+                          <span v-if="devScope.row.if_gain !== undefined" style="margin-left: 8px;">IF Gain: {{ devScope.row.if_gain }} dB</span>
+                        </div>
+                      </div>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -2630,6 +2675,26 @@ curl -k \\
       websocket.off('device_status', handleDeviceStatusEvent)
     })
 
+    // Helper functions for frequency display
+    const formatFrequency = (hz) => {
+      if (!hz) return 'N/A'
+      const num = parseInt(hz)
+      if (num >= 1000000000) {
+        return `${(num / 1000000000).toFixed(1)} GHz`
+      } else if (num >= 1000000) {
+        return `${(num / 1000000).toFixed(0)} MHz`
+      }
+      return `${(num / 1000).toFixed(0)} kHz`
+    }
+
+    const formatFrequencyLimits = (limits) => {
+      if (!limits || limits.length === 0) return 'Any'
+      return limits.map(range => {
+        const [min, max] = range.split('-')
+        return `${formatFrequency(min)}-${formatFrequency(max)}`
+      }).join(', ')
+    }
+
     return {
       activeTab,
       runners,
@@ -2695,6 +2760,9 @@ curl -k \\
       provisioningKeyUsageExample,
       userPermissions,
       formatTimestamp: formatDateTime,
+      // Frequency formatting helpers
+      formatFrequency,
+      formatFrequencyLimits,
       // Icons
       ArrowDown,
       SwitchIcon,

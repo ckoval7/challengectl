@@ -404,19 +404,22 @@ devices:
       - "420000000-450000000"   # 420.0 - 450.0 MHz
 ```
 
-**New Format (per-antenna frequency limits):**
+**New Format (per-antenna frequency limits and gain):**
 ```yaml
 devices:
   - name: "1234567890abcdef"
     model: bladerf
+    rf_gain: 43  # Default gain (fallback if not specified per-antenna)
     antennas:
       TX1:
         enabled: true  # Optional, defaults to true
+        rf_gain: 43    # Optimal gain for VHF/UHF
         frequency_limits:
           - "144000000-148000000"   # 2m on TX1
           - "420000000-450000000"   # 70cm on TX1
       TX2:
         enabled: true
+        rf_gain: 50    # Higher gain for microwave frequencies
         frequency_limits:
           - "900000000-915000000"   # 900 MHz on TX2
           - "2400000000-2500000000" # 2.4 GHz on TX2
@@ -424,6 +427,7 @@ devices:
 
 **Per-Antenna Configuration Benefits:**
 - Assign different frequency ranges to different antenna ports
+- Optimize RF gain for different frequency bands
 - Temporarily disable specific antennas without removing configuration (`enabled: false`)
 - Automatic antenna selection based on challenge frequency
 - Optimized RF performance by matching antenna to frequency band

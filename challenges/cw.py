@@ -71,6 +71,9 @@ morse = ()
 wpm = 1
 freq = 0
 dev = "0a"
+ant = ""
+rf_gain_val = 37  # Default RF gain
+if_gain_val = 32  # Default IF gain
 
 
 class cw(gr.top_block):
@@ -100,8 +103,8 @@ class cw(gr.top_block):
         self.osmosdr_sink_0.set_sample_rate(2000000)
         self.osmosdr_sink_0.set_center_freq(freq, 0)
         self.osmosdr_sink_0.set_freq_corr(0, 0)
-        self.osmosdr_sink_0.set_gain(37, 0)
-        self.osmosdr_sink_0.set_if_gain(32, 0)
+        self.osmosdr_sink_0.set_gain(rf_gain_val, 0)
+        self.osmosdr_sink_0.set_if_gain(if_gain_val, 0)
         self.osmosdr_sink_0.set_bb_gain(32, 0)
         self.osmosdr_sink_0.set_antenna(ant, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
@@ -154,17 +157,23 @@ class cw(gr.top_block):
 #     main.tb.stop()
 
 
-def main(mesg, wordspm, frequency, device, antenna, top_block_cls=cw, options=None):
+def main(mesg, wordspm, frequency, device, antenna, rf_gain=None, if_gain=None, top_block_cls=cw, options=None):
     global morse
     global wpm
     global freq
     global dev
     global ant
+    global rf_gain_val
+    global if_gain_val
 
     wpm = wordspm
     freq = frequency
     dev = device
     ant = antenna
+    if rf_gain is not None:
+        rf_gain_val = rf_gain
+    if if_gain is not None:
+        if_gain_val = if_gain
 
     morse_code = '0,'
     for char in mesg:
