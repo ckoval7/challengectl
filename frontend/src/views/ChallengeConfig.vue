@@ -132,8 +132,8 @@
           >
             <template #default="scope">
               <el-switch
-                v-model="scope.row.enabled"
-                @change="toggleEnabled(scope.row.challenge_id, scope.row.enabled)"
+                :model-value="scope.row.enabled"
+                @change="(val) => toggleEnabled(scope.row.challenge_id, val)"
               />
             </template>
           </el-table-column>
