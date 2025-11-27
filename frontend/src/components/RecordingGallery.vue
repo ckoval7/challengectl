@@ -70,6 +70,7 @@
       v-model="previewDialogVisible"
       :title="`Recording ${selectedPreviewRecording?.recording_id || ''}`"
       width="90%"
+      append-to-body
       :close-on-click-modal="true"
       :close-on-press-escape="true"
     >

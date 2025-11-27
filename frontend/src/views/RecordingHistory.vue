@@ -82,6 +82,7 @@
       v-model="imageModalVisible"
       :title="`Recording #${selectedRecording?.recording_id} - Waterfall`"
       width="90%"
+      append-to-body
       @close="closeImageModal"
     >
       <div v-if="selectedRecording" class="modal-content">
