@@ -617,6 +617,7 @@ class Database:
         Returns:
             List of challenge dictionaries with additional fields:
             - queue_position: Position in queue (1-indexed), None if not enabled
+            - dynamic_priority: Calculated priority including time-based boost
             - next_available_time: ISO timestamp when challenge becomes ready, None if ready now
             - last_recording_at: ISO timestamp of most recent recording, None if never recorded
             - recording_count: Total number of completed recordings
@@ -624,9 +625,8 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Get all enabled challenges ordered by queue priority with recording metadata
-            # Order: priority DESC, last_tx_time ASC (NULLS FIRST - never transmitted first), name ASC
-            # This ensures recently transmitted challenges move to the back of their priority group
+            # Get all enabled challenges with recording metadata
+            # Note: We fetch without ORDER BY because we'll sort by dynamic priority in Python
             cursor.execute('''
                 SELECT
                     c.*,
@@ -640,10 +640,6 @@ class Database:
                 LEFT JOIN recordings r ON c.challenge_id = r.challenge_id
                 WHERE c.enabled = 1
                 GROUP BY c.challenge_id
-                ORDER BY c.priority DESC,
-                         CASE WHEN c.last_tx_time IS NULL THEN 0 ELSE 1 END,
-                         c.last_tx_time ASC,
-                         c.name ASC
             ''')
 
             enabled_challenges = []
@@ -653,9 +649,8 @@ class Database:
                 challenge['enabled'] = bool(challenge['enabled'])
                 enabled_challenges.append(challenge)
 
-            # Calculate queue positions with timing information
+            # Calculate queue positions with timing and dynamic priority information
             now = datetime.now(timezone.utc)
-            queue_position = 1
 
             with self.timing_lock:
                 for challenge in enabled_challenges:
@@ -671,12 +666,24 @@ class Database:
                     else:
                         challenge['next_available_time'] = next_tx.isoformat()  # Waiting
 
-                    # Assign queue position only if challenge is in queue
-                    if challenge['status'] in ('queued', 'waiting', 'assigned'):
-                        challenge['queue_position'] = queue_position
-                        queue_position += 1
-                    else:
-                        challenge['queue_position'] = None
+                    # Calculate dynamic priority for all enabled challenges
+                    challenge['dynamic_priority'] = self.calculate_dynamic_priority(challenge, now)
+
+            # Sort by dynamic priority (highest first), then by name for tiebreaking
+            enabled_challenges.sort(
+                key=lambda c: (c['dynamic_priority'], c.get('name', '')),
+                reverse=True
+            )
+
+            # Assign queue positions based on dynamic priority ordering
+            queue_position = 1
+            for challenge in enabled_challenges:
+                # Assign queue position only if challenge is in queue
+                if challenge['status'] in ('queued', 'waiting', 'assigned'):
+                    challenge['queue_position'] = queue_position
+                    queue_position += 1
+                else:
+                    challenge['queue_position'] = None
 
             # Also get disabled challenges with recording metadata
             cursor.execute('''
@@ -702,15 +709,65 @@ class Database:
                 challenge['enabled'] = bool(challenge['enabled'])
                 challenge['queue_position'] = None
                 challenge['next_available_time'] = None
+                challenge['dynamic_priority'] = challenge.get('priority', 0)  # Just use static priority for disabled
                 disabled_challenges.append(challenge)
 
             # Combine and return all challenges
             return enabled_challenges + disabled_challenges
 
+    def calculate_dynamic_priority(self, challenge: Dict, now: Optional[datetime] = None) -> float:
+        """Calculate dynamic priority for a challenge based on time waiting.
+
+        Dynamic priority = base_priority + minutes_waiting_boost
+
+        Args:
+            challenge: Challenge dictionary with 'priority' and 'last_tx_time' fields
+            now: Current time (defaults to now if not provided)
+
+        Returns:
+            Float priority value (higher = more urgent)
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        base_priority = challenge.get('priority', 0)
+
+        # Calculate minutes since challenge became ready
+        # For never-transmitted challenges, use a high boost
+        last_tx_str = challenge.get('last_tx_time')
+
+        if last_tx_str is None:
+            # Never transmitted - give maximum boost
+            minutes_waiting = 1000.0  # Ensures never-transmitted challenges go first
+        else:
+            # Check when challenge became ready (timing from in-memory tracking)
+            cid = challenge['challenge_id']
+            with self.timing_lock:
+                timing = self.challenge_timing.get(cid, {})
+                next_tx = timing.get('next_tx')
+
+            if next_tx is None:
+                # Ready immediately after last transmission
+                last_tx = datetime.fromisoformat(last_tx_str)
+                if last_tx.tzinfo is None:
+                    last_tx = last_tx.replace(tzinfo=timezone.utc)
+                minutes_waiting = (now - last_tx).total_seconds() / 60.0
+            else:
+                # Ready after delay expired
+                if next_tx.tzinfo is None:
+                    next_tx = next_tx.replace(tzinfo=timezone.utc)
+                minutes_waiting = max(0, (now - next_tx).total_seconds() / 60.0)
+
+        # Dynamic priority = base + waiting boost
+        dynamic_priority = base_priority + minutes_waiting
+
+        return dynamic_priority
+
     def assign_challenge(self, agent_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
         """
         Assign next available challenge to an agent.
         Uses pessimistic locking to prevent race conditions.
+        Challenges are prioritized dynamically based on base priority + time waiting.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -733,14 +790,14 @@ class Database:
                     SELECT * FROM challenges
                     WHERE status IN ('queued', 'waiting')
                       AND enabled = 1
-                    ORDER BY priority DESC
                 ''')
 
                 rows = cursor.fetchall()
 
-                # Filter by timing from in-memory tracking
+                # Filter by timing from in-memory tracking and collect ready challenges
                 now = datetime.now(timezone.utc)
-                row = None
+                ready_challenges = []
+
                 with self.timing_lock:
                     for r in rows:
                         cid = r['challenge_id']
@@ -749,15 +806,26 @@ class Database:
 
                         # Challenge is ready if no next_tx set or next_tx has passed
                         if next_tx is None or next_tx <= now:
-                            row = r
-                            # Update waiting -> queued if delay has passed
-                            if row['status'] == 'waiting':
-                                cursor.execute('''
-                                    UPDATE challenges
-                                    SET status = 'queued'
-                                    WHERE challenge_id = ?
-                                ''', (cid,))
-                            break
+                            challenge_dict = dict(r)
+                            ready_challenges.append(challenge_dict)
+
+                # Sort by dynamic priority (highest first)
+                ready_challenges.sort(
+                    key=lambda c: self.calculate_dynamic_priority(c, now),
+                    reverse=True
+                )
+
+                # Select highest priority challenge
+                row = None
+                if ready_challenges:
+                    row = ready_challenges[0]
+                    # Update waiting -> queued if delay has passed
+                    if row['status'] == 'waiting':
+                        cursor.execute('''
+                            UPDATE challenges
+                            SET status = 'queued'
+                            WHERE challenge_id = ?
+                        ''', (row['challenge_id'],))
 
                 if row:
                     challenge = dict(row)

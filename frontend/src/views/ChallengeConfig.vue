@@ -255,17 +255,16 @@
             </template>
           </el-table-column>
           <el-table-column
-            prop="priority"
             label="Priority"
-            width="100"
+            width="120"
             align="center"
           >
             <template #default="scope">
               <el-tag
-                :type="getPriorityType(scope.row.priority)"
+                :type="getPriorityType(scope.row.dynamic_priority || scope.row.priority)"
                 size="small"
               >
-                {{ scope.row.priority }}
+                {{ formatDynamicPriority(scope.row) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -1172,30 +1171,17 @@ function recalculateQueuePositions() {
     c.enabled && ['queued', 'waiting', 'assigned'].includes(c.status)
   )
 
-  // Sort using same logic as server SQL ORDER BY
+  // Sort using dynamic priority (server calculates this for us)
   const sorted = queueableChallenges.sort((a, b) => {
-    // 1. Priority DESC (highest priority first)
-    if (a.priority !== b.priority) {
-      return b.priority - a.priority
+    // 1. Dynamic Priority DESC (highest priority first)
+    const aPriority = a.dynamic_priority !== undefined ? a.dynamic_priority : a.priority || 0
+    const bPriority = b.dynamic_priority !== undefined ? b.dynamic_priority : b.priority || 0
+
+    if (aPriority !== bPriority) {
+      return bPriority - aPriority
     }
 
-    // 2. Never-transmitted challenges first (NULL last_tx_time)
-    const aHasTx = a.last_tx_time ? 1 : 0
-    const bHasTx = b.last_tx_time ? 1 : 0
-    if (aHasTx !== bHasTx) {
-      return aHasTx - bHasTx
-    }
-
-    // 3. If both have transmissions, oldest first (ASC by last_tx_time)
-    if (a.last_tx_time && b.last_tx_time) {
-      const timeA = new Date(a.last_tx_time).getTime()
-      const timeB = new Date(b.last_tx_time).getTime()
-      if (timeA !== timeB) {
-        return timeA - timeB
-      }
-    }
-
-    // 4. Finally, alphabetically by name (ASC)
+    // 2. Finally, alphabetically by name (ASC)
     return (a.name || '').localeCompare(b.name || '')
   })
 
@@ -1216,6 +1202,7 @@ function recalculateQueuePositions() {
   console.log('Queue positions recalculated:', sorted.map(c => ({
     name: c.name,
     queue_position: c.queue_position,
+    dynamic_priority: c.dynamic_priority,
     priority: c.priority,
     last_tx_time: c.last_tx_time
   })))
@@ -1804,8 +1791,28 @@ function getRecordingPriorityType(priority) {
   }
 }
 
+function formatDynamicPriority(challenge) {
+  const dynamic = challenge.dynamic_priority
+  const base = challenge.priority || 0
+
+  if (dynamic === undefined || dynamic === null) {
+    return base.toString()
+  }
+
+  // Show the dynamic priority value
+  // If it's significantly different from base (boosted by time), show both
+  const boost = dynamic - base
+  if (boost >= 1.0) {
+    return `${Math.round(dynamic)} (${base}+${Math.round(boost)}m)`
+  }
+
+  return Math.round(dynamic).toString()
+}
+
 function getPriorityType(priority) {
-  if (priority >= 75) {
+  if (priority >= 100) {
+    return 'danger'
+  } else if (priority >= 75) {
     return 'danger'
   } else if (priority >= 50) {
     return 'warning'
