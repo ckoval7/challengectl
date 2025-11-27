@@ -138,7 +138,7 @@ def generate_waterfall(fft_data: np.ndarray, frequency: int, sample_rate: int,
     ax2.set_ylabel('Time (seconds)')
     ax2.set_title(f'Zoomed View - {frequency / 1e6:.3f} MHz (BW: {zoom_bandwidth/1e3:.0f} kHz)')
     ax2.grid(True, alpha=0.3, linestyle='--')
-    ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.4f}'))
+    ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.3f}'))
 
     # Add single colorbar on the right side of the figure
     fig.subplots_adjust(right=0.93)
