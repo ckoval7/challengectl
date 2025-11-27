@@ -1,14 +1,18 @@
 <template>
   <div class="not-found">
     <div class="content">
-      <div class="error-code">404</div>
+      <div class="error-code">
+        404
+      </div>
       <div class="signal-icon">
         <el-icon :size="80">
           <Connection />
         </el-icon>
       </div>
       <h1>{{ randomMessage }}</h1>
-      <p class="subtitle">The page you're looking for doesn't exist.</p>
+      <p class="subtitle">
+        The page you're looking for doesn't exist.
+      </p>
       <div class="actions">
         <el-button
           type="primary"

@@ -2,10 +2,19 @@
   <div class="conference-countdown">
     <span v-if="loading">Loading...</span>
     <span v-else-if="error">{{ error }}</span>
-    <span v-else-if="hasEnded" class="ended">{{ conferenceName }} RFCTF has ended</span>
-    <span v-else class="countdown">
+    <span
+      v-else-if="hasEnded"
+      class="ended"
+    >{{ conferenceName }} RFCTF has ended</span>
+    <span
+      v-else
+      class="countdown"
+    >
       {{ countdownLabel }}: {{ formattedCountdown }}
-      <span v-if="showDayEndTimer" class="end-of-day"> | Day ends: {{ dayEndCountdown }}</span>
+      <span
+        v-if="showDayEndTimer"
+        class="end-of-day"
+      > | Day ends: {{ dayEndCountdown }}</span>
     </span>
   </div>
 </template>

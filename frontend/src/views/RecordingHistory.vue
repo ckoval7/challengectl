@@ -1,24 +1,37 @@
 <template>
   <div class="recording-history">
     <div class="header">
-      <el-button @click="$router.back()" type="text" class="back-button">
+      <el-button
+        type="text"
+        class="back-button"
+        @click="$router.back()"
+      >
         ← Back to Challenges
       </el-button>
       <h1>Recording History</h1>
     </div>
 
-    <div v-if="loading" class="loading">
-      <el-icon class="is-loading"><Loading /></el-icon>
+    <div
+      v-if="loading"
+      class="loading"
+    >
+      <el-icon class="is-loading">
+        <Loading />
+      </el-icon>
       Loading recordings...
     </div>
 
-    <div v-else-if="challenge" class="content">
+    <div
+      v-else-if="challenge"
+      class="content"
+    >
       <el-card class="challenge-info">
         <h2>{{ challenge.name }}</h2>
         <div class="info-grid">
           <div><strong>Modulation:</strong> {{ challenge.config?.modulation || 'N/A' }}</div>
           <div><strong>Frequency:</strong> {{ formatFrequency(challenge.config?.frequency) }}</div>
-          <div><strong>Status:</strong>
+          <div>
+            <strong>Status:</strong>
             <el-tag
               :type="challenge.enabled ? 'success' : 'info'"
               size="small"
@@ -28,15 +41,23 @@
           </div>
           <div><strong>Total Transmissions:</strong> {{ challenge.transmission_count || 0 }}</div>
           <div><strong>Total Recordings:</strong> {{ recordings.length }}</div>
-          <div v-if="challenge.last_tx_time"><strong>Last Transmission:</strong> {{ formatTimestamp(challenge.last_tx_time) }}</div>
+          <div v-if="challenge.last_tx_time">
+            <strong>Last Transmission:</strong> {{ formatTimestamp(challenge.last_tx_time) }}
+          </div>
         </div>
       </el-card>
 
-      <div v-if="recordings.length === 0" class="no-recordings">
+      <div
+        v-if="recordings.length === 0"
+        class="no-recordings"
+      >
         <el-empty description="No recordings available for this challenge yet." />
       </div>
 
-      <div v-else class="recordings-container">
+      <div
+        v-else
+        class="recordings-container"
+      >
         <h3>All Recordings ({{ recordings.length }})</h3>
         <div class="recordings-grid">
           <div
@@ -58,17 +79,28 @@
               <div><strong>Frequency:</strong> {{ formatFrequency(recording.frequency) }}</div>
               <div><strong>Duration:</strong> {{ recording.duration_seconds ? recording.duration_seconds.toFixed(1) : '0.0' }}s</div>
               <div><strong>Started:</strong> {{ formatTimestamp(recording.started_at) }}</div>
-              <div v-if="recording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}</div>
+              <div v-if="recording.completed_at">
+                <strong>Completed:</strong> {{ formatTimestamp(recording.completed_at) }}
+              </div>
             </div>
-            <div v-if="recording.image_path && recording.status === 'completed'" class="recording-image">
+            <div
+              v-if="recording.image_path && recording.status === 'completed'"
+              class="recording-image"
+            >
               <img
                 :src="`/api/recordings/${recording.recording_id}/image`"
                 :alt="`Waterfall for recording ${recording.recording_id}`"
                 @click="showImageModal(recording)"
-              />
+              >
             </div>
-            <div v-else-if="recording.error_message" class="recording-error">
-              <el-alert type="error" :closable="false">
+            <div
+              v-else-if="recording.error_message"
+              class="recording-error"
+            >
+              <el-alert
+                type="error"
+                :closable="false"
+              >
                 {{ recording.error_message }}
               </el-alert>
             </div>
@@ -85,20 +117,25 @@
       append-to-body
       @close="closeImageModal"
     >
-      <div v-if="selectedRecording" class="modal-content">
+      <div
+        v-if="selectedRecording"
+        class="modal-content"
+      >
         <div class="modal-info">
           <p><strong>Challenge:</strong> {{ challenge?.name || 'Unknown' }}</p>
           <p><strong>Listener:</strong> {{ selectedRecording.listener_id }}</p>
           <p><strong>Frequency:</strong> {{ formatFrequency(selectedRecording.frequency) }}</p>
           <p><strong>Duration:</strong> {{ selectedRecording.duration_seconds ? selectedRecording.duration_seconds.toFixed(1) : '0.0' }}s</p>
           <p><strong>Started:</strong> {{ formatTimestamp(selectedRecording.started_at) }}</p>
-          <p v-if="selectedRecording.completed_at"><strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}</p>
+          <p v-if="selectedRecording.completed_at">
+            <strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}
+          </p>
         </div>
         <div class="modal-image">
           <img
             :src="`/api/recordings/${selectedRecording.recording_id}/image`"
             :alt="`Waterfall for recording ${selectedRecording.recording_id}`"
-          />
+          >
         </div>
       </div>
     </el-dialog>

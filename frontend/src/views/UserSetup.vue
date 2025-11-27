@@ -74,7 +74,10 @@
       </el-form>
 
       <!-- TOTP Setup Form -->
-      <div v-if="showTotpDialog" class="totp-setup">
+      <div
+        v-if="showTotpDialog"
+        class="totp-setup"
+      >
         <el-alert
           type="success"
           :closable="false"

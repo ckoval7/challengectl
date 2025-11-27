@@ -1,10 +1,19 @@
 <template>
   <div class="recording-gallery">
-    <div v-if="displayRecordings.length === 0 && placeholders.length === 0" class="no-recordings">
-      <el-empty description="No recordings yet" :image-size="80" />
+    <div
+      v-if="displayRecordings.length === 0 && placeholders.length === 0"
+      class="no-recordings"
+    >
+      <el-empty
+        description="No recordings yet"
+        :image-size="80"
+      />
     </div>
 
-    <div v-else class="recordings-grid">
+    <div
+      v-else
+      class="recordings-grid"
+    >
       <!-- Placeholders for in-progress recordings (newest first) -->
       <TransitionGroup name="recording-pop">
         <div
@@ -13,11 +22,16 @@
           class="recording-card placeholder"
         >
           <div class="placeholder-content">
-            <el-icon class="recording-icon" :size="32">
+            <el-icon
+              class="recording-icon"
+              :size="32"
+            >
               <Loading />
             </el-icon>
             <div class="placeholder-text">
-              <div class="recording-status">{{ getPlaceholderStatusText(placeholder.status) }}</div>
+              <div class="recording-status">
+                {{ getPlaceholderStatusText(placeholder.status) }}
+              </div>
               <div class="recording-meta">
                 <span v-if="placeholder.listener_id">Listener: {{ placeholder.listener_id }}</span>
                 <span v-if="placeholder.frequency">{{ formatFrequency(placeholder.frequency) }}</span>
@@ -46,19 +60,47 @@
               :src="getImageUrl(recording.recording_id)"
               :alt="`Recording ${recording.recording_id}`"
               loading="lazy"
-            />
-            <div v-else class="no-image">
-              <el-icon :size="32"><Picture /></el-icon>
+            >
+            <div
+              v-else
+              class="no-image"
+            >
+              <el-icon :size="32">
+                <Picture />
+              </el-icon>
               <span>No image</span>
             </div>
           </div>
           <div class="recording-info">
-            <div class="recording-time">{{ formatTimestamp(recording.completed_at || recording.created_at) }}</div>
+            <div class="recording-time">
+              {{ formatTimestamp(recording.completed_at || recording.created_at) }}
+            </div>
             <div class="recording-details">
-              <el-tag v-if="recording.status === 'completed'" type="success" size="small">Completed</el-tag>
-              <el-tag v-else-if="recording.status === 'failed'" type="danger" size="small">Failed</el-tag>
-              <el-tag v-else type="info" size="small">{{ recording.status }}</el-tag>
-              <span v-if="recording.frequency" class="frequency">{{ formatFrequency(recording.frequency) }}</span>
+              <el-tag
+                v-if="recording.status === 'completed'"
+                type="success"
+                size="small"
+              >
+                Completed
+              </el-tag>
+              <el-tag
+                v-else-if="recording.status === 'failed'"
+                type="danger"
+                size="small"
+              >
+                Failed
+              </el-tag>
+              <el-tag
+                v-else
+                type="info"
+                size="small"
+              >
+                {{ recording.status }}
+              </el-tag>
+              <span
+                v-if="recording.frequency"
+                class="frequency"
+              >{{ formatFrequency(recording.frequency) }}</span>
             </div>
           </div>
         </div>
@@ -74,35 +116,81 @@
       :close-on-click-modal="true"
       :close-on-press-escape="true"
     >
-      <div v-if="selectedPreviewRecording" class="preview-content">
+      <div
+        v-if="selectedPreviewRecording"
+        class="preview-content"
+      >
         <img
           v-if="selectedPreviewRecording.image_path"
           :src="getImageUrl(selectedPreviewRecording.recording_id)"
           :alt="`Recording ${selectedPreviewRecording.recording_id}`"
           class="preview-image"
-        />
+        >
         <div class="preview-metadata">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="Recording ID">{{ selectedPreviewRecording.recording_id }}</el-descriptions-item>
-            <el-descriptions-item label="Status">
-              <el-tag v-if="selectedPreviewRecording.status === 'completed'" type="success">Completed</el-tag>
-              <el-tag v-else-if="selectedPreviewRecording.status === 'failed'" type="danger">Failed</el-tag>
-              <el-tag v-else type="info">{{ selectedPreviewRecording.status }}</el-tag>
+          <el-descriptions
+            :column="2"
+            border
+          >
+            <el-descriptions-item label="Recording ID">
+              {{ selectedPreviewRecording.recording_id }}
             </el-descriptions-item>
-            <el-descriptions-item label="Frequency">{{ formatFrequency(selectedPreviewRecording.frequency) }}</el-descriptions-item>
-            <el-descriptions-item label="Sample Rate">{{ formatSampleRate(selectedPreviewRecording.sample_rate) }}</el-descriptions-item>
-            <el-descriptions-item label="Started">{{ formatTimestamp(selectedPreviewRecording.started_at) }}</el-descriptions-item>
-            <el-descriptions-item label="Completed">{{ formatTimestamp(selectedPreviewRecording.completed_at) }}</el-descriptions-item>
-            <el-descriptions-item v-if="selectedPreviewRecording.duration_seconds" label="Duration">
+            <el-descriptions-item label="Status">
+              <el-tag
+                v-if="selectedPreviewRecording.status === 'completed'"
+                type="success"
+              >
+                Completed
+              </el-tag>
+              <el-tag
+                v-else-if="selectedPreviewRecording.status === 'failed'"
+                type="danger"
+              >
+                Failed
+              </el-tag>
+              <el-tag
+                v-else
+                type="info"
+              >
+                {{ selectedPreviewRecording.status }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="Frequency">
+              {{ formatFrequency(selectedPreviewRecording.frequency) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="Sample Rate">
+              {{ formatSampleRate(selectedPreviewRecording.sample_rate) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="Started">
+              {{ formatTimestamp(selectedPreviewRecording.started_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="Completed">
+              {{ formatTimestamp(selectedPreviewRecording.completed_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item
+              v-if="selectedPreviewRecording.duration_seconds"
+              label="Duration"
+            >
               {{ selectedPreviewRecording.duration_seconds.toFixed(1) }}s
             </el-descriptions-item>
-            <el-descriptions-item v-if="selectedPreviewRecording.image_width && selectedPreviewRecording.image_height" label="Image Size">
+            <el-descriptions-item
+              v-if="selectedPreviewRecording.image_width && selectedPreviewRecording.image_height"
+              label="Image Size"
+            >
               {{ selectedPreviewRecording.image_width }} x {{ selectedPreviewRecording.image_height }}px
             </el-descriptions-item>
           </el-descriptions>
-          <div v-if="selectedPreviewRecording.error_message" class="error-message">
-            <el-alert type="error" :closable="false" show-icon>
-              <template #title>Error</template>
+          <div
+            v-if="selectedPreviewRecording.error_message"
+            class="error-message"
+          >
+            <el-alert
+              type="error"
+              :closable="false"
+              show-icon
+            >
+              <template #title>
+                Error
+              </template>
               {{ selectedPreviewRecording.error_message }}
             </el-alert>
           </div>

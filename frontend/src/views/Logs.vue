@@ -101,12 +101,20 @@
         Showing {{ filteredLogs.length }} of {{ logs.length }} log entries
       </div>
       <el-space>
-        <el-dropdown split-button type="primary" @click="exportLogs('txt')">
+        <el-dropdown
+          split-button
+          type="primary"
+          @click="exportLogs('txt')"
+        >
           Export Logs
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="exportLogs('txt')">Plain Text (.txt)</el-dropdown-item>
-              <el-dropdown-item @click="exportLogs('csv')">CSV (.csv)</el-dropdown-item>
+              <el-dropdown-item @click="exportLogs('txt')">
+                Plain Text (.txt)
+              </el-dropdown-item>
+              <el-dropdown-item @click="exportLogs('csv')">
+                CSV (.csv)
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

@@ -93,9 +93,14 @@
           >
             <template #default="scope">
               <el-dropdown @command="(command) => handleRunnerAction(command, scope.row)">
-                <el-button size="small" type="primary">
+                <el-button
+                  size="small"
+                  type="primary"
+                >
                   Actions
-                  <el-icon class="ml-5"><ArrowDown /></el-icon>
+                  <el-icon class="ml-5">
+                    <ArrowDown />
+                  </el-icon>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -103,11 +108,17 @@
                       <el-icon><SwitchIcon /></el-icon>
                       {{ scope.row.enabled ? 'Disable Runner' : 'Enable Runner' }}
                     </el-dropdown-item>
-                    <el-dropdown-item command="re-enroll" divided>
+                    <el-dropdown-item
+                      command="re-enroll"
+                      divided
+                    >
                       <el-icon><Key /></el-icon>
                       Re-enroll
                     </el-dropdown-item>
-                    <el-dropdown-item command="kick" divided>
+                    <el-dropdown-item
+                      command="kick"
+                      divided
+                    >
                       <el-icon><Delete /></el-icon>
                       <span style="color: var(--el-color-danger);">Kick</span>
                     </el-dropdown-item>
@@ -684,9 +695,14 @@
           >
             <template #default="scope">
               <el-dropdown @command="(command) => handleListenerAction(command, scope.row)">
-                <el-button size="small" type="primary">
+                <el-button
+                  size="small"
+                  type="primary"
+                >
                   Actions
-                  <el-icon class="ml-5"><ArrowDown /></el-icon>
+                  <el-icon class="ml-5">
+                    <ArrowDown />
+                  </el-icon>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -694,7 +710,10 @@
                       <el-icon><SwitchIcon /></el-icon>
                       {{ scope.row.enabled ? 'Disable Listener' : 'Enable Listener' }}
                     </el-dropdown-item>
-                    <el-dropdown-item command="edit-devices" divided>
+                    <el-dropdown-item
+                      command="edit-devices"
+                      divided
+                    >
                       <el-icon><Tools /></el-icon>
                       Edit Devices
                     </el-dropdown-item>
@@ -702,7 +721,10 @@
                       <el-icon><Key /></el-icon>
                       Re-enroll
                     </el-dropdown-item>
-                    <el-dropdown-item command="kick" divided>
+                    <el-dropdown-item
+                      command="kick"
+                      divided
+                    >
                       <el-icon><Delete /></el-icon>
                       <span style="color: var(--el-color-danger);">Kick</span>
                     </el-dropdown-item>
@@ -888,8 +910,8 @@
               </el-button>
               <el-button
                 type="primary"
-                @click="generateListenerEnrollmentToken"
                 :disabled="!addListenerForm.listenerName"
+                @click="generateListenerEnrollmentToken"
               >
                 Generate Token
               </el-button>

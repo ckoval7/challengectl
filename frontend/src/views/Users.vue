@@ -92,9 +92,14 @@
       >
         <template #default="scope">
           <el-dropdown @command="(command) => handleUserAction(command, scope.row)">
-            <el-button size="small" type="primary">
+            <el-button
+              size="small"
+              type="primary"
+            >
               Actions
-              <el-icon class="ml-5"><ArrowDown /></el-icon>
+              <el-icon class="ml-5">
+                <ArrowDown />
+              </el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -106,7 +111,10 @@
                   <el-icon><Key /></el-icon>
                   Manage Permissions
                 </el-dropdown-item>
-                <el-dropdown-item command="reset-password" divided>
+                <el-dropdown-item
+                  command="reset-password"
+                  divided
+                >
                   <el-icon><Lock /></el-icon>
                   Reset Password
                 </el-dropdown-item>
@@ -114,7 +122,10 @@
                   <el-icon><Unlock /></el-icon>
                   Reset TOTP
                 </el-dropdown-item>
-                <el-dropdown-item command="delete" divided>
+                <el-dropdown-item
+                  command="delete"
+                  divided
+                >
                   <el-icon><Delete /></el-icon>
                   <span style="color: var(--el-color-danger);">Delete User</span>
                 </el-dropdown-item>
@@ -226,12 +237,16 @@
           <template #title>
             {{ tempUserInfo.username }} must set up their account within 24 hours.
           </template>
-          <p style="margin: 10px 0 0 0">They must log in and complete the following steps:</p>
+          <p style="margin: 10px 0 0 0">
+            They must log in and complete the following steps:
+          </p>
           <ul style="margin: 5px 0 0 20px; padding: 0">
             <li>Change their password.</li>
             <li>Set up two-factor authentication (2FA).</li>
           </ul>
-          <p style="margin: 10px 0 0 0">If setup is not completed within 24 hours, the account will be automatically disabled.</p>
+          <p style="margin: 10px 0 0 0">
+            If setup is not completed within 24 hours, the account will be automatically disabled.
+          </p>
         </el-alert>
       </div>
 
@@ -299,7 +314,9 @@
           <template #title>
             {{ resetPasswordInfo.username }} must change their password on next login.
           </template>
-          <p style="margin: 10px 0 0 0">The user will be required to change this temporary password when they log in. All existing sessions for this user have been invalidated.</p>
+          <p style="margin: 10px 0 0 0">
+            The user will be required to change this temporary password when they log in. All existing sessions for this user have been invalidated.
+          </p>
         </el-alert>
       </div>
 
@@ -381,19 +398,28 @@
       <div v-if="selectedUser">
         <h3>User: {{ selectedUser.username }}</h3>
 
-        <h4 class="mt-xl">Current Permissions:</h4>
-        <div v-if="userPermissions.length > 0" class="mb-xl">
+        <h4 class="mt-xl">
+          Current Permissions:
+        </h4>
+        <div
+          v-if="userPermissions.length > 0"
+          class="mb-xl"
+        >
           <el-tag
             v-for="perm in userPermissions"
             :key="perm"
             closable
-            @close="revokePermission(perm)"
             class="m-5"
+            @close="revokePermission(perm)"
           >
             {{ perm }}
           </el-tag>
         </div>
-        <el-tag v-else type="info" class="mb-xl">
+        <el-tag
+          v-else
+          type="info"
+          class="mb-xl"
+        >
           No permissions granted
         </el-tag>
 
@@ -415,8 +441,8 @@
         <el-button
           type="primary"
           :disabled="!permissionToGrant"
-          @click="grantPermission"
           class="w-full"
+          @click="grantPermission"
         >
           Grant Permission
         </el-button>

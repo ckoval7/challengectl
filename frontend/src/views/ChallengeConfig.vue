@@ -12,7 +12,10 @@
         name="status"
       >
         <!-- Mobile View: Card-based layout -->
-        <div v-if="isMobile" class="cards-layout">
+        <div
+          v-if="isMobile"
+          class="cards-layout"
+        >
           <TransitionGroup name="challenge-list">
             <ChallengeCard
               v-for="challenge in sortedChallenges"
@@ -47,7 +50,10 @@
                   :placeholders="getPlaceholders(props.row.challenge_id)"
                   :max-recordings="6"
                 />
-                <div v-if="shouldShowViewAllLink(props.row.challenge_id)" class="view-all-link">
+                <div
+                  v-if="shouldShowViewAllLink(props.row.challenge_id)"
+                  class="view-all-link"
+                >
                   <router-link :to="`/recordings/${props.row.challenge_id}`">
                     View All {{ props.row.recording_count }} Recordings →
                   </router-link>
@@ -175,7 +181,10 @@
         </div>
 
         <!-- Mobile View: Card-based layout -->
-        <div v-if="isMobile" class="cards-layout playlist-cards">
+        <div
+          v-if="isMobile"
+          class="cards-layout playlist-cards"
+        >
           <TransitionGroup name="playlist">
             <ChallengeCard
               v-for="challenge in playlistChallenges"
@@ -250,7 +259,10 @@
             align="center"
           >
             <template #default="scope">
-              <el-tag :type="getPriorityType(scope.row.priority)" size="small">
+              <el-tag
+                :type="getPriorityType(scope.row.priority)"
+                size="small"
+              >
                 {{ scope.row.priority }}
               </el-tag>
             </template>
@@ -544,7 +556,10 @@
               v-model="challengeForm.flag"
               placeholder="e.g., -s 10 -p 976 -pf 1"
             />
-            <div class="text-xs mt-5" style="color: var(--el-color-info)">
+            <div
+              class="text-xs mt-5"
+              style="color: var(--el-color-info)"
+            >
               LRS pager arguments: -s &lt;systemid 0-255&gt; -p &lt;pagerid 0-1023&gt; -pf &lt;function&gt;<br>
               Function codes: 1=Flash/Vibe 30s, 4=Beep 3x, 10=Flash/Vibe 1s, 2=Flash 5min, 3=Flash/Beep 5x5, 5=Beep 5min, 6=Glow 5min, 7=Glow/Vib 15x, 68=Beep 3x
             </div>
@@ -831,7 +846,10 @@
             <div>
               <strong>POST /api/challenges/import</strong>
             </div>
-            <div class="mt-10 text-xs" style="font-family: monospace">
+            <div
+              class="mt-10 text-xs"
+              style="font-family: monospace"
+            >
               Content-Type: multipart/form-data<br>
               Required: yaml_file (YAML file)<br>
               Optional: Additional files referenced in YAML

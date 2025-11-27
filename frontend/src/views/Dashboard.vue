@@ -191,14 +191,14 @@
             <el-form-item>
               <el-button
                 type="primary"
-                @click="saveDayTimes"
                 :loading="savingDayTimes"
+                @click="saveDayTimes"
               >
                 Save
               </el-button>
               <el-button
-                @click="clearDayTimes"
                 :loading="savingDayTimes"
+                @click="clearDayTimes"
               >
                 Clear Both
               </el-button>
@@ -206,8 +206,8 @@
             <el-form-item label="Auto-Pause Daily">
               <el-switch
                 v-model="autoPauseDaily"
-                @change="toggleAutoPause"
                 :loading="savingAutoPause"
+                @change="toggleAutoPause"
               />
               <div class="info-box">
                 Automatically pause transmissions outside daily hours

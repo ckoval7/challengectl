@@ -21,7 +21,10 @@
         <!-- Title and countdown -->
         <div class="header-title">
           <h2 class="title-text">
-            Challengectlv2 Orchestrator<span v-if="conferenceName" class="conference-name"> - {{ conferenceName }}</span>
+            Challengectlv2 Orchestrator<span
+              v-if="conferenceName"
+              class="conference-name"
+            > - {{ conferenceName }}</span>
           </h2>
           <div class="countdown-wrapper">
             <ConferenceCountdown />

@@ -1,11 +1,27 @@
 <template>
-  <div class="challenge-card" :class="{ disabled: !challenge.enabled, expanded: isExpanded }">
+  <div
+    class="challenge-card"
+    :class="{ disabled: !challenge.enabled, expanded: isExpanded }"
+  >
     <!-- Card Header -->
-    <div class="card-header" @click="toggleExpand">
+    <div
+      class="card-header"
+      @click="toggleExpand"
+    >
       <div class="header-main">
         <div class="challenge-name">
-          <el-icon v-if="isExpanded" class="expand-icon"><ArrowDown /></el-icon>
-          <el-icon v-else class="expand-icon"><ArrowRight /></el-icon>
+          <el-icon
+            v-if="isExpanded"
+            class="expand-icon"
+          >
+            <ArrowDown />
+          </el-icon>
+          <el-icon
+            v-else
+            class="expand-icon"
+          >
+            <ArrowRight />
+          </el-icon>
           <span>{{ challenge.name }}</span>
         </div>
         <div class="status-badges">
@@ -38,45 +54,76 @@
 
     <!-- Card Content (Expandable) -->
     <Transition name="expand">
-      <div v-if="isExpanded" class="card-content">
+      <div
+        v-if="isExpanded"
+        class="card-content"
+      >
         <!-- Stats Section -->
         <div class="stats-section">
           <div class="stat-item">
-            <div class="stat-label">Transmissions</div>
-            <div class="stat-value">{{ challenge.transmission_count || 0 }}</div>
+            <div class="stat-label">
+              Transmissions
+            </div>
+            <div class="stat-value">
+              {{ challenge.transmission_count || 0 }}
+            </div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Recordings</div>
-            <div class="stat-value">{{ challenge.recording_count || 0 }}</div>
+            <div class="stat-label">
+              Recordings
+            </div>
+            <div class="stat-value">
+              {{ challenge.recording_count || 0 }}
+            </div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Priority</div>
-            <div class="stat-value">{{ challenge.priority || 0 }}</div>
+            <div class="stat-label">
+              Priority
+            </div>
+            <div class="stat-value">
+              {{ challenge.priority || 0 }}
+            </div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Queue Position</div>
-            <div class="stat-value">{{ challenge.queue_position || '-' }}</div>
+            <div class="stat-label">
+              Queue Position
+            </div>
+            <div class="stat-value">
+              {{ challenge.queue_position || '-' }}
+            </div>
           </div>
         </div>
 
         <!-- Timing Info -->
         <div class="timing-info">
-          <div v-if="challenge.last_tx_time" class="timing-item">
+          <div
+            v-if="challenge.last_tx_time"
+            class="timing-item"
+          >
             <el-icon><Clock /></el-icon>
             <span>Last TX: {{ formatTimestamp(challenge.last_tx_time) }}</span>
           </div>
-          <div v-if="challenge.last_recording_at" class="timing-item">
+          <div
+            v-if="challenge.last_recording_at"
+            class="timing-item"
+          >
             <el-icon><Camera /></el-icon>
             <span>Last Recording: {{ formatTimestamp(challenge.last_recording_at) }}</span>
           </div>
-          <div v-if="challenge.next_available_time" class="timing-item">
+          <div
+            v-if="challenge.next_available_time"
+            class="timing-item"
+          >
             <el-icon><Timer /></el-icon>
             <span>Next Available: {{ formatTimestamp(challenge.next_available_time) }}</span>
           </div>
         </div>
 
         <!-- Recording Priority Badge -->
-        <div v-if="challenge.enabled" class="recording-priority">
+        <div
+          v-if="challenge.enabled"
+          class="recording-priority"
+        >
           <el-tag
             :type="challenge.will_be_recorded ? 'success' : 'info'"
             effect="light"
@@ -91,14 +138,20 @@
         <div class="recordings-section">
           <div class="section-header">
             <span class="section-title">Recordings</span>
-            <el-badge :value="challenge.recording_count || 0" :max="99" />
+            <el-badge
+              :value="challenge.recording_count || 0"
+              :max="99"
+            />
           </div>
           <RecordingGallery
             :recordings="recordings"
             :placeholders="placeholders"
             :max-recordings="6"
           />
-          <div v-if="challenge.recording_count > 6" class="view-all-link">
+          <div
+            v-if="challenge.recording_count > 6"
+            class="view-all-link"
+          >
             <router-link :to="`/recordings/${challenge.challenge_id}`">
               View All {{ challenge.recording_count }} Recordings →
             </router-link>
