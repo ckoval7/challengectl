@@ -1046,19 +1046,12 @@ import { useBreakpoint } from '../composables/useBreakpoint.js'
 import ChallengeCard from '../components/ChallengeCard.vue'
 import RecordingGallery from '../components/RecordingGallery.vue'
 
-// Props (system paused state from parent)
-const props = defineProps({
-  systemPaused: {
-    type: Boolean,
-    default: false
-  }
-})
-
 // Composables
 const { isMobile } = useBreakpoint()
 
 // UI State
 const activeTab = ref('status')
+const systemPaused = ref(false)
 const importing = ref(false)
 const loadingRanges = ref(false)
 const editDialogVisible = ref(false)
@@ -1276,13 +1269,15 @@ function handleRecordingStarted(event) {
 
   // Add placeholder
   const placeholders = recordingPlaceholders.value.get(challenge_id) || []
-  placeholders.unshift({
+  const newPlaceholder = {
     recording_id,
     listener_id,
     frequency,
     status: 'in_progress'
-  })
-  recordingPlaceholders.value.set(challenge_id, placeholders)
+  }
+
+  // Create new array reference to trigger Vue reactivity
+  recordingPlaceholders.value.set(challenge_id, [newPlaceholder, ...placeholders])
 }
 
 function handleRecordingComplete(event) {
@@ -1804,12 +1799,28 @@ function getStatusType(challenge) {
   }
 }
 
+function handleSystemControl(event) {
+  console.log('System control:', event)
+  const { action } = event
+  systemPaused.value = action === 'pause'
+}
+
+async function fetchSystemStatus() {
+  try {
+    const response = await api.get('/control/status')
+    systemPaused.value = response.data.paused
+  } catch (error) {
+    console.error('Failed to fetch system status:', error)
+  }
+}
+
 const formatTimestamp = formatDateTime
 
 // Lifecycle hooks
 onMounted(() => {
   loadChallenges()
   loadFrequencyRanges()
+  fetchSystemStatus()
 
   // WebSocket setup
   websocket.connect()
@@ -1819,6 +1830,7 @@ onMounted(() => {
   websocket.on('challenge_updated', handleChallengeUpdated)
   websocket.on('challenge_assigned', handleChallengeAssigned)
   websocket.on('transmission_complete', handleTransmissionComplete)
+  websocket.on('system_control', handleSystemControl)
 })
 
 onUnmounted(() => {
@@ -1828,6 +1840,7 @@ onUnmounted(() => {
   websocket.off('challenge_updated', handleChallengeUpdated)
   websocket.off('challenge_assigned', handleChallengeAssigned)
   websocket.off('transmission_complete', handleTransmissionComplete)
+  websocket.off('system_control', handleSystemControl)
 })
 </script>
 

@@ -68,11 +68,24 @@ html.dark body {
 
 /* Ensure modals and their overlays appear above all other elements */
 .el-dialog__wrapper {
-  z-index: 3000 !important;
+  z-index: 9999 !important;
 }
 
 .el-overlay {
-  z-index: 2999 !important;
+  z-index: 9998 !important;
+}
+
+/* Ensure Element Plus popovers, tooltips, and dropdowns stay below modals */
+.el-popper {
+  z-index: 3000 !important;
+}
+
+.el-select-dropdown {
+  z-index: 3000 !important;
+}
+
+.el-tooltip__popper {
+  z-index: 3000 !important;
 }
 
 /* ============================================
