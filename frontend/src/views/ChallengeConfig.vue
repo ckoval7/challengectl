@@ -1147,7 +1147,7 @@ function getPlaceholders(challengeId) {
 
 function shouldShowViewAllLink(challengeId) {
   // Use the actual recording_count from the challenge data
-  const challenge = challenges.value.find(c => c.challenge_id === challengeId)
+  const challenge = challengesMap.value.get(challengeId)
   return challenge && challenge.recording_count > 6
 }
 
