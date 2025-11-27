@@ -18,7 +18,8 @@ This comprehensive guide covers everything you need to know about setting up and
 ### System Requirements
 
 - **Operating System**: Linux (recommended), macOS, or Windows
-- **Python**: Version 3.8 or higher
+- **Python**: Version 3.9 or higher
+- **Node.js**: Version 20.x or higher (required for building the web frontend)
 - **Memory**: Minimum 512 MB RAM (1 GB recommended)
 - **Storage**: 1 GB for application and database
 - **Network**: Open port for server communication (default: 8443)
@@ -33,6 +34,65 @@ The server requires the following Python packages (installed via `requirements.t
 - PyYAML 6.0 or higher
 - pyotp (for TOTP two-factor authentication)
 - python-socketio
+
+### Node.js Setup
+
+The server includes a Vue.js-based web frontend that requires Node.js 20.x or higher to build.
+
+#### Installing Node.js with nvm (Recommended)
+
+Using Node Version Manager (nvm) is the recommended approach as it allows you to easily install and switch between Node.js versions.
+
+**Install nvm:**
+
+```bash
+# Download and install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+# Reload your shell configuration
+source ~/.bashrc  # or ~/.zshrc on macOS with zsh
+```
+
+**Install and use Node.js 20:**
+
+```bash
+# Install Node.js (LTS)
+nvm install lts
+
+# Use Node.js lts
+nvm use lts
+
+# Set Node.js lts as default
+nvm alias default lts
+
+# Verify installation
+node --version  # Should show v24.x.x
+npm --version
+```
+
+#### Alternative: System Package Manager
+
+If you prefer not to use nvm, you can install Node.js via your system package manager:
+
+**Ubuntu/Debian:**
+```bash
+# Add NodeSource repository for Node.js 20.x
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+# Install Node.js
+sudo apt-get install -y nodejs
+```
+
+**macOS (Homebrew):**
+```bash
+brew install node@20
+```
+
+**Verify installation:**
+```bash
+node --version  # Should be 20.x or higher
+npm --version
+```
 
 ## Installation
 
@@ -52,11 +112,26 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-### Install Dependencies
+### Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
+
+### Build the Frontend
+
+The server's web interface requires building the Vue.js frontend:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+```
+
+This creates a production build in `frontend/dist/` that the server will automatically serve.
+
+**Note**: If Node.js is not installed or is an incompatible version, you'll see an error. Refer to the [Node.js Setup](#nodejs-setup) section above.
 
 ### Verify Installation
 
