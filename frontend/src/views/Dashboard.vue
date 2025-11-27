@@ -15,13 +15,13 @@
         <el-card>
           <div class="stat-card">
             <div class="stat-value">
-              {{ stats.runners_online || 0 }}
+              {{ stats.runners_online || 0 }} / {{ stats.listeners_online || 0 }}
             </div>
             <div class="stat-label">
-              Runners Online
+              Runners / Listeners
             </div>
             <div class="stat-sublabel">
-              {{ stats.runners_total || 0 }} Total
+              {{ stats.runners_total || 0 }} / {{ stats.listeners_total || 0 }} Total
             </div>
           </div>
         </el-card>
