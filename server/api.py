@@ -2592,6 +2592,7 @@ class ChallengeCtlAPI:
 
         @self.app.route('/api/recordings/<int:recording_id>/image', methods=['GET'])
         @self.require_admin_auth
+        @self.limiter.limit("500 per minute")  # Higher limit for loading galleries with many thumbnails
         def get_recording_image(recording_id):
             """Serve waterfall image for a recording.
 
