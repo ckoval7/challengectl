@@ -88,7 +88,7 @@
               class="recording-image"
             >
               <img
-                :src="`/api/recordings/${recording.recording_id}/image`"
+                :src="`/api/recordings/${recording.recording_id}/image?size=thumbnail`"
                 :alt="`Waterfall for recording ${recording.recording_id}`"
                 @click="showImageModal(recording)"
               >
@@ -133,7 +133,7 @@
         </div>
         <div class="modal-image">
           <img
-            :src="`/api/recordings/${selectedRecording.recording_id}/image`"
+            :src="`/api/recordings/${selectedRecording.recording_id}/image?size=full`"
             :alt="`Waterfall for recording ${selectedRecording.recording_id}`"
           >
         </div>
@@ -182,7 +182,7 @@ export default {
 
     const loadRecordings = async () => {
       try {
-        const response = await api.get(`/challenges/${challengeId}/recordings`)
+        const response = await api.get(`/challenges/${challengeId}/recordings?limit=1000`)
         recordings.value = response.data.recordings || []
       } catch (error) {
         console.error('Failed to load recordings:', error)

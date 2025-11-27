@@ -122,7 +122,7 @@
       >
         <img
           v-if="selectedPreviewRecording.image_path"
-          :src="getImageUrl(selectedPreviewRecording.recording_id)"
+          :src="getImageUrl(selectedPreviewRecording.recording_id, 'full')"
           :alt="`Recording ${selectedPreviewRecording.recording_id}`"
           class="preview-image"
         >
@@ -243,8 +243,8 @@ function getPlaceholderStatusText(status) {
   return statusMap[status] || 'Recording in progress...'
 }
 
-function getImageUrl(recordingId) {
-  return `/api/recordings/${recordingId}/image`
+function getImageUrl(recordingId, size = 'thumbnail') {
+  return `/api/recordings/${recordingId}/image?size=${size}`
 }
 
 function formatFrequency(hz) {
@@ -351,7 +351,7 @@ function previewRecording(recording) {
 }
 
 .recording-image {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 1 / 1;
   background: var(--el-fill-color-darker);
   display: flex;
   align-items: center;

@@ -91,6 +91,7 @@ class Database:
                     completed_at TIMESTAMP,
                     status TEXT DEFAULT 'recording',
                     image_path TEXT,
+                    thumbnail_path TEXT,
                     image_width INTEGER,
                     image_height INTEGER,
                     sample_rate INTEGER,
@@ -358,6 +359,13 @@ class Database:
                 cursor.execute('DROP TABLE transmissions')
                 cursor.execute('ALTER TABLE transmissions_new RENAME TO transmissions')
                 logger.info("Successfully migrated transmissions table")
+
+            # Migration: Add thumbnail_path column to recordings table if it doesn't exist
+            cursor.execute("PRAGMA table_info(recordings)")
+            recordings_columns = [row[1] for row in cursor.fetchall()]
+            if 'thumbnail_path' not in recordings_columns:
+                logger.info("Adding 'thumbnail_path' column to recordings table")
+                cursor.execute('ALTER TABLE recordings ADD COLUMN thumbnail_path TEXT')
 
             # Create indexes
             cursor.execute('''
@@ -2247,7 +2255,8 @@ class Database:
             return cursor.rowcount > 0
 
     def update_recording_image(self, recording_id: int, image_path: str,
-                               image_width: int, image_height: int) -> bool:
+                               image_width: int, image_height: int,
+                               thumbnail_path: Optional[str] = None) -> bool:
         """Update recording with image information after upload.
 
         Args:
@@ -2255,19 +2264,30 @@ class Database:
             image_path: Path to saved waterfall image
             image_width: Width of image in pixels
             image_height: Height of image in pixels
+            thumbnail_path: Optional path to thumbnail image
 
         Returns:
             True if successful, False otherwise
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE recordings
-                SET image_path = ?,
-                    image_width = ?,
-                    image_height = ?
-                WHERE recording_id = ?
-            ''', (image_path, image_width, image_height, recording_id))
+            if thumbnail_path:
+                cursor.execute('''
+                    UPDATE recordings
+                    SET image_path = ?,
+                        thumbnail_path = ?,
+                        image_width = ?,
+                        image_height = ?
+                    WHERE recording_id = ?
+                ''', (image_path, thumbnail_path, image_width, image_height, recording_id))
+            else:
+                cursor.execute('''
+                    UPDATE recordings
+                    SET image_path = ?,
+                        image_width = ?,
+                        image_height = ?
+                    WHERE recording_id = ?
+                ''', (image_path, image_width, image_height, recording_id))
             conn.commit()
             return cursor.rowcount > 0
 

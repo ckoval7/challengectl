@@ -2507,16 +2507,39 @@ class ChallengeCtlAPI:
             try:
                 file.save(file_path)
 
-                # Get image dimensions
+                # Get image dimensions and generate thumbnail
                 with Image.open(file_path) as img:
                     width, height = img.size
 
-                # Update recording with image path and dimensions
+                    # Generate 300x300 square thumbnail with top-aligned crop
+                    thumbnail_size = 300
+
+                    # Calculate crop box for top-aligned square crop
+                    if width >= height:
+                        # Image is wider than tall, crop from left edge
+                        crop_box = (0, 0, height, height)
+                    else:
+                        # Image is taller than wide, crop from top
+                        crop_box = (0, 0, width, width)
+
+                    # Crop and resize to thumbnail
+                    thumbnail = img.crop(crop_box)
+                    thumbnail = thumbnail.resize((thumbnail_size, thumbnail_size), Image.Resampling.LANCZOS)
+
+                    # Save thumbnail with optimized PNG
+                    thumbnail_filename = f"recording_{recording_id}_thumb.png"
+                    thumbnail_path = os.path.join(recordings_dir, thumbnail_filename)
+                    thumbnail.save(thumbnail_path, 'PNG', optimize=True)
+
+                    logger.info(f"Generated thumbnail for recording {recording_id}: {thumbnail_size}x{thumbnail_size}px at {thumbnail_path}")
+
+                # Update recording with image path, dimensions, and thumbnail
                 updated = self.db.update_recording_image(
                     recording_id=recording_id,
                     image_path=file_path,
                     image_width=width,
-                    image_height=height
+                    image_height=height,
+                    thumbnail_path=thumbnail_path
                 )
 
                 if not updated:
@@ -2570,17 +2593,35 @@ class ChallengeCtlAPI:
         @self.app.route('/api/recordings/<int:recording_id>/image', methods=['GET'])
         @self.require_admin_auth
         def get_recording_image(recording_id):
-            """Serve waterfall image for a recording."""
+            """Serve waterfall image for a recording.
+
+            Query parameters:
+                size: 'thumbnail' or 'full' (default: 'full')
+            """
             recording = self.db.get_recording(recording_id)
             if not recording:
                 return jsonify({'error': 'Recording not found'}), 404
 
-            image_path = recording.get('image_path')
+            # Get size parameter (default to 'full' for backwards compatibility)
+            size = request.args.get('size', 'full').lower()
+
+            if size == 'thumbnail':
+                image_path = recording.get('thumbnail_path')
+                if not image_path:
+                    # Fallback to full image if thumbnail doesn't exist
+                    logger.warning(f"Thumbnail not found for recording {recording_id}, serving full image")
+                    image_path = recording.get('image_path')
+            else:
+                image_path = recording.get('image_path')
+
             if not image_path:
                 return jsonify({'error': 'No image available for this recording'}), 404
 
             if os.path.exists(image_path):
-                return send_file(image_path, mimetype='image/png')
+                response = send_file(image_path, mimetype='image/png')
+                # Add cache headers (24 hours)
+                response.headers['Cache-Control'] = 'public, max-age=86400'
+                return response
             else:
                 return jsonify({'error': 'Image file not found'}), 404
 
@@ -2588,8 +2629,8 @@ class ChallengeCtlAPI:
         @self.require_admin_auth
         def get_challenge_recordings(challenge_id):
             """Get recordings for a specific challenge."""
-            limit = request.args.get('limit', 50, type=int)
-            recordings = self.db.get_recordings_for_challenge(challenge_id, limit=min(limit, 200))
+            limit = request.args.get('limit', 200, type=int)
+            recordings = self.db.get_recordings_for_challenge(challenge_id, limit=min(limit, 1000))
             return jsonify({'recordings': recordings}), 200
 
         # Unified agents query endpoint (admin)
