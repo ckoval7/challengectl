@@ -1979,21 +1979,31 @@ h3 {
   align-items: center;
 }
 
-/* Animations */
+/* Smooth table row transitions for desktop view */
+.el-table__row {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Animations for mobile card view */
 .challenge-list-move,
 .challenge-list-enter-active,
 .challenge-list-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .challenge-list-enter-from {
   opacity: 0;
-  transform: translateY(-20px);
+  transform: translateY(-30px) scale(0.95);
 }
 
 .challenge-list-leave-to {
   opacity: 0;
-  transform: translateY(20px);
+  transform: translateY(30px) scale(0.95);
+}
+
+.challenge-list-leave-active {
+  position: absolute;
+  width: 100%;
 }
 
 .playlist-move,
