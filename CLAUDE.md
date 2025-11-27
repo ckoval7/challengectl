@@ -360,7 +360,7 @@ with db.begin_immediate():
 
 ### Frequency Validation and Per-Antenna Configuration
 
-Runner devices support two configuration formats for frequency limits, gain, and antenna selection:
+Runner devices support two configuration formats for frequency limits, gain, bias-t, and antenna selection:
 
 **Legacy Format (single antenna per device):**
 ```yaml
@@ -369,27 +369,31 @@ devices:
     model: hackrf
     rf_gain: 14  # Device-level gain
     if_gain: 32  # Device-level IF gain (HackRF only)
+    bias_t: true  # Device-level bias-t
     antenna: ""
     frequency_limits:
       - "144000000-148000000"  # 2m band
       - "420000000-450000000"  # 70cm band
 ```
 
-**New Format (per-antenna frequency limits and gain):**
+**New Format (per-antenna frequency limits, gain, and bias-t):**
 ```yaml
 devices:
   - name: "1234567890abcdef"
     model: bladerf
     rf_gain: 43  # Default gain (fallback if not specified per-antenna)
+    bias_t: false  # Default bias-t (fallback if not specified per-antenna)
     antennas:
       TX1:
         enabled: true  # Optional, defaults to true
+        bias_t: true   # Enable bias-t for VHF/UHF (powers LNA)
         rf_gain: 43    # Optimal gain for VHF/UHF
         frequency_limits:
           - "144000000-148000000"  # 2m on TX1
           - "420000000-450000000"  # 70cm on TX1
       TX2:
         enabled: false  # Temporarily disabled (e.g., maintenance)
+        bias_t: false  # Disable bias-t for microwave (no LNA)
         rf_gain: 50    # Higher gain for microwave frequencies
         frequency_limits:
           - "900000000-915000000"  # 900 MHz on TX2
@@ -404,21 +408,30 @@ Antennas can be temporarily disabled by setting `enabled: false`. This is useful
 
 Disabled antennas are skipped during automatic antenna selection on both the runner and server side.
 
-**Automatic Antenna Selection and Gain Application:**
+**Automatic Antenna Selection, Gain, and Bias-T Application:**
 - Runner automatically selects the appropriate antenna based on challenge frequency
 - Server validates frequency compatibility before assigning challenges to runners
 - Runner double-checks frequency compatibility and refuses incompatible challenges
 - If no antenna supports the required frequency, the challenge is refused and requeued
-- Per-antenna `rf_gain` is automatically applied when the antenna is selected
-- Gain values are passed to fire functions (NBFM, CW, spectrum_paint) for transmission
+- Per-antenna `rf_gain` and `bias_t` are automatically applied when the antenna is selected
+- Gain and bias-t values are passed to fire functions (NBFM, CW, spectrum_paint) for transmission
+- Bias-t is added to the device string dynamically during challenge execution (e.g., `bladerf=1234567890abcdef,biastee=1`)
 
-**Gain Configuration:**
+**Gain and Bias-T Configuration:**
 - **Per-antenna rf_gain** (recommended): Optimize gain for different frequency bands
 - **Device-level rf_gain**: Fallback value if not specified per-antenna
+- **Per-antenna bias_t** (recommended for multi-antenna devices): Enable/disable bias-t per antenna
+- **Device-level bias_t**: Fallback value if not specified per-antenna
 - **if_gain** (HackRF only): Specified at device level, not per-antenna
 - Device-level gains were previously configured but not used (bug fixed in gain implementation)
 
-This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different antennas and optimal gain values for different frequency bands, optimizing RF performance and preventing hardware damage from out-of-band transmissions.
+**Bias-T Use Cases:**
+- Enable bias-t to power external LNAs (Low Noise Amplifiers) on VHF/UHF antennas
+- Disable bias-t on antennas without LNAs or when LNA has separate power
+- Per-antenna configuration allows different antennas to have different power requirements
+- BladeRF bias-t is automatically disabled after each transmission to prevent accidental damage
+
+This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different antennas with optimal gain and bias-t values for different frequency bands, optimizing RF performance and preventing hardware damage from out-of-band transmissions or incorrect bias-t settings.
 
 ### Error Handling
 - Runner failures: Automatic requeue via heartbeat timeout or assignment expiry

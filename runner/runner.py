@@ -222,14 +222,13 @@ class ChallengeCtlRunner:
             name = device_conf.get('name')
             model_def = model_defaults.get(model, {})
 
-            # Build device string (same logic as v2)
+            # Build device string (without bias_t for now - will be added per-antenna during execution)
             device_string = f"{model}={name}"
-            if device_conf.get('bias_t') or model_def.get('bias_t'):
-                device_string += ",biastee=1"
 
-            # Get gain settings (device-level, for legacy format or fallback)
+            # Get device-level settings (for legacy format or fallback)
             device_rf_gain = device_conf.get('rf_gain', model_def.get('rf_gain'))
             device_if_gain = device_conf.get('if_gain', model_def.get('if_gain'))
+            device_bias_t = device_conf.get('bias_t', model_def.get('bias_t', False))
 
             # Parse antenna configuration (supports both old and new formats)
             antennas_config = {}
@@ -242,13 +241,15 @@ class ChallengeCtlRunner:
 
                 # Parse each antenna's configuration
                 for antenna_name, antenna_conf in device_conf['antennas'].items():
-                    # Get per-antenna rf_gain, fall back to device-level if not specified
+                    # Get per-antenna settings, fall back to device-level if not specified
                     antenna_rf_gain = antenna_conf.get('rf_gain', device_rf_gain)
+                    antenna_bias_t = antenna_conf.get('bias_t', device_bias_t)
 
                     antennas_config[antenna_name] = {
                         'frequency_limits': antenna_conf.get('frequency_limits', []),
                         'enabled': antenna_conf.get('enabled', True),
-                        'rf_gain': antenna_rf_gain
+                        'rf_gain': antenna_rf_gain,
+                        'bias_t': antenna_bias_t
                     }
 
                 logger.info(f"Device {idx} configured with {len(antennas_config)} antennas: {', '.join(antennas_config.keys())}")
@@ -259,7 +260,8 @@ class ChallengeCtlRunner:
                 if antenna:
                     antennas_config[antenna] = {
                         'frequency_limits': frequency_limits,
-                        'rf_gain': device_rf_gain
+                        'rf_gain': device_rf_gain,
+                        'bias_t': device_bias_t
                     }
                     logger.info(f"Device {idx} configured with single antenna: {antenna} (legacy format)")
                 elif frequency_limits:
@@ -267,7 +269,8 @@ class ChallengeCtlRunner:
                     # Create a default antenna entry with empty name
                     antennas_config[''] = {
                         'frequency_limits': frequency_limits,
-                        'rf_gain': device_rf_gain
+                        'rf_gain': device_rf_gain,
+                        'bias_t': device_bias_t
                     }
                     logger.warning(f"Device {idx} has frequency_limits but no antenna specified")
 
@@ -276,9 +279,10 @@ class ChallengeCtlRunner:
                 'model': model,
                 'name': name,
                 'device_string': device_string,
-                'antennas_config': antennas_config,  # {antenna_name: {frequency_limits: [...], rf_gain: X}}
+                'antennas_config': antennas_config,  # {antenna_name: {frequency_limits: [...], rf_gain: X, bias_t: bool}}
                 'rf_gain': device_rf_gain,  # Device-level gain for legacy support
-                'if_gain': device_if_gain   # Device-level if_gain (HackRF only)
+                'if_gain': device_if_gain,  # Device-level if_gain (HackRF only)
+                'bias_t': device_bias_t     # Device-level bias_t for legacy support
             }
 
             devices.append(device_info)
@@ -286,7 +290,7 @@ class ChallengeCtlRunner:
 
         return devices
 
-    def select_antenna_for_frequency(self, device: Dict, frequency: int) -> Optional[str]:
+    def select_antenna_for_frequency(self, device: Dict, frequency: int) -> Optional[tuple]:
         """Select the appropriate antenna for a given frequency based on device configuration.
 
         Args:
@@ -294,7 +298,7 @@ class ChallengeCtlRunner:
             frequency: Target frequency in Hz
 
         Returns:
-            Antenna name (string) if a compatible antenna is found, None otherwise
+            Tuple of (antenna_name, bias_t) if a compatible antenna is found, None otherwise
         """
         antennas_config = device.get('antennas_config', {})
 
@@ -314,7 +318,8 @@ class ChallengeCtlRunner:
             # If no frequency limits specified, this antenna accepts any frequency
             if not frequency_limits:
                 logger.debug(f"Antenna '{antenna_name}' has no frequency limits, accepting frequency {frequency}")
-                return antenna_name
+                bias_t = antenna_config.get('bias_t', device.get('bias_t', False))
+                return (antenna_name, bias_t)
 
             # Check if frequency falls within any of the antenna's ranges
             for freq_range in frequency_limits:
@@ -330,7 +335,8 @@ class ChallengeCtlRunner:
 
                     if min_freq <= frequency <= max_freq:
                         logger.debug(f"Frequency {frequency} Hz matches antenna '{antenna_name}' range {freq_range}")
-                        return antenna_name
+                        bias_t = antenna_config.get('bias_t', device.get('bias_t', False))
+                        return (antenna_name, bias_t)
 
                 except (ValueError, AttributeError) as e:
                     logger.warning(f"Error parsing frequency range '{freq_range}': {e}")
@@ -655,8 +661,8 @@ class ChallengeCtlRunner:
                 if device_id not in self.busy_devices and device_id not in self.offline_devices:
                     # If frequency specified, verify device has compatible antenna
                     if frequency is not None:
-                        antenna = self.select_antenna_for_frequency(device, frequency)
-                        if antenna is None:
+                        antenna_info = self.select_antenna_for_frequency(device, frequency)
+                        if antenna_info is None:
                             # Device doesn't support this frequency, skip it
                             logger.debug(f"Device {device.get('name')} doesn't support frequency {frequency} Hz")
                             continue
@@ -829,13 +835,20 @@ class ChallengeCtlRunner:
             return (False, 0, frequency or 0)
 
         device_id = device['device_id']
-        device_string = device['device_string']
+        base_device_string = device['device_string']
 
         # Select appropriate antenna for this frequency
-        antenna = self.select_antenna_for_frequency(device, frequency)
-        if antenna is None:
+        antenna_info = self.select_antenna_for_frequency(device, frequency)
+        if antenna_info is None:
             logger.error(f"Device {device.get('name')} has no antenna supporting frequency {frequency} Hz")
             return (False, device_id, frequency or 0)
+
+        antenna, bias_t = antenna_info
+
+        # Build device string with antenna-specific bias_t
+        device_string = base_device_string
+        if bias_t:
+            device_string += ",biastee=1"
 
         # Get gain settings for this antenna/device
         antennas_config = device.get('antennas_config', {})
@@ -843,7 +856,7 @@ class ChallengeCtlRunner:
         rf_gain = antenna_config.get('rf_gain', device.get('rf_gain'))  # Per-antenna or device-level
         if_gain = device.get('if_gain')  # Device-level only (HackRF specific)
 
-        logger.info(f"Using device {device.get('name')} with antenna '{antenna}' for frequency {frequency} Hz (rf_gain={rf_gain})")
+        logger.info(f"Using device {device.get('name')} with antenna '{antenna}' for frequency {frequency} Hz (rf_gain={rf_gain}, bias_t={bias_t})")
 
         try:
             # Run spectrum paint before challenge if configured
