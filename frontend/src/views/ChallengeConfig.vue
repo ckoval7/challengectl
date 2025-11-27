@@ -49,7 +49,7 @@
                 />
                 <div v-if="shouldShowViewAllLink(props.row.challenge_id)" class="view-all-link">
                   <router-link :to="`/recordings/${props.row.challenge_id}`">
-                    View All {{ getRecordings(props.row.challenge_id).length }} Recordings →
+                    View All {{ props.row.recording_count }} Recordings →
                   </router-link>
                 </div>
               </div>
@@ -1146,8 +1146,9 @@ function getPlaceholders(challengeId) {
 }
 
 function shouldShowViewAllLink(challengeId) {
-  const recordings = getRecordings(challengeId)
-  return recordings.length > 6
+  // Use the actual recording_count from the challenge data
+  const challenge = challenges.value.find(c => c.challenge_id === challengeId)
+  return challenge && challenge.recording_count > 6
 }
 
 // Client-side queue position calculator (matches server logic)

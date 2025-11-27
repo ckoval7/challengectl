@@ -98,9 +98,9 @@
             :placeholders="placeholders"
             :max-recordings="6"
           />
-          <div v-if="recordings.length > 6" class="view-all-link">
+          <div v-if="challenge.recording_count > 6" class="view-all-link">
             <router-link :to="`/recordings/${challenge.challenge_id}`">
-              View All {{ recordings.length }} Recordings →
+              View All {{ challenge.recording_count }} Recordings →
             </router-link>
           </div>
         </div>
