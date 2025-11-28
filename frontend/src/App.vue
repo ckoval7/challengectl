@@ -264,6 +264,12 @@ export default {
       }
     }
 
+    // Handle WebSocket reconnection
+    const handleWebSocketReconnect = () => {
+      console.log('WebSocket reconnected, reloading pause state')
+      loadPauseState()
+    }
+
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
       const savedTheme = localStorage.getItem('theme')
@@ -278,11 +284,15 @@ export default {
         loadPauseState()
         websocket.connect()
         websocket.on('system_control', handleSystemControl)
+
+        // Reload pause state on WebSocket reconnection to sync with server
+        websocket.socket?.on('connect', handleWebSocketReconnect)
       }
     })
 
     onUnmounted(() => {
       websocket.off('system_control', handleSystemControl)
+      websocket.socket?.off('connect', handleWebSocketReconnect)
     })
 
     const applyTheme = () => {
