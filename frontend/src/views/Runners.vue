@@ -244,6 +244,7 @@
                 <el-select
                   v-model="addRunnerForm.expiresHours"
                   placeholder="Select expiry time"
+                  :teleported="false"
                 >
                   <el-option
                     label="1 hour"
@@ -309,6 +310,7 @@
                   <el-select
                     v-model="device.model"
                     placeholder="Select SDR model"
+                    :teleported="false"
                   >
                     <el-option
                       label="HackRF"
@@ -818,6 +820,7 @@
                 <el-select
                   v-model="addListenerForm.expiresHours"
                   placeholder="Select expiry time"
+                  :teleported="false"
                 >
                   <el-option
                     label="1 hour"
@@ -873,6 +876,7 @@
                   <el-select
                     v-model="device.model"
                     placeholder="Select SDR model"
+                    :teleported="false"
                   >
                     <el-option
                       label="RTL-SDR"
@@ -1268,6 +1272,7 @@
                   <el-select
                     v-model="device.model"
                     placeholder="Select SDR model"
+                    :teleported="false"
                   >
                     <el-option
                       label="RTL-SDR"
