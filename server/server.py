@@ -527,6 +527,10 @@ def main():
     # Only show warnings and errors from the scheduler
     logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
+    # Set werkzeug (Flask HTTP request logger) to DEBUG level
+    # This prevents request logs from appearing at INFO level
+    logging.getLogger('werkzeug').setLevel(logging.DEBUG)
+
     logging.info(f"Logging initialized at {args.log_level} level")
 
     # Check if config file exists

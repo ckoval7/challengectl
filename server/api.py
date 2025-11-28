@@ -2313,7 +2313,7 @@ class ChallengeCtlAPI:
                     del self.active_transmissions[challenge_id]
                     logger.debug(f"Removed completed transmission for challenge {challenge_id} from active tracking")
 
-            # Broadcast completion event with recording priority updates
+            # Broadcast completion event with full challenge data and recording priority updates
             self.broadcast_event('transmission_complete', {
                 'runner_id': agent_id,
                 'agent_id': agent_id,
@@ -2326,7 +2326,8 @@ class ChallengeCtlAPI:
                 'transmission_id': transmission_id,
                 'device_id': device_id,
                 'recording_priority': recording_priority,
-                'will_be_recorded': will_be_recorded
+                'will_be_recorded': will_be_recorded,
+                'challenge': updated_challenge  # Include full updated challenge data for real-time UI updates
             })
 
             # Broadcast updated public challenges

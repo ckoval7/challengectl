@@ -27,6 +27,7 @@
 
         <el-table
           :data="runners"
+          row-key="runner_id"
           class="w-full"
         >
           <el-table-column
@@ -278,7 +279,7 @@
 
               <div
                 v-for="(device, index) in addRunnerForm.devices"
-                :key="index"
+                :key="device._uid"
                 class="device-config-item"
               >
                 <div class="device-header">
@@ -661,6 +662,7 @@
 
         <el-table
           :data="listeners"
+          row-key="agent_id"
           class="w-full"
         >
           <el-table-column
@@ -839,7 +841,7 @@
 
               <div
                 v-for="(device, index) in addListenerForm.devices"
-                :key="index"
+                :key="device._uid"
                 class="device-config-item"
               >
                 <div class="device-header">
@@ -1231,7 +1233,7 @@
 
             <div
               v-for="(device, index) in editListenerForm.devices"
-              :key="index"
+              :key="device._uid"
               class="device-config-item"
             >
               <div class="device-header">
@@ -1331,7 +1333,7 @@
               type="primary"
               plain
               class="mt-10 w-full"
-              @click="editListenerForm.devices.push({ name: String(editListenerForm.devices.length), model: 'rtlsdr', gain: 40, waterfall_min_dbm: null, waterfall_max_dbm: null, frequency_limits: '' })"
+              @click="editListenerForm.devices.push({ _uid: generateDeviceId(), name: String(editListenerForm.devices.length), model: 'rtlsdr', gain: 40, waterfall_min_dbm: null, waterfall_max_dbm: null, frequency_limits: '' })"
             >
               Add Another Device
             </el-button>
@@ -1583,6 +1585,12 @@ export default {
     // Breakpoint detection for responsive design
     const { isMobile } = useBreakpoint()
 
+    // Unique ID generator for device objects (fixes Vue 3.5 reactivity with v-for)
+    let deviceIdCounter = 0
+    const generateDeviceId = () => {
+      return `device_${Date.now()}_${deviceIdCounter++}`
+    }
+
     // Runner enrollment state
     // Note: Kept separate from listener enrollment due to significantly different
     // form structures (runners have complex multi-device config, listeners are simpler)
@@ -1593,6 +1601,7 @@ export default {
       verifySsl: true,
       devices: [
         {
+          _uid: generateDeviceId(),
           name: '0',
           model: 'hackrf',
           rf_gain: 14,
@@ -1622,6 +1631,7 @@ export default {
       expiresHours: 24,
       devices: [
         {
+          _uid: generateDeviceId(),
           name: '0',
           model: 'rtlsdr',
           gain: 40,
@@ -1717,6 +1727,7 @@ export default {
 
     const addDevice = () => {
       addRunnerForm.value.devices.push({
+        _uid: generateDeviceId(),
         name: String(addRunnerForm.value.devices.length),
         model: 'hackrf',
         rf_gain: 14,
@@ -1731,6 +1742,7 @@ export default {
 
     const addListenerDevice = () => {
       addListenerForm.value.devices.push({
+        _uid: generateDeviceId(),
         name: String(addListenerForm.value.devices.length),
         model: 'rtlsdr',
         gain: 40,
@@ -2237,6 +2249,7 @@ agent:
       editListenerForm.value = {
         agent_id: listener.agent_id,
         devices: devices.map(d => ({
+          _uid: generateDeviceId(),
           name: d.name || d.device_id || '0',
           model: d.model || 'rtlsdr',
           gain: d.gain || 40,

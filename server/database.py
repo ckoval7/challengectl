@@ -2012,11 +2012,11 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Only fetch enabled agents with API keys set (optimized query)
+            # Fetch all agents with API keys set (disabled agents can still authenticate)
             cursor.execute('''
                 SELECT agent_id
                 FROM agents
-                WHERE enabled = 1 AND api_key_hash IS NOT NULL
+                WHERE api_key_hash IS NOT NULL
             ''')
 
             for row in cursor.fetchall():

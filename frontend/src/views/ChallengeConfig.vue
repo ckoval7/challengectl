@@ -214,7 +214,6 @@
             label="Queue #"
             width="90"
             align="center"
-            sortable
           >
             <template #default="scope">
               <el-tag
@@ -1056,7 +1055,7 @@ print(response.json())</code></pre>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
 import { websocket } from '../websocket'
@@ -1378,12 +1377,21 @@ function handleChallengeAssigned(event) {
 
 function handleTransmissionComplete(event) {
   console.log('Transmission complete:', event)
-  const { challenge_id, success, recording_priority, will_be_recorded } = event
+  const { challenge_id, success, recording_priority, will_be_recorded, challenge: updatedChallenge } = event
 
   const challenge = challengesMap.value.get(challenge_id)
-  if (challenge) {
+  if (challenge && updatedChallenge) {
+    // Use full updated challenge data from server (includes fresh dynamic_priority, status, etc.)
+    challengesMap.value.set(challenge_id, {
+      ...updatedChallenge,
+      enabled: Boolean(updatedChallenge.enabled),
+      recording_priority,
+      will_be_recorded
+    })
+  } else if (challenge) {
+    // Fallback to local update if server didn't send full challenge data
     challenge.transmission_count = (challenge.transmission_count || 0) + 1
-    challenge.status = success ? 'queued' : 'waiting'
+    challenge.status = 'waiting'  // Server always sets to 'waiting' after completion
     challenge.last_tx_time = new Date().toISOString()
 
     // Clear the assigned frequency since transmission is complete
@@ -1400,29 +1408,36 @@ function handleTransmissionComplete(event) {
     challengesMap.value.set(challenge_id, challenge)
   }
 
-  // Recalculate queue positions (this challenge just moved to back)
+  // Recalculate queue positions with fresh dynamic_priority values
   recalculateQueuePositions()
 }
 
 // Challenge actions
 async function toggleEnabled(challengeId, enabled) {
+  // Optimistic update: Update local state immediately (triggers switch animation)
+  const challenge = challengesMap.value.get(challengeId)
+  if (!challenge) return
+
+  const previousEnabled = challenge.enabled
+  challenge.enabled = enabled
+  challengesMap.value.set(challengeId, challenge)
+
+  // Wait for next tick to allow switch animation to start, then resort table
+  await nextTick()
+  recalculateQueuePositions()
+
+  // Make API call in background
   try {
     await api.post(`/challenges/${challengeId}/enable`, { enabled })
     ElMessage.success(`Challenge ${enabled ? 'enabled' : 'disabled'}`)
-
-    // Update locally
-    const challenge = challengesMap.value.get(challengeId)
-    if (challenge) {
-      challenge.enabled = enabled
-      challengesMap.value.set(challengeId, challenge)
-
-      // Recalculate queue positions (enabled state affects queue)
-      recalculateQueuePositions()
-    }
   } catch (error) {
     console.error('Error toggling challenge:', error)
     ElMessage.error('Failed to update challenge')
-    loadChallenges() // Reload on error
+
+    // Rollback on error
+    challenge.enabled = previousEnabled
+    challengesMap.value.set(challengeId, challenge)
+    recalculateQueuePositions()
   }
 }
 
