@@ -399,31 +399,23 @@ class ChallengeCtlServer:
         print("="*60, flush=True)
         logger.info("Shutting down server...")
 
-        # Stop the SocketIO server to unblock the run() call
-        try:
-            print("Step 1/3: Stopping SocketIO server...", flush=True)
-            with self.api.app.app_context():
-                self.api.socketio.stop()
-            print("  ✓ SocketIO server stopped", flush=True)
-            logger.info("SocketIO server stopped")
-        except Exception as e:
-            print(f"  ✗ Error stopping SocketIO server: {e}", flush=True)
-            logger.error(f"Error stopping SocketIO server: {e}")
-
         # Shutdown scheduler if it's running
         if self.scheduler.running:
-            print("Step 2/3: Stopping background scheduler (waiting for jobs to complete)...", flush=True)
+            print("Step 1/2: Stopping background scheduler (waiting for jobs to complete)...", flush=True)
             self.scheduler.shutdown(wait=True)
             print("  ✓ Background scheduler stopped", flush=True)
             logger.info("Background scheduler stopped")
         else:
-            print("Step 2/3: Background scheduler already stopped", flush=True)
+            print("Step 1/2: Background scheduler already stopped", flush=True)
 
-        print("Step 3/3: Cleanup complete", flush=True)
+        print("Step 2/2: Cleanup complete", flush=True)
         print("="*60, flush=True)
         print("SERVER STOPPED", flush=True)
         print("="*60, flush=True)
         logger.info("Server stopped")
+
+        # Exit cleanly - SocketIO will cleanup automatically
+        sys.exit(0)
 
 
 def argument_parser(config=None):
