@@ -429,6 +429,7 @@
           placeholder="Select permission"
           class="w-full mb-10"
           :loading="loadingPermissions"
+          :teleported="false"
         >
           <el-option
             v-for="perm in availablePermissions"
