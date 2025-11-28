@@ -1342,7 +1342,9 @@ class ChallengeCtlRunner:
             return
 
         self._shutdown_initiated = True
-        print("Stopping runner...", flush=True)
+        print("\n" + "="*60, flush=True)
+        print("SHUTTING DOWN RUNNER", flush=True)
+        print("="*60, flush=True)
         logger.info("Stopping runner...")
         self.running = False
 
@@ -1353,13 +1355,18 @@ class ChallengeCtlRunner:
             active_count = len(self.active_tasks)
 
         if active_count > 0:
-            print(f"Waiting for {active_count} active task(s) to complete...", flush=True)
+            print(f"Step 1/3: Waiting for {active_count} active task(s) to complete (max {max_wait}s)...", flush=True)
             logger.info(f"Waiting for {active_count} active task(s) to complete...")
 
             while waited < max_wait:
                 with self.device_lock:
-                    if len(self.active_tasks) == 0:
+                    current_count = len(self.active_tasks)
+                    if current_count == 0:
                         break
+
+                # Show progress every 5 seconds
+                if waited > 0 and waited % 5 == 0:
+                    print(f"  Still waiting... ({current_count} task(s) remaining, {waited}s elapsed)", flush=True)
 
                 time.sleep(1)
                 waited += 1
@@ -1368,19 +1375,30 @@ class ChallengeCtlRunner:
                 remaining = len(self.active_tasks)
 
             if remaining > 0:
-                print(f"Warning: {remaining} task(s) still running after {max_wait}s", flush=True)
+                print(f"  ⚠ Warning: {remaining} task(s) still running after {max_wait}s", flush=True)
                 logger.warning(f"{remaining} task(s) still running after {max_wait}s")
             else:
-                print("All tasks completed", flush=True)
+                print(f"  ✓ All tasks completed ({waited}s)", flush=True)
                 logger.info("All tasks completed")
+        else:
+            print("Step 1/3: No active tasks to wait for", flush=True)
 
         # Sign out from server
-        print("Signing out from server...", flush=True)
-        self.signout()
+        print("Step 2/3: Signing out from server...", flush=True)
+        success = self.signout()
+        if success:
+            print("  ✓ Signed out successfully", flush=True)
+        else:
+            print("  ⚠ Signout did not complete successfully", flush=True)
 
         # Give remaining threads time to finish
+        print("Step 3/3: Waiting for background threads to finish...", flush=True)
         time.sleep(1)
-        print("Runner stopped", flush=True)
+        print("  ✓ Cleanup complete", flush=True)
+
+        print("="*60, flush=True)
+        print("RUNNER STOPPED", flush=True)
+        print("="*60, flush=True)
         logger.info("Runner stopped")
 
         # Flush all log handlers to ensure messages are written

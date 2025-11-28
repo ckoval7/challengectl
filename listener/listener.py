@@ -1063,27 +1063,40 @@ class ListenerAgent:
         """Gracefully shutdown the listener agent."""
         # Note: self.running is already set to False by caller
 
+        print("\n" + "="*60, flush=True)
+        print("SHUTTING DOWN LISTENER", flush=True)
+        print("="*60, flush=True)
+
         # Disconnect WebSocket
         if self.sio.connected:
-            print("Disconnecting WebSocket...", flush=True)
-            self.sio.disconnect()
+            print("Step 1/3: Disconnecting WebSocket...", flush=True)
+            try:
+                self.sio.disconnect()
+                print("  ✓ WebSocket disconnected", flush=True)
+            except Exception as e:
+                print(f"  ⚠ Error disconnecting WebSocket: {e}", flush=True)
+        else:
+            print("Step 1/3: WebSocket already disconnected", flush=True)
 
         # Sign out from server
-        print("Signing out from server...", flush=True)
+        print("Step 2/3: Signing out from server...", flush=True)
         try:
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/signout",
                 timeout=2  # Short timeout - don't hang if server is down
             )
             if response.status_code == 200:
-                print("Signed out successfully", flush=True)
+                print("  ✓ Signed out successfully", flush=True)
             else:
-                print(f"Signout failed: {response.status_code}", flush=True)
+                print(f"  ⚠ Signout failed: HTTP {response.status_code}", flush=True)
         except Exception as e:
             # Server may be down, just print error and continue shutdown
-            print(f"Could not reach server: {e}", flush=True)
+            print(f"  ⚠ Could not reach server: {e}", flush=True)
 
-        print("Listener agent shut down", flush=True)
+        print("Step 3/3: Cleanup complete", flush=True)
+        print("="*60, flush=True)
+        print("LISTENER STOPPED", flush=True)
+        print("="*60, flush=True)
 
 
 def get_agent_id_from_config(config_path: str) -> str:
