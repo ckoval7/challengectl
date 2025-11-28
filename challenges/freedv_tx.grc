@@ -293,7 +293,7 @@ blocks:
     bus_structure: null
     coordinate: [632, 632.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_short_to_float_0_0
   id: blocks_short_to_float
   parameters:
@@ -329,7 +329,7 @@ blocks:
     bus_structure: null
     coordinate: [368, 628.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: blocks_wavfile_source_0
   id: blocks_wavfile_source
   parameters:
@@ -691,7 +691,7 @@ blocks:
     bus_structure: null
     coordinate: [120, 396.0]
     rotation: 180
-    state: disabled
+    state: enabled
 - name: ppm
   id: parameter
   parameters:
