@@ -225,6 +225,7 @@
           title="Add Runner"
           width="800px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="!enrollmentData">
             <!-- Step 1: Enter runner name and configuration -->
@@ -501,6 +502,7 @@
           title="Re-enroll Runner"
           width="800px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="!reEnrollData">
             <el-alert
@@ -797,6 +799,7 @@
           title="Add Listener"
           width="700px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="!listenerEnrollmentData">
             <!-- Step 1: Enter listener name and configuration -->
@@ -1073,6 +1076,7 @@
           title="Re-enroll Listener"
           width="700px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="!reEnrollListenerData">
             <el-alert
@@ -1218,6 +1222,7 @@
           title="Edit Listener Devices"
           width="700px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="editListenerForm">
             <el-alert
@@ -1460,6 +1465,7 @@
           title="Create Provisioning Key"
           width="600px"
           :close-on-click-modal="false"
+          destroy-on-close
         >
           <div v-if="!createdProvKey">
             <el-form
