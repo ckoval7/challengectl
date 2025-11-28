@@ -738,7 +738,7 @@ export default {
 
       try {
         await api.post(`/users/${selectedUser.value.username}/permissions`, {
-          permission_name: permissionToGrant.value
+          permission: permissionToGrant.value
         })
 
         ElMessage.success(`Granted permission: ${permissionToGrant.value}`)
