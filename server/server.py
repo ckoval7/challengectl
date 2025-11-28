@@ -402,7 +402,8 @@ class ChallengeCtlServer:
         # Stop the SocketIO server to unblock the run() call
         try:
             print("Step 1/3: Stopping SocketIO server...", flush=True)
-            self.api.socketio.stop()
+            with self.api.app.app_context():
+                self.api.socketio.stop()
             print("  ✓ SocketIO server stopped", flush=True)
             logger.info("SocketIO server stopped")
         except Exception as e:
