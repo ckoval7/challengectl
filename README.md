@@ -5,7 +5,7 @@
 
 # challengectl v2
 
-Everthing is gonna be broken in this branch for a few weeks while I work on stuff. Don't even try to use it til this message is gone.
+Ready for testing :)
 
 ## TODO:
 - [x] Convert Config Files to YAML
@@ -25,7 +25,7 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
   - [ ] CW - Potentially possible, TBD
   - [ ] ASK - Likely not possible
   - [x] Freq Hopper
-  - [ ] LRS (Dan?)
+  - [x] LRS (Dan?)
 - [ ] Update Flowgraphs to use parameters (instead of variables) for flags, device args, gain settings
   - [x] NBFM
   - [x] SSB
@@ -37,17 +37,17 @@ Everthing is gonna be broken in this branch for a few weeks while I work on stuf
   - [x] Freq Hopper
   - [ ] LRS
 - [ ] Change code to use unmodified GNU Radio Generated Python
-- [ ] Add FreeDV Challenge
+- [x] Add FreeDV Challenge
   - [x] Finish GRC Flowgraph
-  - [ ] Integrate into code
+  - [x] Integrate into code
 - [x] Add Freq-hop challenge
   - [x] Finish GRC Flowgraph
   - [x] Integrate into code
-- [ ] Update documentation for new YAML format and new challenges
+- [x] Update documentation for new YAML format and new challenges
 - [ ] Integrate Device Enumeration
-- [ ] Add support for multiple TX frontends per device
-- [ ] Add frequency limits and device args per TX frontend for different amp/filter/antenna setups
-- [ ] Implement WebUI
+- [x] Add support for multiple TX frontends per device
+- [x] Add frequency limits and device args per TX frontend for different amp/filter/antenna setups
+- [x] Implement WebUI
   - [x] Admin Status Page
   - [x] Public Status Page
   - [x] Challenge Editor
