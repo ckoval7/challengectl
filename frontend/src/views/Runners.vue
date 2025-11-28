@@ -1696,6 +1696,7 @@ export default {
         verifySsl: true,
         devices: [
           {
+            _uid: generateDeviceId(),
             name: '0',
             model: 'hackrf',
             rf_gain: 14,
@@ -1714,6 +1715,7 @@ export default {
         expiresHours: 24,
         devices: [
           {
+            _uid: generateDeviceId(),
             name: '0',
             model: 'rtlsdr',
             gain: 40,
@@ -1785,6 +1787,7 @@ export default {
         verifySsl: true,
         devices: [
           {
+            _uid: generateDeviceId(),
             name: '0',
             model: 'hackrf',
             rf_gain: 14,
@@ -2730,6 +2733,7 @@ curl -k \\
       showAddRunnerDialog,
       addDevice,
       removeDevice,
+      generateDeviceId,
       generateEnrollmentToken,
       closeAddRunnerDialog,
       copyToClipboard,

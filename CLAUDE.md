@@ -527,3 +527,4 @@ This enables multi-antenna devices (like BladeRF with TX1/TX2) to use different 
 - Check for RF interference using `osmocom_fft`
 - Adjust sample_rate if needed (default: 2M samples/sec)
 - Ensure SDR device is not being used by another process
+- The server is running elsewhere
