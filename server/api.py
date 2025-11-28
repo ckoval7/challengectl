@@ -35,6 +35,24 @@ from challenge_duration import calculate_challenge_duration, get_pre_paint_durat
 logger = logging.getLogger(__name__)
 
 
+# Permission definitions - single source of truth
+PERMISSION_DEFINITIONS = [
+    {
+        'name': 'create_users',
+        'description': 'Can create and manage users',
+        'category': 'administration'
+    },
+    {
+        'name': 'create_provisioning_key',
+        'description': 'Can create provisioning keys for runners',
+        'category': 'provisioning'
+    }
+]
+
+# Helper to get list of valid permission names
+VALID_PERMISSIONS = [p['name'] for p in PERMISSION_DEFINITIONS]
+
+
 class WebSocketHandler(logging.Handler):
     """Custom logging handler that broadcasts logs to WebUI via WebSocket."""
 
@@ -1404,9 +1422,9 @@ class ChallengeCtlAPI:
                 self.db.disable_user('admin')
                 logger.info("Initial setup completed - default admin account disabled")
 
-                # Grant full permissions to first user
-                self.db.grant_permission(username, 'create_users', 'system')
-                self.db.grant_permission(username, 'create_provisioning_key', 'system')
+                # Grant all permissions to initial admin user
+                for permission in VALID_PERMISSIONS:
+                    self.db.grant_permission(username, permission, 'system')
 
                 # Generate TOTP provisioning URI
                 totp = pyotp.TOTP(totp_secret)
@@ -1430,7 +1448,7 @@ class ChallengeCtlAPI:
                 # Grant requested permissions to the new user
                 creator_username = request.admin_username
                 for permission in permissions:
-                    if permission in ['create_users', 'create_provisioning_key']:  # Whitelist of valid permissions
+                    if permission in VALID_PERMISSIONS:
                         self.db.grant_permission(username, permission, creator_username)
                         logger.info(f"Granted permission '{permission}' to new user {username}")
 
@@ -1624,7 +1642,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing permission field'}), 400
 
             # Whitelist of valid permissions
-            valid_permissions = ['create_users', 'create_provisioning_key']
+            valid_permissions = VALID_PERMISSIONS
 
             if permission_name not in valid_permissions:
                 return jsonify({'error': f'Invalid permission: {permission_name}'}), 400
@@ -1664,6 +1682,21 @@ class ChallengeCtlAPI:
             logger.info(f"Permission '{permission_name}' revoked from user {username} by {request.admin_username}")
 
             return jsonify({'status': 'permission_revoked', 'permission': permission_name}), 200
+
+        @self.app.route('/api/permissions/metadata', methods=['GET'])
+        @self.require_admin_auth
+        def get_permission_metadata():
+            """Return all available permissions with their metadata.
+
+            This endpoint provides the frontend with permission definitions including
+            names, descriptions, and categories for display in the UI.
+
+            Returns:
+                200: List of permission definitions
+            """
+            return jsonify({
+                'permissions': PERMISSION_DEFINITIONS
+            }), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])
