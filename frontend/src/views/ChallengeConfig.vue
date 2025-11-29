@@ -1170,9 +1170,23 @@ function recalculateQueuePositions() {
     c.enabled && ['queued', 'waiting', 'assigned'].includes(c.status)
   )
 
-  // Sort using dynamic priority (server calculates this for us)
+  // Sort using playlist order logic:
+  // 1. Challenges at position 0 (just assigned) go to top
+  // 2. Regular challenges sorted by priority in the middle
+  // 3. Challenges at position 999999 (just completed) go to bottom
   const sorted = queueableChallenges.sort((a, b) => {
-    // 1. Dynamic Priority DESC (highest priority first)
+    const aPos = a.queue_position || 0
+    const bPos = b.queue_position || 0
+
+    // Challenges marked for top (position 0) come first
+    if (aPos === 0 && bPos !== 0) return -1
+    if (bPos === 0 && aPos !== 0) return 1
+
+    // Challenges marked for bottom (position 999999) come last
+    if (aPos === 999999 && bPos !== 999999) return 1
+    if (bPos === 999999 && aPos !== 999999) return -1
+
+    // For all others, sort by dynamic priority (highest first)
     const aPriority = a.dynamic_priority !== undefined ? a.dynamic_priority : a.priority || 0
     const bPriority = b.dynamic_priority !== undefined ? b.dynamic_priority : b.priority || 0
 
@@ -1180,7 +1194,7 @@ function recalculateQueuePositions() {
       return bPriority - aPriority
     }
 
-    // 2. Finally, alphabetically by name (ASC)
+    // Finally, alphabetically by name (ASC)
     return (a.name || '').localeCompare(b.name || '')
   })
 
@@ -1363,16 +1377,25 @@ function handleChallengeAssigned(event) {
   // Update challenge status
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge) {
+    const previousStatus = challenge.status
     challenge.status = status || 'assigned'
     challenge.assigned_to = runner_id
     // Store the actual selected frequency for display in playlist
     if (frequency) {
       challenge.assigned_frequency = frequency
     }
-    challengesMap.value.set(challenge_id, challenge)
-  }
 
-  // No queue recalculation needed - assignment doesn't change queue order
+    // Move to top of playlist when transitioning to assigned
+    if (previousStatus !== 'assigned' && (previousStatus === 'waiting' || previousStatus === 'queued')) {
+      // Set a very low position to move to top
+      challenge.queue_position = 0
+    }
+
+    challengesMap.value.set(challenge_id, challenge)
+
+    // Recalculate queue positions to renumber everything
+    recalculateQueuePositions()
+  }
 }
 
 function handleTransmissionComplete(event) {
@@ -1381,15 +1404,25 @@ function handleTransmissionComplete(event) {
 
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge && updatedChallenge) {
+    const previousStatus = challenge.status
     // Use full updated challenge data from server (includes fresh dynamic_priority, status, etc.)
-    challengesMap.value.set(challenge_id, {
+    const updated = {
       ...updatedChallenge,
       enabled: Boolean(updatedChallenge.enabled),
       recording_priority,
       will_be_recorded
-    })
+    }
+
+    // Move to bottom of playlist when transitioning from assigned to waiting
+    if (previousStatus === 'assigned' && updated.status === 'waiting') {
+      // Set a very high position to move to bottom
+      updated.queue_position = 999999
+    }
+
+    challengesMap.value.set(challenge_id, updated)
   } else if (challenge) {
     // Fallback to local update if server didn't send full challenge data
+    const previousStatus = challenge.status
     challenge.transmission_count = (challenge.transmission_count || 0) + 1
     challenge.status = 'waiting'  // Server always sets to 'waiting' after completion
     challenge.last_tx_time = new Date().toISOString()
@@ -1403,6 +1436,11 @@ function handleTransmissionComplete(event) {
     }
     if (will_be_recorded !== undefined) {
       challenge.will_be_recorded = will_be_recorded
+    }
+
+    // Move to bottom of playlist when transitioning from assigned to waiting
+    if (previousStatus === 'assigned') {
+      challenge.queue_position = 999999
     }
 
     challengesMap.value.set(challenge_id, challenge)

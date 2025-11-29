@@ -3527,8 +3527,12 @@ radios:
             success = self.db.add_challenge(challenge_id, name, config)
 
             if success:
+                # Get created challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'created',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3583,8 +3587,12 @@ radios:
             success = self.db.update_challenge(challenge_id, config)
 
             if success:
+                # Get updated challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'updated',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3601,11 +3609,15 @@ radios:
         @self.require_csrf
         def delete_challenge(challenge_id):
             """Delete a challenge."""
+            # Get challenge before deletion for broadcast
+            challenge = self.db.get_challenge(challenge_id)
+
             success = self.db.delete_challenge(challenge_id)
 
             if success:
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'deleted',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3631,8 +3643,12 @@ radios:
             if success:
                 logger.info(f"Challenge {challenge_id} {'enabled' if enabled else 'disabled'} successfully")
 
+                # Get updated challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'enabled' if enabled else 'disabled',
                     'timestamp': datetime.now(timezone.utc).isoformat()
