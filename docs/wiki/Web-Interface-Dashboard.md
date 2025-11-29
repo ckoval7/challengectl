@@ -2,6 +2,8 @@
 
 The dashboard provides an overview of system status and recent activity.
 
+![Screenshot of main dashboard](/docs/images/dashboard.png "Main Dashboard")
+
 ## Statistics Panel
 
 The top section of the dashboard displays key metrics that provide a quick assessment of system health. The Total Runners metric shows the number of registered runners, including both online and offline units. The Active Runners metric indicates how many runners are currently online and available, with color-coded indicators to quickly assess system health. A green indicator signifies a healthy system with sufficient active runners, a yellow indicator warns that some runners are offline, and a red indicator alerts you that no runners are currently available.
