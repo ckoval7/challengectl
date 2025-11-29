@@ -4,6 +4,8 @@ The Agents page displays all registered agents, including both runners and liste
 
 The Runners tab displays all runner (transmitter) agents and is available to all users. The Listeners tab shows all listener (receiver) agents for spectrum capture and is also available to all users. The Provisioning tab allows creation and management of enrollment tokens and provisioning API keys for automated agent deployment, but requires the `create_provisioning_key` permission.
 
+!["Screenshot of Runner Management UI"](/docs/images/runners.png "Runner Management")
+
 ## Runner List
 
 Each runner in the list displays comprehensive information about its current state. The Runner ID serves as a unique identifier for the runner. The Status field shows the current connection state using color-coded indicators. An online status displayed in green indicates the runner is active and sending heartbeats. A busy status shown in yellow means the runner is currently executing a transmission. An offline status in red indicates the runner has stopped sending heartbeats or disconnected from the system.
@@ -37,6 +39,8 @@ Understanding when to use each action helps maintain system stability. Disable a
 Kick a runner when it appears stuck or unresponsive, when forcing a clean reconnection is necessary, when the runner's configuration has changed and needs to be reloaded, or when clearing a stuck state. The key difference is that disabled runners stay connected but idle, while kicked runners are forcibly disconnected and must re-register to continue operating.
 
 ## Listener List
+
+!["Screenshot of Listener Management"](/docs/images/listeners.png "Listener Management")
 
 The Listeners tab displays all registered listener agents along with their spectrum capture status. Each listener entry provides detailed information about its operational state.
 
