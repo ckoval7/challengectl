@@ -174,8 +174,9 @@ export default {
           // Temporary user needs to complete setup
           // Session token is in httpOnly cookie
           login(false)
-          // Validate session to populate username and permissions
-          await validateSession()
+          // NOTE: Don't call validateSession() here - the session is intentionally limited
+          // (totp_verified=False) until setup is complete. Calling validateSession() would
+          // fail and clear authentication, preventing navigation to /user-setup.
           ElMessage.info('Account setup required. Please change your password and set up 2FA.')
           router.push('/user-setup')
         }

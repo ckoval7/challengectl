@@ -428,14 +428,15 @@
           v-model="permissionToGrant"
           placeholder="Select permission"
           class="w-full mb-10"
+          :loading="loadingPermissions"
+          :teleported="false"
         >
           <el-option
-            label="create_users - Can create and manage users"
-            value="create_users"
-          />
-          <el-option
-            label="create_provisioning_key - Can create provisioning keys for runners"
-            value="create_provisioning_key"
+            v-for="perm in availablePermissions"
+            :key="perm.name"
+            :label="`${perm.name} - ${perm.description}`"
+            :value="perm.name"
+            :disabled="loadingPermissions"
           />
         </el-select>
         <el-button
@@ -505,6 +506,8 @@ export default {
     const selectedUser = ref(null)
     const userPermissions = ref([])
     const permissionToGrant = ref('')
+    const availablePermissions = ref([])
+    const loadingPermissions = ref(false)
 
     const loadUsers = async () => {
       loading.value = true
@@ -735,7 +738,7 @@ export default {
 
       try {
         await api.post(`/users/${selectedUser.value.username}/permissions`, {
-          permission_name: permissionToGrant.value
+          permission: permissionToGrant.value
         })
 
         ElMessage.success(`Granted permission: ${permissionToGrant.value}`)
@@ -781,8 +784,22 @@ export default {
       }
     }
 
+    const fetchPermissionMetadata = async () => {
+      loadingPermissions.value = true
+      try {
+        const response = await api.get('/permissions/metadata')
+        availablePermissions.value = response.data.permissions
+      } catch (error) {
+        console.error('Error fetching permission metadata:', error)
+        ElMessage.error('Failed to load available permissions')
+      } finally {
+        loadingPermissions.value = false
+      }
+    }
+
     onMounted(() => {
       loadUsers()
+      fetchPermissionMetadata()
     })
 
     return {
@@ -802,6 +819,8 @@ export default {
       selectedUser,
       userPermissions,
       permissionToGrant,
+      availablePermissions,
+      loadingPermissions,
       loadUsers,
       createUser,
       toggleUserStatus,

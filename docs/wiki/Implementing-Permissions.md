@@ -22,30 +22,43 @@ This "defense in depth" approach ensures security even if one layer is bypassed.
 
 ## Step-by-Step Guide
 
-### 1. Add Permission to Backend Whitelist
+### 1. Add Permission to Backend Definitions
 
 **File**: `server/api.py`
 
-Add your new permission to the whitelist in two locations:
+Add your new permission to the `PERMISSION_DEFINITIONS` structure near the top of the file (~line 38):
 
-**Location 1**: User creation endpoint (~line 1246)
 ```python
-# Grant requested permissions to the new user
-creator_username = request.admin_username
-for permission in permissions:
-    if permission in ['create_users', 'create_provisioning_key', 'your_new_permission']:  # Whitelist of valid permissions
-        self.db.grant_permission(username, permission, creator_username)
-        logger.info(f"Granted permission '{permission}' to new user {username}")
+# Permission definitions - single source of truth
+PERMISSION_DEFINITIONS = [
+    {
+        'name': 'create_users',
+        'description': 'Can create and manage users',
+        'category': 'administration'
+    },
+    {
+        'name': 'create_provisioning_key',
+        'description': 'Can create provisioning keys for runners',
+        'category': 'provisioning'
+    },
+    {
+        'name': 'your_new_permission',
+        'description': 'Description of what this permission allows',
+        'category': 'your_category'
+    }
+]
+
+# Helper to get list of valid permission names
+VALID_PERMISSIONS = [p['name'] for p in PERMISSION_DEFINITIONS]
 ```
 
-**Location 2**: Grant permission endpoint (~line 1440)
-```python
-# Whitelist of valid permissions
-valid_permissions = ['create_users', 'create_provisioning_key', 'your_new_permission']
+**That's it!** The permission will automatically be:
+- Available in the frontend dropdown (fetched via API)
+- Granted to initial admin users (via loop)
+- Validated in user creation endpoint
+- Validated in permission grant endpoint
 
-if permission_name not in valid_permissions:
-    return jsonify({'error': f'Invalid permission: {permission_name}'}), 400
-```
+**Note**: The `VALID_PERMISSIONS` list is automatically derived from `PERMISSION_DEFINITIONS`, so you don't need to update it separately.
 
 ### 2. Add Permission Check to API Endpoints
 
@@ -84,45 +97,62 @@ def your_protected_function():
 
 **File**: `server/api.py`
 
-Update the initial setup to grant all permissions to the first admin user (~line 1222):
+**No action needed!** The initial setup automatically grants all permissions to the first admin user using a loop (~line 1426):
 
 ```python
-# Grant full permissions to first user
-self.db.grant_permission(username, 'create_users', 'system')
-self.db.grant_permission(username, 'create_provisioning_key', 'system')
-self.db.grant_permission(username, 'your_new_permission', 'system')
+# Grant all permissions to initial admin user
+for permission in VALID_PERMISSIONS:
+    self.db.grant_permission(username, permission, 'system')
 ```
 
-This ensures the initial admin has access to all features.
+Since `VALID_PERMISSIONS` is derived from `PERMISSION_DEFINITIONS`, any new permission you add in Step 1 will automatically be granted to initial admin users. No additional code changes needed!
 
-### 4. Add Permission to Frontend Permission List
+### 4. Frontend Permission List
 
-**File**: `frontend/src/views/Users.vue`
+**No action needed!** The frontend automatically fetches permission metadata from the backend API.
 
-Add the permission option to the permission management dropdown (~line 337):
+**How it works**:
+
+The Users.vue component fetches available permissions on mount (~line 786):
+
+```javascript
+const fetchPermissionMetadata = async () => {
+  loadingPermissions.value = true
+  try {
+    const response = await api.get('/permissions/metadata')
+    availablePermissions.value = response.data.permissions
+  } catch (error) {
+    console.error('Error fetching permission metadata:', error)
+    ElMessage.error('Failed to load available permissions')
+  } finally {
+    loadingPermissions.value = false
+  }
+}
+
+onMounted(() => {
+  loadUsers()
+  fetchPermissionMetadata()  // Fetches permissions from API
+})
+```
+
+The dropdown dynamically renders options using v-for (~line 433):
 
 ```vue
 <el-select
   v-model="permissionToGrant"
   placeholder="Select permission"
-  style="width: 100%; margin-bottom: 10px"
+  :loading="loadingPermissions"
 >
   <el-option
-    label="create_users - Can create and manage users"
-    value="create_users"
-  />
-  <el-option
-    label="create_provisioning_key - Can create provisioning keys for runners"
-    value="create_provisioning_key"
-  />
-  <el-option
-    label="your_new_permission - Description of what this permission allows"
-    value="your_new_permission"
+    v-for="perm in availablePermissions"
+    :key="perm.name"
+    :label="`${perm.name} - ${perm.description}`"
+    :value="perm.name"
   />
 </el-select>
 ```
 
-**Format**: `permission_name - Human-readable description`
+**Result**: Any permission added to `PERMISSION_DEFINITIONS` in the backend will automatically appear in the frontend dropdown. No frontend code changes needed!
 
 ### 5. Hide UI Elements Based on Permission
 
@@ -209,14 +239,24 @@ The existing route guard logic will automatically:
 
 Here's a real example of the `create_provisioning_key` permission implementation:
 
-### Backend: Permission Whitelists
+### Backend: Permission Definitions
 ```python
-# server/api.py, line 1246
-if permission in ['create_users', 'create_provisioning_key']:
-    self.db.grant_permission(username, permission, creator_username)
+# server/api.py, line 38
+PERMISSION_DEFINITIONS = [
+    {
+        'name': 'create_users',
+        'description': 'Can create and manage users',
+        'category': 'administration'
+    },
+    {
+        'name': 'create_provisioning_key',
+        'description': 'Can create provisioning keys for runners',
+        'category': 'provisioning'
+    }
+]
 
-# server/api.py, line 1440
-valid_permissions = ['create_users', 'create_provisioning_key']
+# Helper to get list of valid permission names
+VALID_PERMISSIONS = [p['name'] for p in PERMISSION_DEFINITIONS]
 ```
 
 ### Backend: API Protection
@@ -240,19 +280,54 @@ def create_provisioning_key():
 
 ### Backend: Initial Admin Grant
 ```python
-# server/api.py, line 1222
-self.db.grant_permission(username, 'create_users', 'system')
-self.db.grant_permission(username, 'create_provisioning_key', 'system')
+# server/api.py, line 1426
+# Grant all permissions to initial admin user
+for permission in VALID_PERMISSIONS:
+    self.db.grant_permission(username, permission, 'system')
 ```
 
-### Frontend: Permission List
-```vue
-<!-- frontend/src/views/Users.vue, line 410 -->
-<el-option
-  label="create_provisioning_key - Can create provisioning keys for runners"
-  value="create_provisioning_key"
-/>
+**Note**: All permissions in `VALID_PERMISSIONS` are automatically granted, including `create_provisioning_key`.
+
+### Backend: Permission Metadata API
+```python
+# server/api.py, line 1686
+@self.app.route('/api/permissions/metadata', methods=['GET'])
+@self.require_admin_auth
+def get_permission_metadata():
+    """Return all available permissions with their metadata."""
+    return jsonify({
+        'permissions': PERMISSION_DEFINITIONS
+    }), 200
 ```
+
+### Frontend: Permission Fetching
+```javascript
+// frontend/src/views/Users.vue, line 786
+const fetchPermissionMetadata = async () => {
+  const response = await api.get('/permissions/metadata')
+  availablePermissions.value = response.data.permissions
+}
+
+onMounted(() => {
+  loadUsers()
+  fetchPermissionMetadata()  // Automatically fetches all permissions
+})
+```
+
+### Frontend: Dynamic Permission Dropdown
+```vue
+<!-- frontend/src/views/Users.vue, line 433 -->
+<el-select v-model="permissionToGrant" :loading="loadingPermissions">
+  <el-option
+    v-for="perm in availablePermissions"
+    :key="perm.name"
+    :label="`${perm.name} - ${perm.description}`"
+    :value="perm.name"
+  />
+</el-select>
+```
+
+**Note**: The dropdown automatically includes `create_provisioning_key` and all other permissions from the API.
 
 ### Frontend: UI Conditional Rendering
 ```vue

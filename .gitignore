@@ -15,6 +15,7 @@ devices.txt.corey
 devices.txt.test
 flags.txt
 recordings/
+notes/
 
 # Distributed mode additions
 __pycache__/

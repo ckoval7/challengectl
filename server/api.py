@@ -35,6 +35,24 @@ from challenge_duration import calculate_challenge_duration, get_pre_paint_durat
 logger = logging.getLogger(__name__)
 
 
+# Permission definitions - single source of truth
+PERMISSION_DEFINITIONS = [
+    {
+        'name': 'create_users',
+        'description': 'Can create and manage users',
+        'category': 'administration'
+    },
+    {
+        'name': 'create_provisioning_key',
+        'description': 'Can create provisioning keys for runners',
+        'category': 'provisioning'
+    }
+]
+
+# Helper to get list of valid permission names
+VALID_PERMISSIONS = [p['name'] for p in PERMISSION_DEFINITIONS]
+
+
 class WebSocketHandler(logging.Handler):
     """Custom logging handler that broadcasts logs to WebUI via WebSocket."""
 
@@ -1404,9 +1422,9 @@ class ChallengeCtlAPI:
                 self.db.disable_user('admin')
                 logger.info("Initial setup completed - default admin account disabled")
 
-                # Grant full permissions to first user
-                self.db.grant_permission(username, 'create_users', 'system')
-                self.db.grant_permission(username, 'create_provisioning_key', 'system')
+                # Grant all permissions to initial admin user
+                for permission in VALID_PERMISSIONS:
+                    self.db.grant_permission(username, permission, 'system')
 
                 # Generate TOTP provisioning URI
                 totp = pyotp.TOTP(totp_secret)
@@ -1430,7 +1448,7 @@ class ChallengeCtlAPI:
                 # Grant requested permissions to the new user
                 creator_username = request.admin_username
                 for permission in permissions:
-                    if permission in ['create_users', 'create_provisioning_key']:  # Whitelist of valid permissions
+                    if permission in VALID_PERMISSIONS:
                         self.db.grant_permission(username, permission, creator_username)
                         logger.info(f"Granted permission '{permission}' to new user {username}")
 
@@ -1624,7 +1642,7 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Missing permission field'}), 400
 
             # Whitelist of valid permissions
-            valid_permissions = ['create_users', 'create_provisioning_key']
+            valid_permissions = VALID_PERMISSIONS
 
             if permission_name not in valid_permissions:
                 return jsonify({'error': f'Invalid permission: {permission_name}'}), 400
@@ -1664,6 +1682,21 @@ class ChallengeCtlAPI:
             logger.info(f"Permission '{permission_name}' revoked from user {username} by {request.admin_username}")
 
             return jsonify({'status': 'permission_revoked', 'permission': permission_name}), 200
+
+        @self.app.route('/api/permissions/metadata', methods=['GET'])
+        @self.require_admin_auth
+        def get_permission_metadata():
+            """Return all available permissions with their metadata.
+
+            This endpoint provides the frontend with permission definitions including
+            names, descriptions, and categories for display in the UI.
+
+            Returns:
+                200: List of permission definitions
+            """
+            return jsonify({
+                'permissions': PERMISSION_DEFINITIONS
+            }), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])
@@ -3494,8 +3527,12 @@ radios:
             success = self.db.add_challenge(challenge_id, name, config)
 
             if success:
+                # Get created challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'created',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3550,8 +3587,12 @@ radios:
             success = self.db.update_challenge(challenge_id, config)
 
             if success:
+                # Get updated challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'updated',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3568,11 +3609,15 @@ radios:
         @self.require_csrf
         def delete_challenge(challenge_id):
             """Delete a challenge."""
+            # Get challenge before deletion for broadcast
+            challenge = self.db.get_challenge(challenge_id)
+
             success = self.db.delete_challenge(challenge_id)
 
             if success:
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'deleted',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3598,8 +3643,12 @@ radios:
             if success:
                 logger.info(f"Challenge {challenge_id} {'enabled' if enabled else 'disabled'} successfully")
 
+                # Get updated challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
                 # Broadcast to admin clients
                 self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
                     'challenge_id': challenge_id,
                     'action': 'enabled' if enabled else 'disabled',
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -3784,15 +3833,18 @@ radios:
         @self.require_csrf
         def pause_system():
             """Pause all transmissions."""
+            logger.info(f"Pause request received from user {request.admin_username}")
             self.db.set_system_state('paused', 'true')
             # Clear auto_paused flag when manually pausing (manual override)
             self.db.set_system_state('auto_paused', 'false')
 
+            logger.info("Broadcasting pause event to all WebSocket clients")
             self.broadcast_event('system_control', {
                 'action': 'pause',
                 'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
+            logger.info("Pause event broadcast complete")
 
             return jsonify({'status': 'paused'}), 200
 
@@ -3801,15 +3853,18 @@ radios:
         @self.require_csrf
         def resume_system():
             """Resume transmissions."""
+            logger.info(f"Resume request received from user {request.admin_username}")
             self.db.set_system_state('paused', 'false')
             # Clear auto_paused flag when manually resuming (manual override)
             self.db.set_system_state('auto_paused', 'false')
 
+            logger.info("Broadcasting resume event to all WebSocket clients")
             self.broadcast_event('system_control', {
                 'action': 'resume',
                 'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
+            logger.info("Resume event broadcast complete")
 
             return jsonify({'status': 'resumed'}), 200
 
@@ -4149,10 +4204,13 @@ radios:
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
         try:
-            self.socketio.emit('event', {
+            event_data = {
                 'type': event_type,
                 **data
-            }, namespace='/')
+            }
+            logger.debug(f"Broadcasting event '{event_type}' to all clients: {event_data}")
+            self.socketio.emit('event', event_data, namespace='/')
+            logger.debug(f"Event '{event_type}' broadcast complete")
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
 

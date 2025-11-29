@@ -189,11 +189,11 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, currentUsername, userPermissions } from './auth'
+import { logout, checkAuth, currentUsername, userPermissions, isAuthenticated } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
@@ -264,11 +264,40 @@ export default {
       }
     }
 
+    // Handle initial state from WebSocket
+    const handleInitialState = (data) => {
+      if (data.stats && typeof data.stats.paused !== 'undefined') {
+        systemPaused.value = data.stats.paused
+      }
+    }
+
     // Handle WebSocket reconnection
     const handleWebSocketReconnect = () => {
-      console.log('WebSocket reconnected, reloading pause state')
       loadPauseState()
     }
+
+    // Setup WebSocket listeners when authenticated
+    let webSocketSetupDone = false
+    const setupWebSocket = () => {
+      if (webSocketSetupDone) {
+        return
+      }
+      loadPauseState()
+      websocket.connect()
+      websocket.on('system_control', handleSystemControl)
+      websocket.on('initial_state', handleInitialState)
+
+      // Reload pause state on WebSocket reconnection to sync with server
+      websocket.socket?.on('connect', handleWebSocketReconnect)
+      webSocketSetupDone = true
+    }
+
+    // Watch authentication state and setup WebSocket when user logs in
+    watch(isAuthenticated, (newVal) => {
+      if (newVal) {
+        setupWebSocket()
+      }
+    }, { immediate: true })
 
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
@@ -278,20 +307,11 @@ export default {
       }
       applyTheme()
       loadConferenceName()
-
-      // Connect WebSocket if authenticated
-      if (checkAuth()) {
-        loadPauseState()
-        websocket.connect()
-        websocket.on('system_control', handleSystemControl)
-
-        // Reload pause state on WebSocket reconnection to sync with server
-        websocket.socket?.on('connect', handleWebSocketReconnect)
-      }
     })
 
     onUnmounted(() => {
       websocket.off('system_control', handleSystemControl)
+      websocket.off('initial_state', handleInitialState)
       websocket.socket?.off('connect', handleWebSocketReconnect)
     })
 
@@ -338,7 +358,8 @@ export default {
         await api.post('/control/pause')
         systemPaused.value = true
         ElMessage.success('System paused')
-      } catch {
+      } catch (error) {
+        console.error('Failed to pause system:', error)
         ElMessage.error('Failed to pause system')
       }
     }
@@ -348,7 +369,8 @@ export default {
         await api.post('/control/resume')
         systemPaused.value = false
         ElMessage.success('System resumed')
-      } catch {
+      } catch (error) {
+        console.error('Failed to resume system:', error)
         ElMessage.error('Failed to resume system')
       }
     }

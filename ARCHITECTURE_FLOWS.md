@@ -14,12 +14,12 @@ Database                             Runner polling loop
     │                           │     │ GET /task           │
     │                           │     └─────────────────────┘
     │                           │              │
-    │◀──────────────────────────┘              │
+    │◀──────────────────────────┘             │
     │                                          │
     ├─ API: GET /api/task                      │
     │     (require_api_key)                    │
     │                                          │
-    ├─ Call: assign_task(runner_id)             │
+    ├─ Call: assign_task(runner_id)            │
     │                                          │
     │  [BEGIN IMMEDIATE - DB LOCK]
     │  [SELECT challenge WHERE status=queued]
