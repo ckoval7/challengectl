@@ -2,6 +2,8 @@
 
 The Logs page provides real-time log streaming from the server and all connected runners. This centralized view allows you to monitor system activity, diagnose issues, and track the status of challenges and runner operations as they happen.
 
+!["Screenshot of log streaming display"](/docs/images/logs.png "Log Streaming")
+
 ## Log Display
 
 Each log entry displays four key pieces of information to help you understand what is happening in your system. The timestamp shows when the log entry was created, allowing you to establish a timeline of events. The source indicates where the log originated, whether from the server itself or from a specific runner identified by its ID. The level represents the severity of the message, ranging from DEBUG for detailed diagnostic information up through INFO, WARNING, ERROR, and CRITICAL for the most severe issues. Finally, the message contains the actual log content describing what occurred.
