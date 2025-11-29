@@ -2,6 +2,8 @@
 
 The Manage Challenges page provides a unified interface for monitoring, creating, importing, editing, and controlling your challenges. This combines real-time monitoring with configuration management in a single location.
 
+![Screenshot of Challenge Management Page](/docs/images/challenges_page_recordings.png "Challenge Management")
+
 ## Overview
 
 The Manage Challenges page organizes functionality across four tabs, each serving a distinct purpose. The Live Status tab enables monitoring and control of active challenges in real-time. The Create Challenge tab provides a form-based interface for creating individual challenges with guided validation. The Import from YAML tab supports batch import of challenges from YAML files with file upload capability. The Manage Challenges tab allows viewing, editing, and deleting existing challenges through an intuitive interface.
