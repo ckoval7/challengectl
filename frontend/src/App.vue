@@ -251,36 +251,28 @@ export default {
 
     // Handle system control WebSocket events
     const handleSystemControl = (event) => {
-      console.log('[App.vue] Received system_control event:', event)
-      console.log('[App.vue] Current systemPaused value:', systemPaused.value)
       if (event.action === 'pause') {
-        console.log('[App.vue] Setting systemPaused = true')
         systemPaused.value = true
         if (event.auto) {
           ElMessage.info('System auto-paused (outside daily hours)')
         }
       } else if (event.action === 'resume') {
-        console.log('[App.vue] Setting systemPaused = false')
         systemPaused.value = false
         if (event.auto) {
           ElMessage.info('System auto-resumed (within daily hours)')
         }
       }
-      console.log('[App.vue] New systemPaused value:', systemPaused.value)
     }
 
     // Handle initial state from WebSocket
     const handleInitialState = (data) => {
-      console.log('[App.vue] Received initial_state from WebSocket:', data)
       if (data.stats && typeof data.stats.paused !== 'undefined') {
-        console.log('[App.vue] Setting systemPaused from initial_state:', data.stats.paused)
         systemPaused.value = data.stats.paused
       }
     }
 
     // Handle WebSocket reconnection
     const handleWebSocketReconnect = () => {
-      console.log('WebSocket reconnected, reloading pause state')
       loadPauseState()
     }
 
@@ -288,10 +280,8 @@ export default {
     let webSocketSetupDone = false
     const setupWebSocket = () => {
       if (webSocketSetupDone) {
-        console.log('[App.vue] WebSocket already setup, skipping')
         return
       }
-      console.log('[App.vue] Setting up WebSocket listeners')
       loadPauseState()
       websocket.connect()
       websocket.on('system_control', handleSystemControl)
@@ -300,12 +290,10 @@ export default {
       // Reload pause state on WebSocket reconnection to sync with server
       websocket.socket?.on('connect', handleWebSocketReconnect)
       webSocketSetupDone = true
-      console.log('[App.vue] WebSocket listeners registered')
     }
 
     // Watch authentication state and setup WebSocket when user logs in
     watch(isAuthenticated, (newVal) => {
-      console.log('[App.vue] isAuthenticated changed to:', newVal)
       if (newVal) {
         setupWebSocket()
       }
@@ -313,7 +301,6 @@ export default {
 
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
-      console.log('[App.vue] onMounted called')
       const savedTheme = localStorage.getItem('theme')
       if (savedTheme) {
         isDark.value = savedTheme === 'dark'
@@ -368,26 +355,22 @@ export default {
 
     const pauseSystem = async () => {
       try {
-        console.log('[App.vue] Sending pause request to server')
         await api.post('/control/pause')
         systemPaused.value = true
-        console.log('[App.vue] Pause successful, systemPaused =', systemPaused.value)
         ElMessage.success('System paused')
       } catch (error) {
-        console.error('[App.vue] Failed to pause system:', error)
+        console.error('Failed to pause system:', error)
         ElMessage.error('Failed to pause system')
       }
     }
 
     const resumeSystem = async () => {
       try {
-        console.log('[App.vue] Sending resume request to server')
         await api.post('/control/resume')
         systemPaused.value = false
-        console.log('[App.vue] Resume successful, systemPaused =', systemPaused.value)
         ElMessage.success('System resumed')
       } catch (error) {
-        console.error('[App.vue] Failed to resume system:', error)
+        console.error('Failed to resume system:', error)
         ElMessage.error('Failed to resume system')
       }
     }

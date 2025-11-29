@@ -312,7 +312,6 @@ class ChallengeCtlServer:
         # Ensure system is not paused on startup
         # Pausing is an operational control, not a persistent state
         if self.db.get_system_state('paused', 'false') == 'true':
-            print("System was paused - resuming on startup")
             logger.info("System was paused - resuming on startup")
             self.db.set_system_state('paused', 'false')
 
