@@ -6,15 +6,13 @@
 #
 # GNU Radio Python Flow Graph
 # Title: LRS TX
-# Author: ChallengeCtl
-# Description: LRS Pager TX with in-memory data source
-# GNU Radio version: 3.10.1.1
+# GNU Radio version: 3.8.2.0
 
 from gnuradio import analog
 from gnuradio import blocks
+import pmt
 from gnuradio import gr
 from gnuradio.filter import firdes
-from gnuradio.fft import window
 import sys
 import signal
 from argparse import ArgumentParser
@@ -24,22 +22,20 @@ import osmosdr
 import time
 
 
-
-
 class lrs_tx(gr.top_block):
 
-    def __init__(self, bbgain=20, deviceargs='hackrf', freq=467750000, ifgain=20, rfgain=47, antenna=''):
-        gr.top_block.__init__(self, "LRS TX", catch_exceptions=True)
+    def __init__(self, bbgain=20, data=None, deviceargs="hackrf", freq=467750000, ifgain=20, rfgain=47, antenna=""):
+        gr.top_block.__init__(self, "LRS TX")
 
         ##################################################
         # Parameters
         ##################################################
         self.bbgain = bbgain
+        self.data = data if data is not None else []
         self.deviceargs = deviceargs
         self.freq = freq
         self.ifgain = ifgain
         self.rfgain = rfgain
-        self.antenna = antenna
 
         ##################################################
         # Variables
@@ -52,6 +48,7 @@ class lrs_tx(gr.top_block):
         self.osmosdr_sink_0 = osmosdr.sink(
             args="numchan=" + str(1) + " " + deviceargs
         )
+        self.osmosdr_sink_0.set_time_unknown_pps(osmosdr.time_spec_t())
         self.osmosdr_sink_0.set_sample_rate(samp_rate)
         self.osmosdr_sink_0.set_center_freq(freq, 0)
         self.osmosdr_sink_0.set_freq_corr(0, 0)
@@ -60,17 +57,18 @@ class lrs_tx(gr.top_block):
         self.osmosdr_sink_0.set_bb_gain(bbgain, 0)
         self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
-        self.blocks_vector_source_0 = blocks.vector_source_f([], False, 1, [])
         self.blocks_repeat_0 = blocks.repeat(gr.sizeof_float*1, 3190)
+        self.blocks_vector_source_0 = blocks.vector_source_f(self.data, False, 1, [])
         self.analog_frequency_modulator_fc_0 = analog.frequency_modulator_fc(6.26)
+
 
 
         ##################################################
         # Connections
         ##################################################
         self.connect((self.analog_frequency_modulator_fc_0, 0), (self.osmosdr_sink_0, 0))
-        self.connect((self.blocks_repeat_0, 0), (self.analog_frequency_modulator_fc_0, 0))
         self.connect((self.blocks_vector_source_0, 0), (self.blocks_repeat_0, 0))
+        self.connect((self.blocks_repeat_0, 0), (self.analog_frequency_modulator_fc_0, 0))
 
 
     def get_bbgain(self):
@@ -79,6 +77,14 @@ class lrs_tx(gr.top_block):
     def set_bbgain(self, bbgain):
         self.bbgain = bbgain
         self.osmosdr_sink_0.set_bb_gain(self.bbgain, 0)
+
+    def get_data(self):
+        return self.data
+
+    def set_data(self, data):
+        self.data = data
+        # Note: vector_source doesn't support runtime data updates
+        # A new flowgraph instance should be created for new data
 
     def get_deviceargs(self):
         return self.deviceargs
@@ -107,13 +113,6 @@ class lrs_tx(gr.top_block):
         self.rfgain = rfgain
         self.osmosdr_sink_0.set_gain(self.rfgain, 0)
 
-    def get_antenna(self):
-        return self.antenna
-
-    def set_antenna(self, antenna):
-        self.antenna = antenna
-        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
-
     def get_samp_rate(self):
         return self.samp_rate
 
@@ -123,43 +122,43 @@ class lrs_tx(gr.top_block):
 
 
 
+
 def argument_parser():
-    description = 'LRS Pager TX with in-memory data source'
-    parser = ArgumentParser(description=description)
+    parser = ArgumentParser()
     parser.add_argument(
-        "-b", "--bbgain", dest="bbgain", type=eng_float, default=eng_notation.num_to_str(float(20)),
-        help="Set Base Band Gain [default=%(default)r]")
+        "-b", "--bbgain", dest="bbgain", type=eng_float, default="20.0",
+        help="Set bbgain [default=%(default)r]")
     parser.add_argument(
-        "-d", "--deviceargs", dest="deviceargs", type=str, default='hackrf',
-        help="Set Device String [default=%(default)r]")
+        "-d", "--deviceargs", dest="deviceargs", type=str, default="hackrf",
+        help="Set deviceargs [default=%(default)r]")
     parser.add_argument(
         "-f", "--freq", dest="freq", type=intx, default=467750000,
-        help="Set Center Frequency [default=%(default)r]")
+        help="Set freq [default=%(default)r]")
     parser.add_argument(
-        "-i", "--ifgain", dest="ifgain", type=eng_float, default=eng_notation.num_to_str(float(20)),
-        help="Set IF Gain [default=%(default)r]")
+        "-i", "--ifgain", dest="ifgain", type=eng_float, default="20.0",
+        help="Set ifgain [default=%(default)r]")
     parser.add_argument(
-        "-g", "--rfgain", dest="rfgain", type=eng_float, default=eng_notation.num_to_str(float(47)),
-        help="Set RF Gain [default=%(default)r]")
+        "-g", "--rfgain", dest="rfgain", type=eng_float, default="47.0",
+        help="Set rfgain [default=%(default)r]")
     parser.add_argument(
-        "-a", "--antenna", dest="antenna", type=str, default='',
-        help="Set Antenna [default=%(default)r]")
+        "-a", "--antenna", dest="antenna", type=str, default="",
+        help="Set antenna [default=%(default)r]")
     return parser
 
 
-def main(top_block_cls=lrs_tx, options=None):
+def main(top_block_cls=lrs_tx, options=None, data=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(bbgain=options.bbgain, deviceargs=options.deviceargs, freq=options.freq, ifgain=options.ifgain, rfgain=options.rfgain, antenna=options.antenna)
+    tb = top_block_cls(bbgain=options.bbgain, data=data, deviceargs=options.deviceargs, freq=options.freq, ifgain=options.ifgain, rfgain=options.rfgain, antenna=options.antenna)
 
-    def sig_handler(sig=None, frame=None):
-        tb.stop()
-        tb.wait()
+    # def sig_handler(sig=None, frame=None):
+    #     tb.stop()
+    #     tb.wait()
 
-        sys.exit(0)
+    #     sys.exit(0)
 
-    signal.signal(signal.SIGINT, sig_handler)
-    signal.signal(signal.SIGTERM, sig_handler)
+    # signal.signal(signal.SIGINT, sig_handler)
+    # signal.signal(signal.SIGTERM, sig_handler)
 
     tb.start()
 
