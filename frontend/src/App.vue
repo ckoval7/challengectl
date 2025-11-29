@@ -264,6 +264,14 @@ export default {
       }
     }
 
+    // Handle initial state from WebSocket
+    const handleInitialState = (data) => {
+      console.log('Received initial state from WebSocket')
+      if (data.stats && typeof data.stats.paused !== 'undefined') {
+        systemPaused.value = data.stats.paused
+      }
+    }
+
     // Handle WebSocket reconnection
     const handleWebSocketReconnect = () => {
       console.log('WebSocket reconnected, reloading pause state')
@@ -284,6 +292,7 @@ export default {
         loadPauseState()
         websocket.connect()
         websocket.on('system_control', handleSystemControl)
+        websocket.on('initial_state', handleInitialState)
 
         // Reload pause state on WebSocket reconnection to sync with server
         websocket.socket?.on('connect', handleWebSocketReconnect)
@@ -292,6 +301,7 @@ export default {
 
     onUnmounted(() => {
       websocket.off('system_control', handleSystemControl)
+      websocket.off('initial_state', handleInitialState)
       websocket.socket?.off('connect', handleWebSocketReconnect)
     })
 

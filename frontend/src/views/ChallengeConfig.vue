@@ -1892,6 +1892,13 @@ function handleSystemControl(event) {
   systemPaused.value = action === 'pause'
 }
 
+function handleInitialState(data) {
+  console.log('Received initial state in ChallengeConfig')
+  if (data.stats && typeof data.stats.paused !== 'undefined') {
+    systemPaused.value = data.stats.paused
+  }
+}
+
 async function fetchSystemStatus() {
   try {
     const response = await api.get('/control/status')
@@ -1918,6 +1925,7 @@ onMounted(() => {
   websocket.on('challenge_assigned', handleChallengeAssigned)
   websocket.on('transmission_complete', handleTransmissionComplete)
   websocket.on('system_control', handleSystemControl)
+  websocket.on('initial_state', handleInitialState)
 })
 
 onUnmounted(() => {
@@ -1928,6 +1936,7 @@ onUnmounted(() => {
   websocket.off('challenge_assigned', handleChallengeAssigned)
   websocket.off('transmission_complete', handleTransmissionComplete)
   websocket.off('system_control', handleSystemControl)
+  websocket.off('initial_state', handleInitialState)
 })
 </script>
 
