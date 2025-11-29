@@ -52,12 +52,21 @@ class WebSocketManager {
 
       // Emit to listeners
       if (this.listeners[data.type]) {
+        console.log(`[WebSocket] Calling ${this.listeners[data.type].length} listener(s) for event type: ${data.type}`)
         this.listeners[data.type].forEach(callback => callback(data))
+      } else {
+        if (data.type !== 'log') {
+          console.log(`[WebSocket] No listeners registered for event type: ${data.type}`)
+        }
       }
     })
 
     this.socket.on('initial_state', (data) => {
       console.log('Initial state received:', data)
+      // Emit to listeners registered for initial_state
+      if (this.listeners['initial_state']) {
+        this.listeners['initial_state'].forEach(callback => callback(data))
+      }
     })
   }
 
@@ -66,6 +75,7 @@ class WebSocketManager {
       this.listeners[eventType] = []
     }
     this.listeners[eventType].push(callback)
+    console.log(`[WebSocket] Registered listener for event type: ${eventType} (total: ${this.listeners[eventType].length})`)
   }
 
   off(eventType, callback) {
