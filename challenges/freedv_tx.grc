@@ -109,7 +109,7 @@ blocks:
     bus_structure: null
     coordinate: [352, 260.0]
     rotation: 0
-    state: true
+    state: disabled
 - name: analog_const_source_x_0
   id: analog_const_source_x
   parameters:
@@ -127,28 +127,23 @@ blocks:
     coordinate: [1312, 196.0]
     rotation: 180
     state: enabled
-- name: analog_sig_source_x_0
-  id: analog_sig_source_x
+- name: antenna
+  id: parameter
   parameters:
-    affinity: ''
     alias: ''
-    amp: carrier_level
     comment: ''
-    freq: '0'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    offset: '0'
-    phase: '0'
-    samp_rate: if_samp_rate
-    type: complex
-    waveform: analog.GR_SIN_WAVE
+    hide: none
+    label: Antenna
+    short_id: ''
+    type: str
+    value: ''
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1176, 500.0]
-    rotation: 180
-    state: disabled
+    coordinate: [16, 500.0]
+    rotation: 0
+    state: true
 - name: audio_gain
   id: parameter
   parameters:
@@ -205,7 +200,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [8, 252.0]
+    coordinate: [8, 284.0]
     rotation: 0
     state: true
 - name: blocks_float_to_complex_0
@@ -238,62 +233,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [560, 188.0]
+    coordinate: [608, 188.0]
     rotation: 0
     state: true
-- name: blocks_multiply_const_vxx_0
-  id: blocks_multiply_const_vxx
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    const: audio_gain
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    type: float
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [176, 188.0]
-    rotation: 0
-    state: enabled
-- name: blocks_multiply_xx_0
-  id: blocks_multiply_xx
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    num_inputs: '2'
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1000, 464.0]
-    rotation: 180
-    state: disabled
-- name: blocks_null_sink_0
-  id: blocks_null_sink
-  parameters:
-    affinity: ''
-    alias: ''
-    bus_structure_sink: '[[0,],]'
-    comment: ''
-    num_inputs: '1'
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [632, 632.0]
-    rotation: 0
-    state: disabled
 - name: blocks_short_to_float_0_0
   id: blocks_short_to_float
   parameters:
@@ -311,25 +253,6 @@ blocks:
     coordinate: [992, 188.0]
     rotation: 0
     state: enabled
-- name: blocks_throttle_0
-  id: blocks_throttle
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    ignoretag: 'True'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    samples_per_second: rf_samp_rate
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [368, 628.0]
-    rotation: 0
-    state: disabled
 - name: blocks_wavfile_source_0
   id: blocks_wavfile_source
   parameters:
@@ -396,7 +319,31 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [144, 252.0]
+    coordinate: [144, 284.0]
+    rotation: 0
+    state: true
+- name: low_pass_filter_0
+  id: low_pass_filter
+  parameters:
+    affinity: ''
+    alias: ''
+    beta: '6.76'
+    comment: ''
+    cutoff_freq: '3000'
+    decim: '1'
+    gain: audio_gain
+    interp: '1'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samp_rate: wav_samp_rate
+    type: fir_filter_fff
+    width: '300'
+    win: window.WIN_HAMMING
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [192, 140.0]
     rotation: 0
     state: true
 - name: mode
@@ -436,7 +383,7 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    ant0: ''
+    ant0: antenna
     ant1: ''
     ant10: ''
     ant11: ''
@@ -720,13 +667,13 @@ blocks:
     interp: int(if_samp_rate)
     maxoutbuf: '0'
     minoutbuf: '0'
-    taps: voice_taps
+    taps: ''
     type: fff
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [352, 164.0]
+    coordinate: [400, 164.0]
     rotation: 0
     state: enabled
 - name: rational_resampler_xxx_0_0
@@ -763,7 +710,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [240, 252.0]
+    coordinate: [240, 284.0]
     rotation: 0
     state: true
 - name: rf_samp_rate
@@ -817,7 +764,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [736, 156.0]
+    coordinate: [776, 156.0]
     rotation: 0
     state: true
 - name: wav_file
@@ -857,18 +804,13 @@ blocks:
 
 connections:
 - [analog_const_source_x_0, '0', blocks_float_to_complex_0, '1']
-- [analog_sig_source_x_0, '0', blocks_multiply_xx_0, '1']
 - [band_pass_filter_0, '0', rational_resampler_xxx_0_0, '0']
 - [blocks_float_to_complex_0, '0', band_pass_filter_0, '0']
-- [blocks_float_to_complex_0, '0', blocks_multiply_xx_0, '0']
 - [blocks_float_to_short_0, '0', vocoder_freedv_tx_ss_0, '0']
-- [blocks_multiply_const_vxx_0, '0', rational_resampler_xxx_0, '0']
-- [blocks_multiply_xx_0, '0', band_pass_filter_0, '0']
 - [blocks_short_to_float_0_0, '0', blocks_float_to_complex_0, '0']
-- [blocks_throttle_0, '0', blocks_null_sink_0, '0']
-- [blocks_wavfile_source_0, '0', blocks_multiply_const_vxx_0, '0']
+- [blocks_wavfile_source_0, '0', low_pass_filter_0, '0']
+- [low_pass_filter_0, '0', rational_resampler_xxx_0, '0']
 - [rational_resampler_xxx_0, '0', blocks_float_to_short_0, '0']
-- [rational_resampler_xxx_0_0, '0', blocks_throttle_0, '0']
 - [rational_resampler_xxx_0_0, '0', osmosdr_sink_0, '0']
 - [vocoder_freedv_tx_ss_0, '0', blocks_short_to_float_0_0, '0']
 

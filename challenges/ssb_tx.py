@@ -29,7 +29,7 @@ import time
 
 class ssb_tx(gr.top_block):
 
-    def __init__(self, audio_gain=0.6, bb_gain=20, dev='hackrf=0', freq=445e6, if_gain=20, mode='usb', ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='examples/example_voice.wav', wav_samp_rate=48000):
+    def __init__(self, audio_gain=0.6, bb_gain=20, dev='hackrf=0', freq=445e6, if_gain=20, mode='usb', ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='examples/example_voice.wav', wav_samp_rate=48000, antenna=''):
         gr.top_block.__init__(self, "SSB TX", catch_exceptions=True)
 
         ##################################################
@@ -46,6 +46,7 @@ class ssb_tx(gr.top_block):
         self.rf_samp_rate = rf_samp_rate
         self.wav_file = wav_file
         self.wav_samp_rate = wav_samp_rate
+        self.antenna = antenna
 
         ##################################################
         # Variables
@@ -78,7 +79,7 @@ class ssb_tx(gr.top_block):
         self.osmosdr_sink_0.set_gain(rf_gain, 0)
         self.osmosdr_sink_0.set_if_gain(if_gain, 0)
         self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
-        self.osmosdr_sink_0.set_antenna('', 0)
+        self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
         self.blocks_wavfile_source_0 = blocks.wavfile_source(wav_file, False)
         self.blocks_multiply_const_vxx_0 = blocks.multiply_const_ff(audio_gain)
@@ -182,6 +183,13 @@ class ssb_tx(gr.top_block):
     def set_wav_samp_rate(self, wav_samp_rate):
         self.wav_samp_rate = wav_samp_rate
 
+    def get_antenna(self):
+        return self.antenna
+
+    def set_antenna(self, antenna):
+        self.antenna = antenna
+        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
+
     def get_low(self):
         return self.low
 
@@ -255,13 +263,16 @@ def argument_parser():
     parser.add_argument(
         "-a", "--wav-samp-rate", dest="wav_samp_rate", type=intx, default=48000,
         help="Set Wav Sample Rate [default=%(default)r]")
+    parser.add_argument(
+        "--antenna", dest="antenna", type=str, default='',
+        help="Set Antenna [default=%(default)r]")
     return parser
 
 
 def main(top_block_cls=ssb_tx, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, mode=options.mode, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_samp_rate=options.wav_samp_rate)
+    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, mode=options.mode, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_samp_rate=options.wav_samp_rate, antenna=options.antenna)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()

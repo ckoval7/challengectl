@@ -8,7 +8,7 @@
 # Title: NBFM Transmitter
 # Author: Corey Koval
 # Description: NBFM Transmitter with adjustable audio levels
-# GNU Radio version: 3.10.9.2
+# GNU Radio version: 3.10.1.1
 
 from gnuradio import analog
 from gnuradio import blocks
@@ -29,12 +29,13 @@ import time
 
 class nbfm(gr.top_block):
 
-    def __init__(self, audio_gain=0.6, bb_gain=20, dev='bladerf=0', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='./test.wav', wav_rate=48000, antenna=''):
+    def __init__(self, antenna='', audio_gain=0.6, bb_gain=20, dev='bladerf=0', freq=int(449e6), if_gain=20, ppm=0, rf_gain=20, rf_samp_rate=2000000, wav_file='./example.wav', wav_rate=48000):
         gr.top_block.__init__(self, "NBFM Transmitter", catch_exceptions=True)
 
         ##################################################
         # Parameters
         ##################################################
+        self.antenna = antenna
         self.audio_gain = audio_gain
         self.bb_gain = bb_gain
         self.dev = dev
@@ -45,23 +46,20 @@ class nbfm(gr.top_block):
         self.rf_samp_rate = rf_samp_rate
         self.wav_file = wav_file
         self.wav_rate = wav_rate
-        self.antenna = antenna
 
         ##################################################
         # Variables
         ##################################################
         self.audio_rate = audio_rate = 48000
-        self.variable_low_pass_filter_taps_0 = variable_low_pass_filter_taps_0 = firdes.low_pass(audio_gain, wav_rate, 3000,300, window.WIN_HAMMING, 6.76)
         self.if_rate = if_rate = audio_rate*4
 
         ##################################################
         # Blocks
         ##################################################
-
         self.rational_resampler_xxx_1 = filter.rational_resampler_fff(
                 interpolation=audio_rate,
                 decimation=wav_rate,
-                taps=variable_low_pass_filter_taps_0,
+                taps=[],
                 fractional_bw=0)
         self.rational_resampler_xxx_0 = filter.rational_resampler_ccc(
                 interpolation=rf_samp_rate,
@@ -79,6 +77,15 @@ class nbfm(gr.top_block):
         self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
         self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
+        self.low_pass_filter_1 = filter.fir_filter_fff(
+            1,
+            firdes.low_pass(
+                audio_gain,
+                wav_rate,
+                3000,
+                300,
+                window.WIN_HAMMING,
+                6.76))
         self.low_pass_filter_0 = filter.fir_filter_ccf(
             1,
             firdes.low_pass(
@@ -92,9 +99,9 @@ class nbfm(gr.top_block):
         self.analog_nbfm_tx_0 = analog.nbfm_tx(
         	audio_rate=audio_rate,
         	quad_rate=if_rate,
-        	tau=(75e-6),
+        	tau=75e-6,
         	max_dev=5e3,
-        	fh=(-1.0),
+        	fh=-1.0,
                 )
 
 
@@ -104,16 +111,24 @@ class nbfm(gr.top_block):
         self.connect((self.analog_nbfm_tx_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.blocks_wavfile_source_0, 0), (self.rational_resampler_xxx_1, 0))
         self.connect((self.low_pass_filter_0, 0), (self.osmosdr_sink_0, 0))
+        self.connect((self.low_pass_filter_1, 0), (self.analog_nbfm_tx_0, 0))
         self.connect((self.rational_resampler_xxx_0, 0), (self.low_pass_filter_0, 0))
-        self.connect((self.rational_resampler_xxx_1, 0), (self.analog_nbfm_tx_0, 0))
+        self.connect((self.rational_resampler_xxx_1, 0), (self.low_pass_filter_1, 0))
 
+
+    def get_antenna(self):
+        return self.antenna
+
+    def set_antenna(self, antenna):
+        self.antenna = antenna
+        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
 
     def get_audio_gain(self):
         return self.audio_gain
 
     def set_audio_gain(self, audio_gain):
         self.audio_gain = audio_gain
-        self.set_variable_low_pass_filter_taps_0(firdes.low_pass(self.audio_gain, self.wav_rate, 3000, 300, window.WIN_HAMMING, 6.76))
+        self.low_pass_filter_1.set_taps(firdes.low_pass(self.audio_gain, self.wav_rate, 3000, 300, window.WIN_HAMMING, 6.76))
 
     def get_bb_gain(self):
         return self.bb_gain
@@ -175,14 +190,7 @@ class nbfm(gr.top_block):
 
     def set_wav_rate(self, wav_rate):
         self.wav_rate = wav_rate
-        self.set_variable_low_pass_filter_taps_0(firdes.low_pass(self.audio_gain, self.wav_rate, 3000, 300, window.WIN_HAMMING, 6.76))
-
-    def get_antenna(self):
-        return self.antenna
-
-    def set_antenna(self, antenna):
-        self.antenna = antenna
-        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
+        self.low_pass_filter_1.set_taps(firdes.low_pass(self.audio_gain, self.wav_rate, 3000, 300, window.WIN_HAMMING, 6.76))
 
     def get_audio_rate(self):
         return self.audio_rate
@@ -190,13 +198,6 @@ class nbfm(gr.top_block):
     def set_audio_rate(self, audio_rate):
         self.audio_rate = audio_rate
         self.set_if_rate(self.audio_rate*4)
-
-    def get_variable_low_pass_filter_taps_0(self):
-        return self.variable_low_pass_filter_taps_0
-
-    def set_variable_low_pass_filter_taps_0(self, variable_low_pass_filter_taps_0):
-        self.variable_low_pass_filter_taps_0 = variable_low_pass_filter_taps_0
-        self.rational_resampler_xxx_1.set_taps(self.variable_low_pass_filter_taps_0)
 
     def get_if_rate(self):
         return self.if_rate
@@ -209,6 +210,9 @@ class nbfm(gr.top_block):
 def argument_parser():
     description = 'NBFM Transmitter with adjustable audio levels'
     parser = ArgumentParser(description=description)
+    parser.add_argument(
+        "--antenna", dest="antenna", type=str, default='',
+        help="Set Antenna [default=%(default)r]")
     parser.add_argument(
         "--audio-gain", dest="audio_gain", type=eng_float, default=eng_notation.num_to_str(float(0.6)),
         help="Set Audio Gain [default=%(default)r]")
@@ -234,21 +238,18 @@ def argument_parser():
         "-r", "--rf-samp-rate", dest="rf_samp_rate", type=intx, default=2000000,
         help="Set RF Sample Rate [default=%(default)r]")
     parser.add_argument(
-        "-w", "--wav-file", dest="wav_file", type=str, default='./test.wav',
+        "-w", "--wav-file", dest="wav_file", type=str, default='./example.wav',
         help="Set Wav File [default=%(default)r]")
     parser.add_argument(
         "-a", "--wav-rate", dest="wav_rate", type=intx, default=48000,
         help="Set Wav File Audio Sample Rate [default=%(default)r]")
-    parser.add_argument(
-        "--antenna", dest="antenna", type=str, default='',
-        help="Set Antenna [default=%(default)r]")
     return parser
 
 
 def main(top_block_cls=nbfm, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_rate=options.wav_rate, antenna=options.antenna)
+    tb = top_block_cls(antenna=options.antenna, audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, wav_file=options.wav_file, wav_rate=options.wav_rate)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()

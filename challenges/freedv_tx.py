@@ -31,12 +31,13 @@ import time
 
 class freedv_tx(gr.top_block):
 
-    def __init__(self, audio_gain=0.6, bb_gain=20, dev='hackrf=0', freq=445e6, if_gain=20, mode='usb', ppm=0, rf_gain=20, rf_samp_rate=2000000, text="RFHS", wav_file='examples/example_voice.wav', wav_samp_rate=48000):
+    def __init__(self, antenna='', audio_gain=0.6, bb_gain=20, dev='hackrf=0', freq=445e6, if_gain=20, mode='usb', ppm=0, rf_gain=20, rf_samp_rate=2000000, text="RFHS", wav_file='examples/example_voice.wav', wav_samp_rate=48000):
         gr.top_block.__init__(self, "FreeDV Transmitter", catch_exceptions=True)
 
         ##################################################
         # Parameters
         ##################################################
+        self.antenna = antenna
         self.audio_gain = audio_gain
         self.bb_gain = bb_gain
         self.dev = dev
@@ -55,7 +56,6 @@ class freedv_tx(gr.top_block):
         ##################################################
         self.low = low = 300
         self.filter_width = filter_width = 2.7e3
-        self.voice_taps = voice_taps = firdes.low_pass(1.0, wav_samp_rate, 3000,500, window.WIN_HAMMING, 6.76)
         self.if_samp_rate = if_samp_rate = 8000
         self.high = high = low+filter_width
         self.carrier_level = carrier_level = 1
@@ -72,7 +72,7 @@ class freedv_tx(gr.top_block):
         self.rational_resampler_xxx_0 = filter.rational_resampler_fff(
                 interpolation=int(if_samp_rate),
                 decimation=int(wav_samp_rate),
-                taps=voice_taps,
+                taps=[],
                 fractional_bw=0)
         self.osmosdr_sink_0 = osmosdr.sink(
             args="numchan=" + str(1) + " " + dev
@@ -83,11 +83,19 @@ class freedv_tx(gr.top_block):
         self.osmosdr_sink_0.set_gain(rf_gain, 0)
         self.osmosdr_sink_0.set_if_gain(if_gain, 0)
         self.osmosdr_sink_0.set_bb_gain(bb_gain, 0)
-        self.osmosdr_sink_0.set_antenna('', 0)
+        self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
+        self.low_pass_filter_0 = filter.fir_filter_fff(
+            1,
+            firdes.low_pass(
+                audio_gain,
+                wav_samp_rate,
+                3000,
+                300,
+                window.WIN_HAMMING,
+                6.76))
         self.blocks_wavfile_source_0 = blocks.wavfile_source(wav_file, False)
         self.blocks_short_to_float_0_0 = blocks.short_to_float(1, 2**15)
-        self.blocks_multiply_const_vxx_0 = blocks.multiply_const_ff(audio_gain)
         self.blocks_float_to_short_0 = blocks.float_to_short(1, 2**16/2)
         self.blocks_float_to_complex_0 = blocks.float_to_complex(1)
         self.band_pass_filter_0 = filter.interp_fir_filter_ccc(
@@ -110,20 +118,27 @@ class freedv_tx(gr.top_block):
         self.connect((self.band_pass_filter_0, 0), (self.rational_resampler_xxx_0_0, 0))
         self.connect((self.blocks_float_to_complex_0, 0), (self.band_pass_filter_0, 0))
         self.connect((self.blocks_float_to_short_0, 0), (self.vocoder_freedv_tx_ss_0, 0))
-        self.connect((self.blocks_multiply_const_vxx_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.blocks_short_to_float_0_0, 0), (self.blocks_float_to_complex_0, 0))
-        self.connect((self.blocks_wavfile_source_0, 0), (self.blocks_multiply_const_vxx_0, 0))
+        self.connect((self.blocks_wavfile_source_0, 0), (self.low_pass_filter_0, 0))
+        self.connect((self.low_pass_filter_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_float_to_short_0, 0))
         self.connect((self.rational_resampler_xxx_0_0, 0), (self.osmosdr_sink_0, 0))
         self.connect((self.vocoder_freedv_tx_ss_0, 0), (self.blocks_short_to_float_0_0, 0))
 
+
+    def get_antenna(self):
+        return self.antenna
+
+    def set_antenna(self, antenna):
+        self.antenna = antenna
+        self.osmosdr_sink_0.set_antenna(self.antenna, 0)
 
     def get_audio_gain(self):
         return self.audio_gain
 
     def set_audio_gain(self, audio_gain):
         self.audio_gain = audio_gain
-        self.blocks_multiply_const_vxx_0.set_k(self.audio_gain)
+        self.low_pass_filter_0.set_taps(firdes.low_pass(self.audio_gain, self.wav_samp_rate, 3000, 300, window.WIN_HAMMING, 6.76))
 
     def get_bb_gain(self):
         return self.bb_gain
@@ -197,7 +212,7 @@ class freedv_tx(gr.top_block):
 
     def set_wav_samp_rate(self, wav_samp_rate):
         self.wav_samp_rate = wav_samp_rate
-        self.set_voice_taps(firdes.low_pass(1.0, self.wav_samp_rate, 3000, 500, window.WIN_HAMMING, 6.76))
+        self.low_pass_filter_0.set_taps(firdes.low_pass(self.audio_gain, self.wav_samp_rate, 3000, 300, window.WIN_HAMMING, 6.76))
 
     def get_low(self):
         return self.low
@@ -213,13 +228,6 @@ class freedv_tx(gr.top_block):
     def set_filter_width(self, filter_width):
         self.filter_width = filter_width
         self.set_high(self.low+self.filter_width)
-
-    def get_voice_taps(self):
-        return self.voice_taps
-
-    def set_voice_taps(self, voice_taps):
-        self.voice_taps = voice_taps
-        self.rational_resampler_xxx_0.set_taps(self.voice_taps)
 
     def get_if_samp_rate(self):
         return self.if_samp_rate
@@ -246,6 +254,9 @@ class freedv_tx(gr.top_block):
 def argument_parser():
     description = 'FreeDV Transmitter capable of USB and LSB'
     parser = ArgumentParser(description=description)
+    parser.add_argument(
+        "--antenna", dest="antenna", type=str, default='',
+        help="Set Antenna [default=%(default)r]")
     parser.add_argument(
         "--audio-gain", dest="audio_gain", type=eng_float, default=eng_notation.num_to_str(float(0.6)),
         help="Set Audio Gain [default=%(default)r]")
@@ -288,7 +299,7 @@ def argument_parser():
 def main(top_block_cls=freedv_tx, options=None):
     if options is None:
         options = argument_parser().parse_args()
-    tb = top_block_cls(audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, mode=options.mode, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, text=options.text, wav_file=options.wav_file, wav_samp_rate=options.wav_samp_rate)
+    tb = top_block_cls(antenna=options.antenna, audio_gain=options.audio_gain, bb_gain=options.bb_gain, dev=options.dev, freq=options.freq, if_gain=options.if_gain, mode=options.mode, ppm=options.ppm, rf_gain=options.rf_gain, rf_samp_rate=options.rf_samp_rate, text=options.text, wav_file=options.wav_file, wav_samp_rate=options.wav_samp_rate)
 
     def sig_handler(sig=None, frame=None):
         tb.stop()

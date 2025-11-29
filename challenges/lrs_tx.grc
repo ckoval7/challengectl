@@ -46,9 +46,42 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [8, 140.0]
+    coordinate: [8, 172.0]
     rotation: 0
     state: enabled
+- name: analog_frequency_modulator_fc_0
+  id: analog_frequency_modulator_fc
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: FM modulation with sensitivity 6.26 rad/sample
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    sensitivity: '6.26'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [504, 260.0]
+    rotation: 0
+    state: true
+- name: antenna
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Antenna
+    short_id: a
+    type: str
+    value: ''
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1200, 4.0]
+    rotation: 0
+    state: true
 - name: bbgain
   id: parameter
   parameters:
@@ -64,6 +97,50 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [856, 4.0]
+    rotation: 0
+    state: true
+- name: blocks_repeat_0
+  id: blocks_repeat
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: 'Repeat each sample 3190 times to slow down transmission
+
+      and match pager baud rate'
+    interp: '3190'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [240, 292.0]
+    rotation: 0
+    state: enabled
+- name: blocks_vector_source_0
+  id: blocks_vector_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: 'NOTE: Data is provided at runtime via main() function parameter.
+
+      In standalone use, this would contain Manchester-encoded pager data
+
+      (floats: 0.0001 for binary 0, 1.0 for binary 1).'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    repeat: 'False'
+    tags: '[]'
+    type: float
+    vector: '[]'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 300.0]
     rotation: 0
     state: true
 - name: deviceargs
@@ -115,100 +192,6 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [992, 4.0]
-    rotation: 0
-    state: true
-- name: rfgain
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: RF Gain
-    short_id: g
-    type: eng_float
-    value: '47'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1088, 4.0]
-    rotation: 0
-    state: true
-- name: antenna
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: Antenna
-    short_id: a
-    type: str
-    value: ''
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1200, 4.0]
-    rotation: 0
-    state: true
-- name: blocks_vector_source_0
-  id: blocks_vector_source_x
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: 'NOTE: Data is provided at runtime via main() function parameter.
-
-      In standalone use, this would contain Manchester-encoded pager data
-
-      (floats: 0.0001 for binary 0, 1.0 for binary 1).'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    repeat: 'False'
-    tags: '[]'
-    type: float
-    vector: '[]'
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [8, 300.0]
-    rotation: 0
-    state: true
-- name: blocks_repeat_0
-  id: blocks_repeat
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: 'Repeat each sample 3190 times to slow down transmission
-
-      and match pager baud rate'
-    interp: '3190'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    type: float
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [264, 316.0]
-    rotation: 0
-    state: enabled
-- name: analog_frequency_modulator_fc_0
-  id: analog_frequency_modulator_fc
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: FM modulation with sensitivity 6.26 rad/sample
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    sensitivity: '6.26'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [480, 324.0]
     rotation: 0
     state: true
 - name: osmosdr_sink_0
@@ -469,15 +452,31 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [720, 140.0]
+    coordinate: [776, 180.0]
     rotation: 0
     state: enabled
+- name: rfgain
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: RF Gain
+    short_id: g
+    type: eng_float
+    value: '47'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1088, 4.0]
+    rotation: 0
+    state: true
 
 connections:
-- [blocks_vector_source_0, '0', blocks_repeat_0, '0']
-- [blocks_repeat_0, '0', analog_frequency_modulator_fc_0, '0']
 - [analog_frequency_modulator_fc_0, '0', osmosdr_sink_0, '0']
+- [blocks_repeat_0, '0', analog_frequency_modulator_fc_0, '0']
+- [blocks_vector_source_0, '0', blocks_repeat_0, '0']
 
 metadata:
   file_format: 1
-  grc_version: 3.10.9.2
