@@ -78,7 +78,7 @@ class WebSocketHandler(logging.Handler):
                 self.log_buffer.append(log_entry)
 
             # Broadcast to WebUI
-            self.socketio.emit('event', log_entry, broadcast=True)
+            self.socketio.emit('event', log_entry)
         except Exception as e:
             # Try to log at debug level to avoid recursion
             # If this fails, silently ignore to prevent infinite loop
@@ -2777,7 +2777,7 @@ class ChallengeCtlAPI:
                     'timestamp': datetime.now(timezone.utc).isoformat()
                 }
                 logger.info(f"Broadcasting agent_deleted to /agents namespace for {agent_id}")
-                self.socketio.emit('agent_deleted', event_data, namespace='/agents', broadcast=True)
+                self.socketio.emit('agent_deleted', event_data, namespace='/agents')
 
                 return jsonify({'status': 'deleted'}), 200
             else:
@@ -2813,7 +2813,7 @@ class ChallengeCtlAPI:
                     }
                     logger.info(f"Broadcasting agent_devices_updated to /agents namespace for {agent_id}: {len(devices)} devices")
                     logger.debug(f"Device update payload: {event_data}")
-                    self.socketio.emit('agent_devices_updated', event_data, namespace='/agents', broadcast=True)
+                    self.socketio.emit('agent_devices_updated', event_data, namespace='/agents')
 
                 return jsonify({'status': 'updated', 'devices': devices}), 200
             else:
@@ -4209,7 +4209,7 @@ radios:
                 **data
             }
             logger.debug(f"Broadcasting event '{event_type}' to all clients: {event_data}")
-            self.socketio.emit('event', event_data, namespace='/', broadcast=True)
+            self.socketio.emit('event', event_data, namespace='/')
             logger.debug(f"Event '{event_type}' broadcast complete")
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
@@ -4331,7 +4331,7 @@ radios:
             self.socketio.emit('challenges_update', {
                 'challenges': challenges,
                 'timestamp': datetime.now(timezone.utc).isoformat()
-            }, namespace='/public', broadcast=True)
+            }, namespace='/public')
         except Exception as e:
             logger.error(f"Error broadcasting public challenges: {e}")
 
