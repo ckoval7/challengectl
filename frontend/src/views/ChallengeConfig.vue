@@ -1452,16 +1452,19 @@ function handleTransmissionComplete(event) {
 
 // Challenge actions
 async function toggleEnabled(challengeId, enabled) {
-  // Optimistic update: Update local state immediately (triggers switch animation)
   const challenge = challengesMap.value.get(challengeId)
   if (!challenge) return
 
   const previousEnabled = challenge.enabled
+
+  // Wait for switch component to complete its DOM update before triggering re-sort
+  // This prevents the "can't access property 'checked', d.value is null" error
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  // Now update local state (this triggers table re-sort via sortedChallenges computed)
   challenge.enabled = enabled
   challengesMap.value.set(challengeId, challenge)
-
-  // Wait for next tick to allow switch animation to start, then resort table
-  await nextTick()
   recalculateQueuePositions()
 
   // Make API call in background
@@ -1473,6 +1476,7 @@ async function toggleEnabled(challengeId, enabled) {
     ElMessage.error('Failed to update challenge')
 
     // Rollback on error
+    await new Promise(resolve => setTimeout(resolve, 100))
     challenge.enabled = previousEnabled
     challengesMap.value.set(challengeId, challenge)
     recalculateQueuePositions()
