@@ -2,6 +2,8 @@
 
 The Users page allows you to manage admin accounts with username and password authentication combined with TOTP two-factor authentication. User management includes comprehensive permission controls to determine who can create and manage other users within the system.
 
+!["Screenshot of User Management Page"](/docs/images/user_management.png "Users List")
+
 ## User List
 
 The user list displays all admin users with comprehensive information about each account. The Username column shows the login name for each account. The Status column displays the account status, indicating whether accounts are enabled or disabled and whether they are temporary or permanent. The Created column shows the account creation timestamp for reference. The Last Login column displays when the user last successfully authenticated to the system. The Permissions column lists assigned permissions such as create_users or create_provisioning_key. The Actions column provides access to account management operations including enable, disable, reset password, reset TOTP, manage permissions, and delete.
