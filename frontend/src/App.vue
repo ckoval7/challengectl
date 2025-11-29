@@ -189,11 +189,11 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, currentUsername, userPermissions } from './auth'
+import { logout, checkAuth, currentUsername, userPermissions, isAuthenticated } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
@@ -284,6 +284,33 @@ export default {
       loadPauseState()
     }
 
+    // Setup WebSocket listeners when authenticated
+    let webSocketSetupDone = false
+    const setupWebSocket = () => {
+      if (webSocketSetupDone) {
+        console.log('[App.vue] WebSocket already setup, skipping')
+        return
+      }
+      console.log('[App.vue] Setting up WebSocket listeners')
+      loadPauseState()
+      websocket.connect()
+      websocket.on('system_control', handleSystemControl)
+      websocket.on('initial_state', handleInitialState)
+
+      // Reload pause state on WebSocket reconnection to sync with server
+      websocket.socket?.on('connect', handleWebSocketReconnect)
+      webSocketSetupDone = true
+      console.log('[App.vue] WebSocket listeners registered')
+    }
+
+    // Watch authentication state and setup WebSocket when user logs in
+    watch(isAuthenticated, (newVal) => {
+      console.log('[App.vue] isAuthenticated changed to:', newVal)
+      if (newVal) {
+        setupWebSocket()
+      }
+    }, { immediate: true })
+
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
       console.log('[App.vue] onMounted called')
@@ -293,23 +320,6 @@ export default {
       }
       applyTheme()
       loadConferenceName()
-
-      // Connect WebSocket if authenticated
-      const isAuthenticated = checkAuth()
-      console.log('[App.vue] checkAuth() returned:', isAuthenticated)
-      if (isAuthenticated) {
-        console.log('[App.vue] Registering WebSocket listeners')
-        loadPauseState()
-        websocket.connect()
-        websocket.on('system_control', handleSystemControl)
-        websocket.on('initial_state', handleInitialState)
-
-        // Reload pause state on WebSocket reconnection to sync with server
-        websocket.socket?.on('connect', handleWebSocketReconnect)
-        console.log('[App.vue] WebSocket listeners registered')
-      } else {
-        console.log('[App.vue] Not authenticated, skipping WebSocket setup')
-      }
     })
 
     onUnmounted(() => {
