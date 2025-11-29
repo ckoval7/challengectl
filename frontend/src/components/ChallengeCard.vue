@@ -34,8 +34,9 @@
           </el-tag>
           <el-switch
             v-if="showToggle"
-            v-model="challengeEnabled"
+            :model-value="challenge.enabled"
             size="small"
+            @change="handleToggleChange"
             @click.stop
           />
         </div>
@@ -192,7 +193,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import {
   ArrowDown,
   ArrowRight,
@@ -234,16 +235,12 @@ const emit = defineEmits(['toggle-enabled', 'trigger', 'edit', 'delete'])
 
 const isExpanded = ref(false)
 
-// Computed property for enabled state to avoid prop mutation
-const challengeEnabled = computed({
-  get: () => props.challenge.enabled,
-  set: (value) => {
-    emit('toggle-enabled', props.challenge.challenge_id, value)
-  }
-})
-
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
+}
+
+function handleToggleChange(value) {
+  emit('toggle-enabled', props.challenge.challenge_id, value)
 }
 
 function handleTrigger() {
