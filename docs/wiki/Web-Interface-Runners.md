@@ -1,282 +1,105 @@
 # Agents Management
 
-The Agents page displays all registered agents (runners and listeners) and their current status. The page includes three tabs:
+The Agents page displays all registered agents, including both runners and listeners, along with their current status. The page organizes this information across three tabs to provide clear access to different agent types and provisioning functionality.
 
-1. **Runners**: View and manage runner (transmitter) agents (available to all users)
-2. **Listeners**: View and manage listener (receiver) agents for spectrum capture (available to all users)
-3. **Provisioning**: Create and manage enrollment tokens and provisioning API keys for automated agent deployment (requires `create_provisioning_key` permission)
+The Runners tab displays all runner (transmitter) agents and is available to all users. The Listeners tab shows all listener (receiver) agents for spectrum capture and is also available to all users. The Provisioning tab allows creation and management of enrollment tokens and provisioning API keys for automated agent deployment, but requires the `create_provisioning_key` permission.
 
 ## Runner List
 
-Each runner shows:
+Each runner in the list displays comprehensive information about its current state. The Runner ID serves as a unique identifier for the runner. The Status field shows the current connection state using color-coded indicators. An online status displayed in green indicates the runner is active and sending heartbeats. A busy status shown in yellow means the runner is currently executing a transmission. An offline status in red indicates the runner has stopped sending heartbeats or disconnected from the system.
 
-**Runner ID**: Unique identifier for the runner
-
-**Status**: Current connection state
-- **Online** (green): Runner is active and sending heartbeats
-- **Busy** (yellow): Runner is currently executing a transmission
-- **Offline** (red): Runner has stopped sending heartbeats or disconnected
-
-**Last Heartbeat**: Timestamp of the most recent heartbeat
-- Updates in real-time
-- Shows "Never" if runner registered but never sent a heartbeat
-
-**Frequency Limits**: Supported frequency ranges
-- Displayed as frequency ranges in Hz
-- Determines which challenges this runner can accept
-
-**Current Task**: Name of challenge currently being executed
-- Shows "None" when idle
-- Shows challenge name when busy
+The Last Heartbeat field displays the timestamp of the most recent heartbeat, updating in real-time. If a runner has registered but never sent a heartbeat, this field shows "Never". The Frequency Limits field shows the supported frequency ranges in hertz, which determine which challenges this runner can accept. The Current Task field displays the name of the challenge currently being executed, or shows "None" when the runner is idle.
 
 ## Adding a New Runner
 
-The **Add Runner** button allows you to enroll new runner agents through the web interface.
+The Add Runner button in the Runners tab allows you to enroll new runner agents through the web interface. To add a runner, click the "Add Runner" button and configure the runner details in the dialog that appears.
 
-### Enrollment Steps
+Begin by entering a unique identifier for the runner in the Runner Name field, such as "sdr-station-1". Select an expiration time for the enrollment token from the options provided, which include one hour, six hours, 24 hours, or seven days. Choose whether to verify SSL certificates, disabling this option only for development environments where self-signed certificates are in use.
 
-1. **Click "Add Runner"** button in the Runners tab
-2. **Configure Runner Details**:
-   - **Runner Name**: Unique identifier (e.g., `sdr-station-1`)
-   - **Token Expiry**: Choose expiration time (1 hour, 6 hours, 24 hours, or 7 days)
-   - **Verify SSL**: Enable/disable SSL verification (disable only for development)
-3. **Configure SDR Devices** (optional):
-   - Add one or more SDR devices
-   - Select device model (HackRF, BladeRF, USRP, LimeSDR)
-   - Configure RF gain, IF gain (HackRF only)
-   - Set frequency limits
-4. **Click "Generate Token"**
+You can optionally configure SDR devices during the enrollment process. Add one or more SDR devices by selecting the device model from the available options, which include HackRF, BladeRF, USRP, and LimeSDR. Configure the RF gain and IF gain (for HackRF only) according to your hardware requirements. Set the frequency limits that define the operational range for this device. Click "Generate Token" when configuration is complete.
 
-### Enrollment Credentials
+After generation, the system displays enrollment credentials that you must copy or download immediately, as they are shown only once. The enrollment token provides single-use authentication for initial registration. The API key serves as a permanent credential for the runner after enrollment. The system also provides a complete YAML configuration that is ready to use as your `runner-config.yml` file.
 
-After generation, you'll receive:
-- **Enrollment Token**: Single-use token for initial registration
-- **API Key**: Permanent credential for the runner
-- **Complete YAML Configuration**: Ready-to-use `runner-config.yml`
-
-**Important**: Copy or download these credentials immediately - they're only shown once!
-
-### Using the Credentials
-
-**Option 1 - Copy Configuration**:
-- Click "Copy Configuration" to copy the complete YAML
-- Save to `runner-config.yml` on your runner machine
-- Start the runner: `python -m challengectl.runner.runner`
-
-**Option 2 - Download File**:
-- Click "Download as File" to save `runner-config.yml`
-- Transfer to your runner machine
-- Start the runner
-
-The runner will automatically enroll on first connection using the enrollment token.
+To use these credentials, you have two options. For the first option, click "Copy Configuration" to copy the complete YAML to your clipboard. Save this content to `runner-config.yml` on your runner machine, then start the runner using `python -m challengectl.runner.runner`. For the second option, click "Download as File" to save the configuration as `runner-config.yml` directly. Transfer this file to your runner machine and start the runner. The runner will automatically enroll on first connection using the enrollment token.
 
 ## Runner Actions
 
-**Enable Runner**: Allow the runner to receive task assignments
-- Enabled runners will be included in task distribution
-- Button shows "Enabled" when active
+The interface provides several actions for managing runners. The Enable Runner action allows the runner to receive task assignments, including it in task distribution. When enabled, the button displays "Enabled" to indicate the active state.
 
-**Disable Runner**: Prevent the runner from receiving new tasks
-- Disabled runners remain connected but won't receive assignments
-- Currently executing tasks continue to completion
-- Use this for maintenance or troubleshooting
-- Button shows "Disabled" when inactive
+The Disable Runner action prevents the runner from receiving new tasks while keeping it connected. Disabled runners remain connected but will not receive assignments, and currently executing tasks continue to completion. Use this action for maintenance or troubleshooting purposes. When disabled, the button displays "Disabled" to indicate the inactive state.
 
-**Kick Runner**: Forcibly disconnect the runner
-- Immediately removes the runner from the system
-- Any assigned tasks are requeued
-- The runner can re-register automatically
-- Use this to resolve stuck runners or force a reconnection
+The Kick Runner action forcibly disconnects the runner from the system. This immediately removes the runner, requeues any assigned tasks, and allows the runner to re-register automatically. Use this action to resolve stuck runners or force a clean reconnection.
 
 ## When to Disable vs Kick
 
-**Disable a runner when**:
-- Performing maintenance on the SDR hardware
-- Troubleshooting signal quality issues
-- Temporarily taking the device offline
-- Testing with a subset of runners
+Understanding when to use each action helps maintain system stability. Disable a runner when performing maintenance on the SDR hardware, troubleshooting signal quality issues, temporarily taking the device offline, or testing with a subset of runners. Disabled runners stay connected but idle, making them immediately available when re-enabled.
 
-**Kick a runner when**:
-- The runner appears stuck or unresponsive
-- Forcing a clean reconnection
-- The runner's configuration has changed
-- Clearing a stuck state
-
-**Key difference**: Disabled runners stay connected but idle. Kicked runners are forcibly disconnected and must re-register.
+Kick a runner when it appears stuck or unresponsive, when forcing a clean reconnection is necessary, when the runner's configuration has changed and needs to be reloaded, or when clearing a stuck state. The key difference is that disabled runners stay connected but idle, while kicked runners are forcibly disconnected and must re-register to continue operating.
 
 ## Listener List
 
-The Listeners tab displays all registered listener agents and their spectrum capture status.
+The Listeners tab displays all registered listener agents along with their spectrum capture status. Each listener entry provides detailed information about its operational state.
 
-Each listener shows:
+The Listener ID serves as a unique identifier for the listener. The Status field shows the current connection state using color-coded indicators. An online status displayed in green indicates the listener is active and sending heartbeats. An offline status in red means the listener has stopped sending heartbeats or disconnected from the system.
 
-**Listener ID**: Unique identifier for the listener
+The WebSocket field displays the real-time connection status with distinct visual indicators. A connected status shown with a green badge means the WebSocket is active and the listener can receive recording assignments. A disconnected status displayed with a yellow badge indicates the WebSocket is offline and the listener cannot receive assignments. Listeners require an active WebSocket connection for real-time recording coordination.
 
-**Status**: Current connection state
-- **Online** (green): Listener is active and sending heartbeats
-- **Offline** (red): Listener has stopped sending heartbeats or disconnected
-
-**WebSocket**: Real-time connection status
-- **Connected** (green badge): WebSocket active, can receive recording assignments
-- **Disconnected** (yellow badge): WebSocket offline, cannot receive assignments
-- Listeners require WebSocket connection for real-time recording coordination
-
-**Last Heartbeat**: Timestamp of the most recent heartbeat
-- Updates in real-time
-- Shows "Never" if listener registered but never sent a heartbeat
-
-**Recordings**: Total number of recordings captured by this listener
+The Last Heartbeat field shows the timestamp of the most recent heartbeat, updating in real-time. If a listener has registered but never sent a heartbeat, this field displays "Never". The Recordings field shows the total number of recordings captured by this listener.
 
 ## Adding a New Listener
 
-The **Add Listener** button allows you to enroll new listener agents through the web interface.
+The Add Listener button in the Listeners tab enables enrollment of new listener agents through the web interface. To add a listener, click the "Add Listener" button and configure the listener details in the dialog.
 
-### Enrollment Steps
+Enter a unique identifier for the listener in the Listener Name field, such as "listener-1". Select an expiration time for the enrollment token from the available options of one hour, six hours, 24 hours, or seven days.
 
-1. **Click "Add Listener"** button in the Listeners tab
-2. **Configure Listener Details**:
-   - **Listener Name**: Unique identifier (e.g., `listener-1`)
-   - **Token Expiry**: Choose expiration time (1 hour, 6 hours, 24 hours, or 7 days)
-3. **Configure SDR Devices** (optional):
-   - Add one or more SDR receiver devices
-   - For each device:
-     - **Device Name**: Device index (0, 1, 2) or serial number
-     - **Model**: Select SDR type (RTL-SDR, HackRF, USRP, BladeRF)
-     - **Gain**: RF gain in dB (0-100, typical: 20-50)
-     - **Frequency Limits**: Comma-separated ranges in Hz (optional)
-   - Click **"Add Another Device"** to configure multiple receivers
-   - Click **"Remove"** to remove a device from the configuration
-4. **Click "Generate Token"**
+You can optionally configure SDR devices for the listener. Add one or more SDR receiver devices by specifying the device name, which can be a device index (0, 1, 2) or a serial number. Select the SDR type from the available models, including RTL-SDR, HackRF, USRP, and BladeRF. Configure the RF gain in decibels, typically ranging from zero to 100 with typical values between 20 and 50 dB. Optionally specify frequency limits as comma-separated ranges in hertz. Click "Add Another Device" to configure multiple receivers, or click "Remove" to remove a device from the configuration. When ready, click "Generate Token" to create the enrollment credentials.
 
-### Enrollment Credentials
+After generation, the system provides enrollment credentials that must be copied or downloaded immediately. The enrollment token provides single-use authentication for initial registration. The API key serves as a permanent credential for the listener. The complete YAML configuration includes all required settings ready to use as your `listener-config.yml` file.
 
-After generation, you'll receive:
-- **Enrollment Token**: Single-use token for initial registration
-- **API Key**: Permanent credential for the listener
-- **Complete YAML Configuration**: Ready-to-use `listener-config.yml`
+The generated configuration includes comprehensive settings for the listener. Agent configuration specifies the agent ID, server URL, API key, and WebSocket settings. Recording parameters define the sample rate at 2 MHz, FFT size at 1024, and frame rate at 20 frames per second. SDR device configuration includes all devices with their gain and frequency limits. Pre and post roll buffers are set to five seconds each. Logging configuration provides appropriate verbosity for troubleshooting.
 
-The generated configuration includes all required settings:
-- Agent configuration (agent_id, server_url, api_key, WebSocket settings)
-- Recording parameters (sample_rate: 2 MHz, fft_size: 1024, frame_rate: 20)
-- SDR device configuration (multiple devices with gain and frequency limits)
-- Pre/post roll buffers (5 seconds each)
-- Logging configuration
+Multi-device support allows the configuration to accommodate multiple SDR receivers, enabling you to monitor different frequency bands simultaneously or provide redundancy for critical monitoring tasks.
 
-**Multi-Device Support**: The configuration now supports multiple SDR receivers, allowing you to monitor different frequency bands simultaneously or provide redundancy.
-
-**Important**: Copy or download these credentials immediately - they're only shown once!
-
-### Using the Credentials
-
-**Option 1 - Copy Configuration**:
-- Click "Copy Configuration" to copy the complete YAML
-- Save to `listener-config.yml` on your listener machine
-- Install GNU Radio and dependencies (see [Listener Setup](Listener-Setup))
-- Start the listener: `./listener/listener.py --config listener-config.yml`
-
-**Option 2 - Download File**:
-- Click "Download as File" to save `listener-config.yml`
-- Transfer to your listener machine
-- Install GNU Radio and dependencies
-- Start the listener
-
-The listener will automatically enroll on first connection using the enrollment token and connect via WebSocket for real-time recording assignments.
+To use these credentials, click "Copy Configuration" to copy the complete YAML to your clipboard. Save this to `listener-config.yml` on your listener machine. Install GNU Radio and dependencies as described in the Listener Setup guide. Start the listener using `./listener/listener.py --config listener-config.yml`. Alternatively, click "Download as File" to save the configuration as `listener-config.yml` directly. Transfer this file to your listener machine, install GNU Radio and dependencies, and start the listener. The listener will automatically enroll on first connection using the enrollment token and connect via WebSocket for real-time recording assignments.
 
 ### Listener Actions
 
-**Enable Listener**: Allow the listener to receive recording assignments
-- Enabled listeners will be assigned recordings based on priority
-- Button shows "Enabled" when active
+The interface provides several actions for managing listeners. The Enable Listener action allows the listener to receive recording assignments based on priority, with the button displaying "Enabled" when active.
 
-**Disable Listener**: Prevent the listener from receiving new assignments
-- Disabled listeners remain connected but won't receive recording tasks
-- Currently executing recordings continue to completion
-- Use this for maintenance or troubleshooting
-- Button shows "Disabled" when inactive
+The Disable Listener action prevents the listener from receiving new assignments while keeping it connected. Disabled listeners remain connected but will not receive recording tasks. Currently executing recordings continue to completion. Use this action for maintenance or troubleshooting purposes, with the button displaying "Disabled" when inactive.
 
-**Kick Listener**: Forcibly disconnect the listener
-- Immediately removes the listener from the system
-- Any assigned recordings are marked as cancelled
-- The listener can re-register automatically
-- Use this to resolve stuck listeners or force a reconnection
+The Kick Listener action forcibly disconnects the listener from the system. This immediately removes the listener, marks any assigned recordings as cancelled, and allows the listener to re-register automatically. Use this action to resolve stuck listeners or force a clean reconnection.
 
 ### When to Disable vs Kick a Listener
 
-**Disable a listener when**:
-- Performing maintenance on the SDR hardware
-- Adjusting antenna configuration
-- Temporarily taking the device offline
-- Testing with a subset of listeners
-
-**Kick a listener when**:
-- The listener appears stuck or unresponsive
-- WebSocket connection is stale
-- Forcing a clean reconnection
-- The listener's configuration has changed
-- Clearing a stuck state
+Disable a listener when performing maintenance on the SDR hardware, adjusting antenna configuration, temporarily taking the device offline, or testing with a subset of listeners. Kick a listener when it appears stuck or unresponsive, when the WebSocket connection is stale, when forcing a clean reconnection is necessary, when the listener's configuration has changed, or when clearing a stuck state.
 
 ## Real-Time Updates
 
-The Agents page updates automatically via WebSocket connections:
+The Agents page updates automatically via WebSocket connections, ensuring you always see current information without manual refreshing.
 
-**Runners tab**:
-- Runner status changes (online, busy, offline)
-- Last heartbeat timestamps
-- Current task assignments
+In the Runners tab, the interface automatically reflects runner status changes between online, busy, and offline states. Last heartbeat timestamps update continuously, and current task assignments appear immediately when runners begin work.
 
-**Listeners tab**:
-- Listener status changes (online, offline)
-- WebSocket connection status
-- Last heartbeat timestamps
-- Recording counts
+In the Listeners tab, the interface shows listener status changes between online and offline states in real-time. WebSocket connection status updates immediately when connections are established or lost. Last heartbeat timestamps update continuously, and recording counts increment as listeners complete captures.
 
-All changes are reflected in real-time without page refreshes.
+All changes reflect in real-time without requiring page refreshes, providing an always-current view of your agent infrastructure.
 
 ## Troubleshooting
 
 ### Runner Issues
 
-**Runner won't go online**:
-1. Check the Runners tab for the runner
-2. If listed but offline, check last heartbeat time
-3. Check [Logs page](Web-Interface-Logs) for connection errors from that runner ID
-4. Verify API key is correct
-5. Consider kicking and letting it re-register
+When a runner refuses to go online, start by checking the Runners tab for the runner entry. If the runner is listed but offline, check the last heartbeat time to determine how long it has been disconnected. Review the Logs page for connection errors from that runner ID. Verify that the API key configured on the runner matches the one stored in the database. Consider kicking the runner to force re-registration, which often resolves authentication or connection issues.
 
-**Runner stuck in busy state**:
-1. Check logs for errors from that runner
-2. Verify the challenge hasn't stalled
-3. Kick the runner to force a reconnection
-4. Check runner system resources (CPU, SDR device)
+When a runner becomes stuck in busy state, first check the logs for errors from that runner. Verify that the assigned challenge has not stalled during execution. Kick the runner to force a reconnection and clear the stuck state. Check runner system resources including CPU usage and SDR device availability to ensure the hardware can support continued operation.
 
 ### Listener Issues
 
-**Listener won't go online**:
-1. Check the Listeners tab for the listener
-2. If listed but offline, check last heartbeat time
-3. Check [Logs page](Web-Interface-Logs) for connection errors
-4. Verify listener process is running on the listener machine
-5. Consider kicking and letting it re-register
+When a listener refuses to go online, check the Listeners tab for the listener entry. If listed but offline, examine the last heartbeat time to determine connection duration. Review the Logs page for connection errors from the listener. Verify that the listener process is running on the listener machine. Consider kicking the listener to allow re-registration.
 
-**WebSocket shows "Disconnected"**:
-1. Check listener logs for WebSocket errors
-2. Verify firewall allows outbound WebSocket connections
-3. Check server logs for connection rejections
-4. Restart listener process
-5. Kick listener from web UI to force reconnection
+When the WebSocket shows "Disconnected", first check listener logs for WebSocket errors that might indicate the cause. Verify that the firewall allows outbound WebSocket connections from the listener machine. Check server logs for connection rejections that might indicate authentication or authorization issues. Restart the listener process to re-establish the connection. Use the kick function from the web UI to force reconnection from the server side.
 
-**No recordings being assigned**:
-1. Verify listener is enabled (not disabled)
-2. Check WebSocket shows "Connected"
-3. Verify transmissions are occurring (check Dashboard)
-4. Recording priority may be below threshold (see [Architecture](Architecture#recording-priority-algorithm))
-5. Check listener logs for assignment messages
+When no recordings are being assigned to a listener, verify the listener is enabled and not disabled. Check that the WebSocket shows "Connected", as this is required for receiving assignments. Verify that transmissions are occurring by checking the Dashboard's recent transmissions feed. Note that recording priority may be below the threshold for assignment, as described in the Architecture documentation under recording priority algorithm. Check listener logs for assignment messages that indicate whether the listener is receiving and processing recording requests.
 
 ## Related Guides
 
-- [Dashboard](Web-Interface-Dashboard) - View agent statistics and transmission feed
-- [Challenges](Web-Interface-Challenges) - Manage challenges assigned to runners
-- [Logs](Web-Interface-Logs) - View agent log output
-- [Runner Setup](Runner-Setup) - Configure and deploy runner agents
-- [Listener Setup](Listener-Setup) - Configure and deploy listener agents
-- [System Controls](Web-Interface-System-Controls) - Pause system to stop task assignment
+For viewing agent statistics and the transmission feed, see the Dashboard guide. For managing challenges assigned to runners, consult the Challenge Management guide. To view agent log output for troubleshooting, see the Logs guide. For instructions on configuring and deploying runner agents, review the Runner Setup guide. For configuring and deploying listener agents, see the Listener Setup guide. To pause the system and stop task assignment, refer to the System Controls guide.

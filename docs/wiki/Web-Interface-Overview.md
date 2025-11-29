@@ -8,15 +8,7 @@ The ChallengeCtl web interface provides a comprehensive view of your RF challeng
 
 ### Key Features
 
-- **Real-time monitoring**: Live updates via WebSocket connections
-- **Challenge management**: Enable, disable, and manually trigger challenges
-- **Challenge configuration**: Create, import, edit, and delete challenges via Web UI
-- **Runner control**: Monitor runner status and manage connections
-- **Log streaming**: Real-time logs from server and all runners
-- **User administration**: Manage admin accounts and credentials
-- **System controls**: Pause and resume operations
-- **Conference countdown**: Live countdown timers with daily hour cycling
-- **Auto-pause scheduling**: Automatically pause/resume based on daily hours
+The web interface provides real-time monitoring with live updates delivered through WebSocket connections, ensuring that administrators always see the current system state. Challenge management capabilities include the ability to enable, disable, and manually trigger challenges on demand. The interface supports comprehensive challenge configuration, allowing administrators to create, import, edit, and delete challenges entirely through the web UI. Runner control features enable monitoring of runner status and management of their connections. Real-time log streaming provides immediate access to logs from both the server and all connected runners. User administration tools allow management of admin accounts and credentials through an intuitive interface. System controls provide the ability to pause and resume operations as needed. The interface includes conference countdown functionality with live countdown timers that support daily hour cycling. Additionally, auto-pause scheduling enables the system to automatically pause and resume based on configured daily operating hours.
 
 ## Accessing the Web Interface
 
@@ -26,112 +18,38 @@ The login process differs based on whether you're an existing user or a newly cr
 
 #### Existing User Login
 
-1. **Navigate to the server URL** in your web browser:
-   ```
-   http://your-server-ip:8443
-   ```
-   Or for production deployments:
-   ```
-   https://challengectl.example.com
-   ```
-
-2. **Enter your credentials**:
-   - Username: Your admin username
-   - Password: Your admin password
-
-3. **Complete two-factor authentication**:
-   - Enter the 6-digit TOTP code from your authenticator app
-   - The code refreshes every 30 seconds
-
-4. **Access the dashboard**:
-   - Upon successful authentication, you'll be directed to the main dashboard
+To access the web interface as an existing user, navigate to the server URL in your web browser. For development environments, this is typically `http://your-server-ip:8443`, while production deployments use secure URLs such as `https://challengectl.example.com`. Once the login page loads, enter your admin username and password in the provided fields. The system requires two-factor authentication for all users, so you must enter the six-digit TOTP code from your authenticator app. These codes refresh every 30 seconds, ensuring continuous security. Upon successful authentication with both your password and TOTP code, the system automatically directs you to the main dashboard where you can begin managing your RF challenge system.
 
 #### New User First Login
 
-If an administrator created your account, you must complete setup on first login:
+When an administrator creates your account, you must complete a mandatory setup process on your first login. This security measure ensures that all accounts have unique passwords and properly configured two-factor authentication. Begin by navigating to the server URL and entering the initial credentials provided by your administrator. The system automatically redirects you to the setup page, where you must complete the configuration within 24 hours or your account will be automatically disabled for security reasons.
 
-1. **Navigate to the server URL** and enter your initial credentials:
-   - Username: Provided by your administrator
-   - Password: Initial password provided by administrator
+The setup process begins with changing your password. Enter a new secure password that meets the minimum requirement of eight characters, then confirm it by entering it again. Once you submit your new password, click the "Continue to 2FA Setup" button to proceed to the next step.
 
-2. **Account Setup Screen**:
-   - You'll be automatically redirected to the setup page
-   - **Important**: You must complete this within 24 hours or your account will be disabled
+For two-factor authentication setup, the server generates a unique TOTP secret for your account. The system displays this secret as a QR code that you can scan with any TOTP-compatible authenticator app, such as Google Authenticator or Authy. If QR code scanning is not available on your device, you can manually enter the secret key shown below the QR code. After adding the account to your authenticator app, enter the six-digit code generated by the app to verify that setup was completed correctly. Click "Complete Setup" to finalize your account configuration.
 
-3. **Change Your Password**:
-   - Enter a new secure password (minimum 8 characters)
-   - Confirm the new password
-   - Click "Continue to 2FA Setup"
-
-4. **Set Up Two-Factor Authentication**:
-   - After submitting your password, the server generates a TOTP secret
-   - Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
-   - Or manually enter the secret if QR code scanning isn't available
-   - Enter the 6-digit code from your app to verify setup
-   - Click "Complete Setup"
-
-5. **Access the dashboard**:
-   - Your account is now fully activated
-   - You can access all features based on your permissions
-   - Future logins will use your new password and TOTP
-
-**Important Notes**:
-- New users **must complete setup within 24 hours** of account creation
-- Accounts not set up in time are automatically disabled for security
-- If your account is disabled, contact your administrator to create a new one
-- You cannot skip TOTP setup - all users must have 2FA enabled
+Your account is now fully activated and ready to use. You can access all features based on the permissions granted to your account. Future logins will require your new password and TOTP codes from your authenticator app. Remember that new users must complete this setup within 24 hours of account creation, as accounts not set up within this timeframe are automatically disabled for security purposes. If your account becomes disabled, you must contact your administrator to create a new account. The system does not allow you to skip TOTP setup, as all users must have two-factor authentication enabled without exception.
 
 ### Session Management
 
-- **Session duration**: Sessions remain active for 24 hours
-- **Auto-logout**: Sessions expire after 24 hours of inactivity
-- **Manual logout**: Click your username in the header, then select "Logout"
-- **Multiple sessions**: You can be logged in from multiple browsers/devices simultaneously
+The web interface maintains user sessions with a 24-hour duration, providing a balance between convenience and security. Sessions automatically expire after 24 hours of inactivity, requiring you to log in again. To manually log out before the session expires, click your username in the header and select the "Logout" option. The system supports multiple simultaneous sessions, allowing you to remain logged in from different browsers or devices at the same time without conflicts.
 
 ### User Menu
 
-The user menu in the header provides quick access to your account options:
+The user menu in the header provides quick access to your account options. To access it, click on your username with the avatar icon in the top-right corner of the header. A dropdown menu appears with available options for managing your account.
 
-**Accessing the User Menu**:
-- Click on your username (with avatar icon) in the top-right corner of the header
-- A dropdown menu appears with available options
+The menu provides two primary options. The "Change Password" option allows you to update your current password at any time. This operation requires your current password for verification, after which you enter your new password twice to confirm. Your session remains active after changing your password, allowing you to continue working without interruption. Regular password rotation is recommended as a security best practice.
 
-**Available Options**:
-- **Change Password**: Update your current password
-  - Requires your current password for verification
-  - Enter new password twice to confirm
-  - Session remains active after password change
-  - Use this to regularly rotate your credentials
-- **Logout**: Sign out and invalidate your current session
-  - Ends your session immediately
-  - Returns you to the login page
-  - Other sessions on different devices remain active
+The "Logout" option signs you out and invalidates your current session immediately. After logging out, the system returns you to the login page. Other sessions on different devices remain active and are not affected by logging out from one location.
 
 ## Navigation
 
-The web interface is organized into several main sections, accessible from the navigation menu:
-
-- **[Dashboard](Web-Interface-Dashboard)**: System overview and statistics
-- **[Runners](Web-Interface-Runners)**: Manage runner connections and provisioning
-- **[Challenges](Web-Interface-Challenges)**: Monitor, create, and manage challenges
-- **[Logs](Web-Interface-Logs)**: Real-time log streaming
-- **[Users](Web-Interface-Users)**: User account management
-- **[System Controls](Web-Interface-System-Controls)**: Pause/resume and conference settings
+The web interface organizes functionality into several main sections, accessible from the navigation menu. The Dashboard provides a system overview and statistics at a glance. The Runners section allows you to manage runner connections and provisioning. The Challenges area enables you to monitor, create, and manage challenges. The Logs section provides real-time log streaming from all system components. The Users section handles user account management and permissions. Finally, the System Controls section provides system-wide operations such as pause and resume functionality, along with conference settings.
 
 ## Security Best Practices
 
-1. **Use HTTPS**: Always run behind nginx with TLS in production
-2. **Strong passwords**: Enforce strong password requirements
-3. **Limit access**: Use firewall rules to restrict web UI access
-4. **Regular backups**: Back up the database including user accounts
-5. **Monitor logs**: Watch for suspicious login attempts
-6. **Logout when done**: Especially on shared computers
-7. **Rotate passwords**: Change admin passwords periodically
+Maintaining security requires adherence to several key practices. Always use HTTPS in production environments by running the web interface behind nginx with TLS configured. Enforce strong password requirements for all user accounts to prevent unauthorized access. Use firewall rules to restrict web UI access to authorized networks or IP addresses only. Perform regular backups of the database, including user accounts and system configuration. Monitor logs continuously for suspicious login attempts or unusual activity patterns. Always log out when finished with your session, especially when using shared computers. Finally, rotate admin passwords periodically to maintain security even if credentials become compromised.
 
 ## Next Steps
 
-- [Dashboard Guide](Web-Interface-Dashboard) - Learn about the dashboard and statistics
-- [Runner Management](Web-Interface-Runners) - Manage your RF hardware
-- [Challenge Management](Web-Interface-Challenges) - Configure and control challenges
-- [User Management](Web-Interface-Users) - Manage admin accounts
-- [System Controls](Web-Interface-System-Controls) - System-wide operations
+To learn more about specific features, consult the Dashboard Guide to understand system statistics and monitoring capabilities. The Runner Management guide explains how to manage your RF hardware and runner connections. For challenge configuration and control, review the Challenge Management documentation. The User Management guide covers admin account administration. Finally, the System Controls guide explains system-wide operations such as pause, resume, and conference settings.

@@ -4,598 +4,270 @@ This guide covers the web interface features for viewing and managing spectrum l
 
 ## Overview
 
-The Listener Web UI provides comprehensive visualization of spectrum recordings captured by listener agents during challenge transmissions. Listeners automatically record RF transmissions based on priority, generating waterfall images that provide visual verification of signal quality, frequency accuracy, and transmission characteristics.
+The Listener Web UI provides comprehensive visualization of spectrum recordings captured by listener agents during challenge transmissions. Listeners automatically record RF transmissions based on priority calculations, generating waterfall images that provide visual verification of signal quality, frequency accuracy, and transmission characteristics.
 
-### Key Features
-
-- **Waterfall Visualization**: High-quality spectrum waterfall images for each recording
-- **Recording History**: Complete history of all recordings per challenge
-- **Inline Preview**: Quick access to recent recordings directly from the Challenges page
-- **Detailed Metadata**: Frequency, duration, timestamps, and listener information
-- **Status Tracking**: Monitor recording success, failures, and in-progress captures
-- **Modal Viewer**: Full-screen waterfall image viewer with detailed metadata
+The interface delivers several key capabilities. Waterfall visualization displays high-quality spectrum waterfall images for each recording. Recording history maintains a complete history of all recordings per challenge. Inline preview provides quick access to recent recordings directly from the Challenges page without navigation. Detailed metadata shows frequency, duration, timestamps, and listener information for each recording. Status tracking monitors recording success, failures, and in-progress captures. A modal viewer provides full-screen waterfall image viewing with detailed metadata overlay.
 
 ## Accessing Recordings
 
-There are two main ways to access listener recordings in the web interface:
+The web interface provides two main paths to access listener recordings, each optimized for different workflows.
 
-### 1. Recording History Page (Full View)
+### Recording History Page (Full View)
 
-The Recording History page provides a comprehensive view of all recordings for a specific challenge.
+The Recording History page provides a comprehensive view of all recordings for a specific challenge, showing complete historical data and metadata. To access this page, navigate to Manage Challenges and select the Live Status tab. Click the expand arrow next to any challenge row to reveal additional details. Click the "View All X Recordings" link at the bottom of the expanded section to open the full recording history. Alternatively, navigate directly to /recordings/{challenge_id} in your browser if you know the challenge ID.
 
-**To access:**
-1. Navigate to **Manage Challenges → Live Status** tab
-2. Click the expand arrow (►) on any challenge row
-3. Click **"View All X Recordings →"** link at the bottom of the expanded section
-4. Or navigate directly to `/recordings/{challenge_id}` in your browser
+### Inline Recordings (Quick Preview)
 
-### 2. Inline Recordings (Quick Preview)
-
-The Challenges page provides quick access to the most recent recordings without leaving the page.
-
-**To access:**
-1. Navigate to **Manage Challenges → Live Status** tab
-2. Click the expand arrow (►) next to any challenge
-3. View the first 3 most recent recordings in an inline grid
-4. Click any waterfall image to open the full-screen viewer
+The Challenges page provides quick access to the most recent recordings without requiring navigation away from your current view. To access inline recordings, navigate to Manage Challenges and select the Live Status tab. Click the expand arrow next to any challenge to reveal its details. View the first three most recent recordings in an inline grid display. Click any waterfall image to open the full-screen viewer for detailed examination.
 
 ## Recording History Page
 
-The Recording History page displays comprehensive information about a challenge and all its associated recordings.
+The Recording History page displays comprehensive information about a specific challenge and all its associated recordings.
 
 ### Challenge Information Card
 
-Displays key information about the challenge:
-
-**Fields Shown:**
-- **Challenge Name**: Unique identifier
-- **Modulation**: Type (CW, NBFM, SSB, FHSS, etc.)
-- **Frequency**: Transmission frequency in MHz/GHz
-- **Status**: Enabled/Disabled with color-coded tag
-- **Total Transmissions**: Cumulative count of all transmissions
-- **Total Recordings**: Number of recordings captured
-- **Last Transmission**: Timestamp of most recent transmission
+The challenge information card displays key details about the selected challenge. The challenge name field shows the unique identifier used throughout the system. The modulation field indicates the type of RF modulation, such as CW, NBFM, SSB, or FHSS. The frequency field displays the transmission frequency formatted as megahertz or gigahertz as appropriate. The status field shows whether the challenge is enabled or disabled using color-coded tags for quick recognition. The total transmissions field provides a cumulative count of all transmissions for this challenge. The total recordings field shows the number of recordings that have been captured. The last transmission field displays the timestamp of the most recent transmission for temporal reference.
 
 ### Recordings Grid
 
-All recordings are displayed in a responsive grid layout:
+All recordings display in a responsive grid layout that automatically adapts to screen size. The grid uses automatic sizing with a minimum card width of 300 pixels. Cards expand to fill available space efficiently. A hover effect provides visual feedback when the cursor moves over recording cards.
 
-**Grid Layout:**
-- Automatically adjusts to screen size
-- Minimum card width: 400px
-- Cards expand to fill available space
-- Hover effect for visual feedback
-
-**Card Contents:**
-Each recording card shows:
-- **Recording ID**: Unique identifier (e.g., "Recording #42")
-- **Status Tag**: Color-coded status indicator
-  - Green (Success): Recording completed successfully
-  - Yellow (Warning): Recording in progress
-  - Red (Danger): Recording failed
-- **Listener ID**: Which listener captured this recording
-- **Frequency**: Transmission frequency
-- **Duration**: Length of recording in seconds (includes pre/post roll)
-- **Started Timestamp**: When recording began
-- **Completed Timestamp**: When recording finished (if completed)
-- **Waterfall Thumbnail**: Preview image (400px height, click to enlarge)
-- **Error Message**: Displayed for failed recordings
+Each recording card displays comprehensive information. The recording ID appears at the top, using a format like "Recording #42" for easy identification. A status tag uses color-coding to indicate recording state. Green tags marked "Success" indicate completed recordings. Yellow tags marked "Warning" indicate recordings in progress. Red tags marked "Danger" indicate failed recordings. The listener ID identifies which listener captured this specific recording. The frequency shows the transmission frequency for this recording. The duration displays the length of the recording in seconds, including pre-roll and post-roll buffers. The started timestamp shows when the recording began. The completed timestamp shows when the recording finished, if it has completed. The waterfall thumbnail provides a preview image at 300 pixels height, clickable to enlarge. For failed recordings, an error message displays in a red alert box explaining what went wrong.
 
 ### Waterfall Thumbnails
 
-**Thumbnail Display:**
-- Fixed height: 400px
-- Full width of card
-- Object-fit: Cover (shows top portion of waterfall)
-- Hover effect: Slight scale increase (1.02x)
-- Click to open full-screen modal
+Waterfall thumbnails use specific display characteristics for optimal preview. The thumbnail maintains a fixed height of 300 pixels while spanning the full width of its container card. Object-fit cover mode displays the top portion of the waterfall image. A hover effect provides slight scaling to 102 percent to indicate interactivity. Clicking any thumbnail opens the full-screen modal viewer for detailed examination.
 
-**Why Top Portion?**
-Waterfall images flow from top (most recent) to bottom (oldest), so the thumbnail shows the end of the transmission, which is often most visually interesting.
+The thumbnail displays the top portion of the waterfall because waterfall images flow from top (most recent) to bottom (oldest). This means the thumbnail shows the end of the transmission, which often proves most visually interesting and diagnostic.
 
 ### Empty State
 
-If no recordings exist for a challenge:
-- Empty state illustration displayed
-- Message: "No recordings available for this challenge yet."
-- Indicates listeners need to be online and priority threshold met
+When no recordings exist for a challenge, the interface displays a helpful empty state. An empty state illustration provides visual context. A message explains "No recordings available for this challenge yet." Additional text indicates that listeners need to be online and the priority threshold must be met for recordings to occur.
 
 ## Inline Recordings View
 
-The Challenges page provides quick access to recent recordings without navigating away.
+The Challenges page provides quick access to recent recordings without requiring navigation to a separate page.
 
 ### Accessing Inline View
 
-**Steps:**
-1. Navigate to **Manage Challenges → Live Status** tab
-2. Locate the challenge you want to view
-3. Click the **expand arrow** (►) in the leftmost column
-4. The row expands to show recordings section
+To access the inline recordings view, navigate to Manage Challenges and select the Live Status tab. Locate the challenge you want to examine in the list. Click the expand arrow in the leftmost column of the challenge row. The row expands to reveal a recordings section with recent captures.
 
 ### What's Displayed
 
-**Recordings Section:**
-- **Section Header**: "Recordings"
-- **First 3 Most Recent**: Shows up to 3 latest recordings in grid format
-- **Recording Cards**: Same format as Recording History page
-  - Waterfall thumbnail (400px height)
-  - Metadata (listener, frequency, duration, timestamps)
-  - Status tag
-- **"View All" Link**: If more than 3 recordings exist
-  - Text: "View All {count} Recordings →"
-  - Links to full Recording History page
+The recordings section displays several elements for quick reference. A section header labeled "Recordings" identifies the content area. The first three most recent recordings appear in grid format, matching the style of the full Recording History page. Recording cards use the same format as the full page, showing waterfall thumbnails at 300 pixels height along with complete metadata including listener, frequency, duration, and timestamps. Status tags indicate the state of each recording.
 
-**Benefits:**
-- Quick verification without page navigation
-- See latest recording immediately
-- Compare recent recordings side-by-side
-- Minimal disruption to challenge management workflow
+When more than three recordings exist for the challenge, a "View All" link appears. This link displays text in the format "View All {count} Recordings" with an arrow, making the total count visible. Clicking this link navigates to the full Recording History page for comprehensive access.
+
+This inline view provides several benefits. Quick verification occurs without page navigation, saving time during active monitoring. The latest recording appears immediately for rapid assessment. Recent recordings can be compared side-by-side for trend analysis. Minimal disruption to the challenge management workflow ensures efficient operations.
 
 ### Loading States
 
-**While Loading:**
-- Loading spinner icon (animated)
-- Text: "Loading recordings..."
-
-**After Loading:**
-- Recordings grid appears
-- Or "No recordings available" message if none exist
+The interface provides clear feedback during data loading. While loading recordings, an animated loading spinner icon appears with text reading "Loading recordings..." to indicate activity. After loading completes, either the recordings grid appears with available data, or a "No recordings available" message displays if none exist.
 
 ## Waterfall Image Modal
 
-The modal viewer provides a full-screen view of waterfall images with detailed metadata.
+The modal viewer provides a full-screen view of waterfall images with comprehensive metadata for detailed analysis.
 
 ### Opening the Modal
 
-**How to Open:**
-- Click any waterfall thumbnail in Recording History page
-- Click any waterfall thumbnail in inline recordings view
-- Image enlarges to modal dialog (90% viewport width)
+To open the modal viewer, click any waterfall thumbnail in the Recording History page or any waterfall thumbnail in the inline recordings view. The image enlarges to a modal dialog occupying 90 percent of the viewport width for detailed examination.
 
 ### Modal Components
 
-**Header:**
-- Title: "Recording #{id} - Waterfall"
-- Close button (X) in top-right
+The modal header displays a title in the format "Recording #{id} - Waterfall" to identify the specific recording. A close button marked with an X appears in the top-right corner for dismissing the modal.
 
-**Metadata Section:**
-Displays recording details in a 2-column grid:
-- Challenge name
-- Listener ID
-- Frequency
-- Duration
-- Start timestamp
-- Completion timestamp (if available)
+The metadata section displays recording details in a two-column grid format for easy reading. This section shows the challenge name, listener ID that captured the recording, frequency of transmission, duration of the recording, start timestamp, and completion timestamp if available.
 
-**Waterfall Image:**
-- Full-resolution display
-- Maximum width: 100% of modal
-- Height: Auto-scaled to maintain aspect ratio
-- Border and rounded corners for clean presentation
-- Scrollable if image is very tall
+The waterfall image displays at full resolution for detailed analysis. Maximum width is 100 percent of the modal container. Height scales automatically to maintain the correct aspect ratio. A border and rounded corners provide clean visual presentation. The content scrolls if the image height exceeds the viewport.
 
-**Background:**
-- Light gray background (`--el-fill-color-light`)
-- Provides contrast for metadata
-- Consistent with Element Plus design system
+The background uses a light gray color from the Element Plus color system variable. This provides contrast for the metadata section and maintains consistency with the overall design system.
 
 ### Typical Waterfall Characteristics
 
-**Dimensions:**
-- Width: ~1000 pixels (frequency bins)
-- Height: Variable based on recording duration
-  - 10 second recording: ~200 pixels
-  - 3 minute recording: ~3600 pixels
-- Aspect ratio optimized for frequency readability
+Waterfall images have specific dimensional and visual characteristics. Width typically measures approximately 1000 pixels representing frequency bins across the capture bandwidth. Height varies based on recording duration, with a 10-second recording producing approximately 200 pixels and a 3-minute recording producing approximately 3600 pixels. The aspect ratio is optimized for frequency readability across the captured spectrum.
 
-**Color Scheme:**
-- Blue → Green → Yellow → Red (increasing power)
-- Dark blue/black background (noise floor)
-- Bright colors indicate strong signals
-- Horizontal axis: Frequency (centered on transmission frequency)
-- Vertical axis: Time (top = most recent, bottom = oldest)
+The color scheme follows a standard spectrum representation. Colors progress from blue through green and yellow to red, indicating increasing power levels. Dark blue or black background represents the noise floor. Bright colors indicate strong signals. The horizontal axis represents frequency, centered on the transmission frequency. The vertical axis represents time, with the top showing the most recent data and the bottom showing the oldest.
 
-**Visual Elements:**
-- Signal appears as colored stripe or pattern
-- Width indicates bandwidth
-- Color intensity indicates signal strength
-- Clear start/stop boundaries show pre/post roll
-- Frequency offset labeled in MHz
+Visual elements within the waterfall provide diagnostic information. The signal appears as a colored stripe or pattern indicating transmission activity. Signal width indicates bandwidth of the transmission. Color intensity indicates signal strength relative to the noise floor. Clear start and stop boundaries show the pre-roll and post-roll buffer periods. Frequency offset labeling appears in megahertz for reference.
 
 ## Recording Status Indicators
 
-Recordings can have three status states, indicated by color-coded tags:
+Recordings can have three distinct status states, each indicated by color-coded tags for quick recognition.
 
 ### Success (Green Tag)
 
-**Status:** `completed`
+A completed status indicates successful recording. This means the recording was captured successfully from start to finish. The waterfall image was generated without errors. The image was uploaded to the server successfully. The recording is now available for viewing through the interface.
 
-**Meaning:**
-- Recording captured successfully
-- Waterfall image generated
-- Image uploaded to server
-- Available for viewing
-
-**Visual:**
-- Green tag with "completed" text
-- Waterfall thumbnail displayed
-- All metadata populated
+Visual indicators include a green tag displaying "completed" text. The waterfall thumbnail displays normally. All metadata fields are populated with complete information.
 
 ### Warning (Yellow Tag)
 
-**Status:** `recording` or `assigned`
+A recording or assigned status indicates work in progress. This means the recording is currently in progress with the listener actively capturing spectrum data. The waterfall has not yet been generated as the capture is ongoing. This represents a temporary state that typically lasts less than five minutes.
 
-**Meaning:**
-- Recording currently in progress
-- Listener is actively capturing spectrum
-- Waterfall not yet generated
-- Temporary state (usually <5 minutes)
-
-**Visual:**
-- Yellow tag with status text
-- No thumbnail (recording not complete)
-- Partial metadata (started timestamp only)
+Visual indicators include a yellow tag displaying the current status text. No thumbnail appears since the recording is incomplete. Only partial metadata is available, typically showing just the started timestamp.
 
 ### Danger (Red Tag)
 
-**Status:** `failed`
+A failed status indicates an error occurred during recording. This means the recording encountered an error preventing completion. Waterfall generation failed due to technical issues. Upload to the server failed. An SDR device issue prevented capture.
 
-**Meaning:**
-- Recording encountered an error
-- Waterfall generation failed
-- Upload failed
-- SDR device issue
-
-**Visual:**
-- Red tag with "failed" text
-- No thumbnail displayed
-- Error message in red alert box
-- Common errors:
-  - "SDR device not available"
-  - "Failed to generate waterfall"
-  - "Upload timeout"
-  - "GNU Radio flowgraph error"
+Visual indicators include a red tag displaying "failed" text. No thumbnail appears due to the failure. An error message appears in a red alert box explaining the failure. Common error messages include "SDR device not available" when another process is using the SDR or the device is disconnected, "Failed to generate waterfall" when GNU Radio or Matplotlib encounters an error, "Upload timeout" when network issues prevent file transfer, and "GNU Radio flowgraph error" when configuration or device parameters are invalid.
 
 ## Understanding Recording Priority
 
-Not every transmission is recorded. The server uses a priority algorithm to decide which transmissions to capture:
+Not every transmission is recorded, as the server uses a priority algorithm to decide which transmissions warrant capture while balancing resource utilization.
 
 ### Priority Factors
 
-**1. Never Recorded (Priority: 1000)**
-- Highest priority
-- Challenges never recorded are captured on first opportunity
-- Ensures all challenges have at least one recording
+Never-recorded challenges receive the highest priority at 1000. This ensures all challenges have at least one recording on first opportunity, providing baseline documentation for every challenge.
 
-**2. Transmissions Since Last Recording**
-- More transmissions = higher priority
-- Formula: `transmissions_count × time_multiplier`
-- Naturally balances recording frequency with system load
+Transmissions since the last recording influence priority through a count-based factor. More transmissions since the last recording increases priority proportionally. The formula multiplies transmission count by a time multiplier. This naturally balances recording frequency with system load.
 
-**3. Time Since Last Recording**
-- Older recordings increase priority over time
-- Time multiplier: `max(1.0, min(10.0, minutes_since / 60.0))`
-- Minimum 1x multiplier, increasing to 10x over time
-- Prevents any challenge from going too long without a recording
+Time since last recording applies a multiplier that increases over time. The time multiplier formula calculates as maximum of 1.0 and minimum of 10.0, based on minutes since last recording divided by 60. Minimum multiplier is 1.0 immediately after recording. Maximum multiplier of 10.0 applies after sufficient time has passed. This prevents any challenge from going too long without a recording.
 
-**4. Challenge Priority Setting**
-- Configurable per challenge (0-100 scale)
-- Converts to boost: `1.0 + (challenge_priority / 10.0)`
-- Priority 0 = 1.0x (no change), Priority 10 = 2.0x, Priority 50 = 6.0x
-- Allows manual prioritization of important challenges
+Challenge priority settings allow manual prioritization. Configuration uses a 0 to 100 scale per challenge. Conversion to boost multiplier adds 1.0 to the priority divided by 10. Priority 0 equals 1.0 times multiplier with no change. Priority 10 equals 2.0 times multiplier. Priority 50 equals 6.0 times multiplier. This allows manual prioritization of important challenges.
 
 ### Priority Threshold
 
-**Default Threshold: 1.0**
+The default threshold for recording assignment is 1.0. When priority is at or above the threshold of 1.0, a recording is assigned to an available listener. The listener receives a WebSocket notification with recording parameters. A waterfall will be generated for the transmission.
 
-**Above Threshold (Priority ≥ 1.0):**
-- Recording is assigned
-- Listener receives WebSocket notification
-- Waterfall will be generated
+When priority is below the threshold of 1.0, recording is skipped for this transmission. The challenge was recorded recently and doesn't require immediate capture. Listener resources are conserved for higher-priority captures.
 
-**Below Threshold (Priority < 1.0):**
-- Recording skipped for this transmission
-- Challenge was recently recorded
-- Listener resources conserved
+### Why Not Record Everything
 
-### Why Not Record Everything?
+Priority-based recording serves several important purposes. Resource efficiency recognizes that listeners cannot capture every transmission. With 10 or more challenges transmitting 10 times per hour each, continuous recording would produce over 100 recordings per hour, overwhelming storage and processing capacity.
 
-**Reasons for Priority-Based Recording:**
-1. **Resource Efficiency**: Listeners can't capture every transmission (10+ challenges × 10 transmissions/hour = 100+ recordings/hour)
-2. **Storage Conservation**: Waterfall images are ~400 KB each
-3. **Diminishing Returns**: Recording the same challenge every 6 minutes provides little new information
-4. **Balanced Coverage**: Ensures all challenges get recorded periodically, not just popular ones
+Storage conservation addresses the fact that waterfall images average approximately 300 kilobytes each. Continuous recording would rapidly consume disk space.
 
-**Result:** Each challenge is recorded every few hours or after several transmissions, providing representative spectrum samples without overwhelming the system.
+Diminishing returns recognizes that recording the same challenge every six minutes provides little new information. Periodic sampling captures representative data without excessive redundancy.
+
+Balanced coverage ensures all challenges get recorded periodically rather than focusing exclusively on the most frequently transmitted challenges. This provides comprehensive documentation across the entire challenge set.
+
+The result is that each challenge is recorded every few hours or after several transmissions, providing representative spectrum samples without overwhelming system resources.
 
 ## Navigation and Workflow
 
 ### Typical Workflows
 
-**Workflow 1: Verify New Challenge**
-1. Navigate to **Manage Challenges → Live Status**
-2. Find your new challenge
-3. Trigger transmission with **"Trigger Now"** button
-4. Wait 2-5 minutes for recording to complete
-5. Expand the challenge row
-6. View waterfall thumbnail inline
-7. Verify signal appears as expected
+Several common workflows demonstrate effective use of the listener web interface.
 
-**Workflow 2: Compare Recordings Over Time**
-1. Click challenge expand arrow
-2. Click **"View All Recordings →"**
-3. Scroll through recordings grid
-4. Click thumbnails to open modal viewer
-5. Compare signal characteristics across recordings
-6. Identify any frequency drift, power changes, or anomalies
+To verify a new challenge, navigate to Manage Challenges and select the Live Status tab. Find your newly created challenge in the list. Trigger a transmission using the "Trigger Now" button to queue it immediately. Wait 2 to 5 minutes for the recording to complete, as this includes transmission time, processing, and upload. Expand the challenge row to view inline recordings. View the waterfall thumbnail inline to verify the signal appears as expected without requiring additional navigation.
 
-**Workflow 3: Debug Transmission Issues**
-1. Navigate to **Dashboard** to see failed transmissions
-2. Go to **Manage Challenges → Live Status**
-3. Find the problematic challenge
-4. View recordings to verify:
-   - Signal is present (transmission working)
-   - Frequency is correct
-   - Signal strength is adequate
-   - Modulation looks correct
-5. If no signal visible, check runner logs
+To compare recordings over time, click the challenge expand arrow to reveal details. Click "View All Recordings" to access the full history page. Scroll through the recordings grid to examine multiple captures. Click thumbnails to open the modal viewer for detailed examination. Compare signal characteristics across recordings to identify frequency drift, power changes, or other anomalies that might indicate configuration or hardware issues.
 
-**Workflow 4: Generate Documentation**
-1. Navigate to Recording History page for each challenge
-2. Open waterfall modal for best-quality recording
-3. Take screenshot (or right-click → Save image)
-4. Use for documentation, write-ups, or reference
-5. Metadata is preserved for later reference
+To debug transmission issues, navigate to the Dashboard to see any failed transmissions in the recent activity feed. Go to Manage Challenges and select the Live Status tab. Find the problematic challenge in the list. View recordings to verify several key aspects. Confirm the signal is present, indicating transmission is actually occurring. Verify the frequency is correct and matches configuration. Check that signal strength is adequate for participants to receive. Ensure modulation characteristics look correct for the challenge type. If no signal is visible in the waterfall, check runner logs for transmission errors.
+
+To generate documentation, navigate to the Recording History page for each challenge you want to document. Open the waterfall modal for the best-quality recording of each challenge. Take a screenshot using your operating system's screenshot tool, or right-click and save the image directly. Use these waterfall images for documentation, write-ups, or reference materials. The metadata is preserved for later reference to technical details.
 
 ### Quick Access
 
-**Breadcrumb Navigation:**
-- Recording History page includes "← Back to Challenges" button
-- Returns to Challenges page when clicked
-- Preserves your place in the workflow
+The interface provides several navigation aids for efficient workflow. Breadcrumb navigation on the Recording History page includes a "Back to Challenges" button that returns you to the Challenges page when clicked, preserving your place in the workflow.
 
-**Direct URL Access:**
-- Recording History: `/recordings/{challenge_id}`
-- Bookmark specific challenge recordings
-- Share URLs with team members
+Direct URL access supports bookmarking and sharing. Recording History pages use URLs in the format /recordings/{challenge_id}. You can bookmark specific challenge recordings for quick access. Share URLs with team members for collaboration.
 
 ## Recording Metadata Explained
 
-Each recording includes detailed metadata for analysis and troubleshooting:
+Each recording includes detailed metadata for analysis and troubleshooting purposes.
 
 ### Listener ID
 
-**Example:** `listener-1`
+The listener ID appears in a format like "listener-1", serving as the unique identifier of the listener agent that captured this recording. This information proves useful for several purposes. You can compare recordings from different listeners to understand geographic or antenna differences. It helps identify hardware-specific issues that affect only certain listeners. You can track listener performance over time. It aids in debugging antenna or SDR problems specific to particular hardware.
 
-**What it means:**
-- Unique identifier of the listener agent that captured this recording
-- Useful for:
-  - Comparing recordings from different locations
-  - Identifying hardware-specific issues
-  - Tracking listener performance
-  - Debugging antenna or SDR problems
-
-**Multiple Listeners:**
-If you have multiple listeners, you may see different listeners capturing different recordings. This provides:
-- Geographic diversity (if listeners are in different locations)
-- Redundancy (backup if one listener fails)
-- Load distribution (spreads recording work across listeners)
+When multiple listeners are deployed, you may see different listeners capturing different recordings. This provides geographic diversity if listeners are in different physical locations. It offers redundancy serving as backup if one listener fails. It enables load distribution by spreading recording work across multiple listener systems.
 
 ### Frequency
 
-**Example:** `146.550 MHz`
+The frequency appears in a format like "146.550 MHz", indicating the center frequency of the recording. This should match the challenge's configured frequency under normal circumstances. Mismatches indicate configuration issues requiring investigation.
 
-**What it means:**
-- Center frequency of the recording
-- Should match the challenge's configured frequency
-- If mismatched, indicates configuration issue
-
-**Frequency Ranges:**
-For challenges using frequency ranges (not fixed frequency):
-- Each recording shows the actual frequency used for that transmission
-- Frequency varies per transmission within the defined range
-- Waterfall shows offset from center frequency
+For challenges using frequency ranges rather than fixed frequencies, each recording shows the actual frequency used for that specific transmission. Frequency varies per transmission within the defined range. The waterfall shows offset from the center frequency for reference.
 
 ### Duration
 
-**Example:** `185.0s`
+The duration appears in a format like "185.0s", indicating the total recording length in seconds. This includes pre-roll buffer time, typically 5 seconds before transmission starts. It includes the actual transmission duration. It includes post-roll buffer time, typically 5 seconds after transmission ends. The actual transmission time equals the total duration minus pre-roll and post-roll times.
 
-**What it means:**
-- Total recording length in seconds
-- Includes pre-roll (typically 5s before transmission)
-- Includes post-roll (typically 5s after transmission)
-- Actual transmission time = duration - pre_roll - post_roll
-
-**Why Pre/Post Roll?**
-- Captures transmission start (ensures nothing missed)
-- Captures transmission end (verifies complete transmission)
-- Shows noise floor before/after for comparison
-- Provides context for signal analysis
+Pre-roll and post-roll buffers serve important purposes. Pre-roll captures transmission start timing, ensuring nothing is missed at the beginning. Post-roll captures transmission end, verifying complete transmission occurred. They show the noise floor before and after transmission for comparison. They provide context for signal analysis and troubleshooting.
 
 ### Timestamps
 
-**Started:** `2025-11-24 10:30:00`
-**Completed:** `2025-11-24 10:33:05`
+Timestamps appear in formats like "2025-11-24 10:30:00" for started and "2025-11-24 10:33:05" for completed. The started timestamp indicates when the listener began recording, corresponding to the pre-roll start time. The completed timestamp shows when the waterfall image was uploaded to the server. The time difference approximately equals the duration plus processing time, typically 5 to 10 seconds for image generation and upload.
 
-**What they mean:**
-- **Started**: When listener began recording (pre-roll start time)
-- **Completed**: When waterfall image was uploaded
-- Time difference ≈ duration + processing time (~5-10 seconds)
-
-**Uses:**
-- Correlate with transmission logs
-- Verify timing synchronization
-- Identify delays or lags
-- Troubleshoot missed recordings
+These timestamps prove useful for several purposes. You can correlate recordings with transmission logs to verify timing. They help verify timing synchronization between components. They identify delays or lags in the recording pipeline. They help troubleshoot missed recordings by comparing expected and actual times.
 
 ### Image Path
 
-**Not displayed in UI, but stored in database**
-
-**Format:** `files/waterfalls/{recording_id}.png`
-
-**Purpose:**
-- Server-side storage location
-- Referenced by `/api/recordings/{id}/image` endpoint
-- Content-addressed storage (by recording ID)
-- Enables efficient caching and CDN distribution
+Although not displayed in the UI, the image path is stored in the database for internal reference. The format follows the pattern files/waterfalls/{recording_id}.png, providing a consistent storage scheme. This path serves several purposes. It indicates the server-side storage location for the file. It is referenced by the /api/recordings/{id}/image endpoint for retrieval. Content-addressed storage by recording ID enables efficient management. It enables efficient caching and content delivery network distribution.
 
 ## Troubleshooting
 
 ### No Recordings Showing
 
-**Possible Causes:**
-1. **No listeners online**
-   - Check **Agents → Listeners** tab
-   - Verify at least one listener shows "Online"
-   - WebSocket should show "Connected"
+When no recordings appear for a challenge, several possible causes should be investigated.
 
-2. **Priority too low**
-   - Challenge was recently recorded
-   - Server skipped this transmission
-   - Wait for priority to increase (more transmissions, more time)
+No listeners online prevents recording assignment. Check the Agents page and select the Listeners tab. Verify at least one listener shows "Online" status. Confirm the WebSocket shows "Connected" status, as this is required for recording assignments.
 
-3. **No transmissions yet**
-   - Challenge must transmit before it can be recorded
-   - Check Dashboard for transmission activity
-   - Trigger manual transmission to test
+Priority too low causes the server to skip recording. The challenge may have been recorded recently, causing priority to fall below threshold. The server skipped this transmission based on the priority algorithm. Wait for priority to increase as more transmissions occur and time passes.
 
-4. **Listener frequency mismatch**
-   - Challenge frequency outside listener's capabilities
-   - Check listener config `frequency_limits`
-   - Ensure overlap with challenge frequency
+No transmissions yet means there's nothing to record. The challenge must transmit before it can be recorded. Check the Dashboard for transmission activity to verify challenges are executing. Trigger a manual transmission to test the recording pipeline.
 
-**Solutions:**
-- Enable at least one listener in Agents page
-- Verify listener WebSocket connection
-- Wait for challenge to transmit multiple times
-- Check listener logs for assignment messages
+Listener frequency mismatch prevents assignment due to hardware limitations. The challenge frequency may be outside the listener's frequency capabilities. Check the listener configuration for frequency_limits settings. Ensure overlap exists between challenge frequency and listener capabilities.
+
+Solutions include enabling at least one listener through the Agents page. Verify the listener WebSocket connection shows "Connected" status. Wait for the challenge to transmit multiple times to increase priority. Check listener logs for assignment messages indicating the system attempted to assign recordings.
 
 ### Waterfall Image Not Loading
 
-**Symptoms:**
-- Thumbnail shows broken image icon
-- Modal shows blank or error
-- Recording status is "completed"
+When waterfall thumbnails or modal images fail to load, several symptoms and causes should be considered.
 
-**Possible Causes:**
-1. **File missing from server**
-   - Image upload failed
-   - File was deleted manually
-   - Storage directory permissions issue
+Symptoms include the thumbnail showing a broken image icon. The modal shows blank space or an error message. The recording status shows "completed" despite the missing image.
 
-2. **Network issue**
-   - Server unreachable
-   - Firewall blocking image requests
-   - Proxy timeout
+Files missing from the server cause loading failures. The image upload may have failed during recording. Files might have been deleted manually from storage. Storage directory permissions issues prevent file access.
 
-3. **Large image timeout**
-   - Very tall waterfall (long recording)
-   - Slow network connection
-   - Server timeout
+Network issues prevent image delivery. The server may be unreachable from the client. Firewall rules might be blocking image requests. Proxy timeout settings may be too short for large images.
 
-**Solutions:**
-- Check browser console for HTTP errors
-- Verify file exists: `ls files/waterfalls/{recording_id}.png`
-- Check server logs for image serving errors
-- Increase server timeout for large images
-- Test with `curl http://server/api/recordings/{id}/image`
+Large image timeout affects long recordings. Very tall waterfall images from long recordings require more time to transfer. Slow network connections exacerbate the problem. Server timeout configuration may be too aggressive.
+
+Solutions include checking the browser console for HTTP errors indicating the specific problem. Verify files exist on the server using ls files/waterfalls/{recording_id}.png. Check server logs for image serving errors. Increase server timeout settings for large images. Test manually using curl http://server/api/recordings/{id}/image to isolate the issue.
 
 ### Recording Failed
 
-**Symptoms:**
-- Red "failed" status tag
-- Error message in recording card
-- No waterfall image
+Failed recordings display specific symptoms and error messages that guide troubleshooting.
 
-**Common Error Messages:**
+Symptoms include a red "failed" status tag on the recording card. An error message appears in the recording card. No waterfall image is available for viewing.
 
-**"SDR device not available"**
-- Another process using the SDR
-- Device disconnected
-- USB power issue
-- Solution: Check listener logs, restart listener process
+"SDR device not available" indicates another process is using the SDR, preventing exclusive access. The device may be disconnected from the USB bus. USB power issues might be preventing device enumeration. Solutions include checking listener logs for detailed error information and restarting the listener process to reset device state.
 
-**"Failed to generate waterfall"**
-- GNU Radio error
-- Matplotlib import error
-- Insufficient memory
-- Solution: Check listener system resources, review logs
+"Failed to generate waterfall" points to GNU Radio errors during capture or processing. Matplotlib import errors prevent image generation. Insufficient memory prevents processing large FFT data. Solutions include checking listener system resources for memory and CPU constraints and reviewing logs for detailed error messages.
 
-**"Upload timeout"**
-- Network issue between listener and server
-- Server overloaded
-- Image too large
-- Solution: Check network, increase timeout, reduce recording duration
+"Upload timeout" indicates network issues between listener and server. The server may be overloaded and unable to accept uploads quickly. The image file may be too large for current timeout settings. Solutions include checking network connectivity and bandwidth, increasing timeout values in configuration, and reducing recording duration to decrease file size.
 
-**"GNU Radio flowgraph error"**
-- Invalid device string
-- Unsupported sample rate
-- Gain out of range
-- Solution: Validate listener config, test with `osmocom_fft`
+"GNU Radio flowgraph error" suggests configuration problems. Invalid device strings prevent device initialization. Unsupported sample rates cause device errors. Gain values outside the device range cause initialization failures. Solutions include validating listener configuration against device capabilities and testing the device using osmocom_fft to verify basic operation.
 
 ### Recordings Section Won't Expand
 
-**Symptoms:**
-- Click expand arrow, nothing happens
-- No recordings section appears
-- No error message
+When clicking the expand arrow produces no result, several causes should be investigated.
 
-**Possible Causes:**
-1. **JavaScript error**
-   - Check browser console
-   - Reload page (Ctrl+F5)
+Symptoms include clicking the expand arrow with no visible response. No recordings section appears after clicking. No error message displays to explain the failure.
 
-2. **API request failing**
-   - Check Network tab in browser DevTools
-   - Look for failed `/api/challenges/{id}/recordings` request
-   - Check server logs
+JavaScript errors prevent the interface from functioning. Check the browser console for error messages. Reload the page using Ctrl+F5 to clear cached code.
 
-3. **Empty response**
-   - No recordings exist yet
-   - API returning empty array
-   - Should show "No recordings available" message
+API request failing prevents data retrieval. Check the Network tab in browser DevTools for failed requests. Look for failed /api/challenges/{id}/recordings requests specifically. Check server logs for API endpoint errors.
 
-**Solutions:**
-- Hard refresh page (Ctrl+Shift+R)
-- Check browser console for errors
-- Verify API endpoint is accessible
-- Review server logs for API errors
+Empty response provides no data to display. No recordings may exist yet for this challenge. The API might be returning an empty array correctly. The interface should show "No recordings available" in this case.
+
+Solutions include hard refreshing the page using Ctrl+Shift+R to clear all caches. Checking the browser console for JavaScript errors. Verifying API endpoint accessibility using browser DevTools. Reviewing server logs for API-related errors.
 
 ### Poor Waterfall Quality
 
-**Symptoms:**
-- Signal barely visible
-- Excessive noise
-- Washed out colors
-- Frequency axis unclear
+When waterfall images show poor signal visibility, several factors may be responsible.
 
-**Possible Causes:**
-1. **Low RF gain**
-   - Listener gain setting too low
-   - Signal below noise floor
-   - Solution: Increase `gain` in listener config (try 40-50 dB)
+Symptoms include the signal being barely visible against the noise floor. Excessive noise obscuring the signal. Washed out colors preventing clear signal identification. Unclear frequency axis labeling.
 
-2. **Poor antenna**
-   - Antenna not resonant at frequency
-   - Poor placement or orientation
-   - Solution: Use appropriate antenna for frequency band
+Low RF gain causes weak signal capture. Listener gain settings may be too low for the signal strength. The signal falls below the noise floor in the recording. Solutions include increasing gain in the listener configuration to values like 40 to 50 dB for better sensitivity.
 
-3. **RF interference**
-   - Strong local signals overwhelming SDR
-   - Harmonics from nearby transmitters
-   - Solution: Move listener, add filtering, adjust gain
+Poor antenna selection or placement affects signal quality. The antenna may not be resonant at the transmission frequency. Poor antenna placement or orientation reduces signal strength. Solutions include using an appropriate antenna designed for the frequency band being monitored.
 
-4. **Sample rate mismatch**
-   - Sample rate too narrow (signal cut off)
-   - Sample rate too wide (signal looks thin)
-   - Solution: Match transmitter sample rate (typically 2 MHz)
+RF interference overwhelms the SDR receiver. Strong local signals may be overloading the receiver. Harmonics from nearby transmitters create false signals. Solutions include moving the listener to a different location with less interference, adding filtering to remove out-of-band signals, and adjusting gain to prevent overload.
+
+Sample rate mismatch affects signal representation. Sample rate too narrow causes the signal to be cut off at the edges. Sample rate too wide makes the signal appear thin in the waterfall. Solutions include matching the transmitter sample rate, typically 2 MHz for most challenges.
 
 ## Related Guides
 
-- [Listener Setup](Listener-Setup) - Configure and deploy listener agents
-- [Agents Management](Web-Interface-Runners) - View listener status and WebSocket connection
-- [Challenge Management](Web-Interface-Challenges) - Manage challenges and trigger transmissions
-- [Dashboard](Web-Interface-Dashboard) - Monitor transmission activity
-- [Architecture](Architecture) - Understanding recording priority algorithm
-- [Troubleshooting](Troubleshooting) - Common issues and solutions
+For configuring and deploying listener agents, see the Listener Setup guide. To view listener status and WebSocket connection state, consult the Agents Management guide. For managing challenges and triggering transmissions, review the Challenge Management guide. To monitor transmission activity system-wide, see the Dashboard guide. For understanding the recording priority algorithm in detail, refer to the Architecture documentation. For common issues and solutions beyond the UI, consult the Troubleshooting Guide.
