@@ -3833,15 +3833,18 @@ radios:
         @self.require_csrf
         def pause_system():
             """Pause all transmissions."""
+            logger.info(f"Pause request received from user {request.admin_username}")
             self.db.set_system_state('paused', 'true')
             # Clear auto_paused flag when manually pausing (manual override)
             self.db.set_system_state('auto_paused', 'false')
 
+            logger.info("Broadcasting pause event to all WebSocket clients")
             self.broadcast_event('system_control', {
                 'action': 'pause',
                 'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
+            logger.info("Pause event broadcast complete")
 
             return jsonify({'status': 'paused'}), 200
 
@@ -3850,15 +3853,18 @@ radios:
         @self.require_csrf
         def resume_system():
             """Resume transmissions."""
+            logger.info(f"Resume request received from user {request.admin_username}")
             self.db.set_system_state('paused', 'false')
             # Clear auto_paused flag when manually resuming (manual override)
             self.db.set_system_state('auto_paused', 'false')
 
+            logger.info("Broadcasting resume event to all WebSocket clients")
             self.broadcast_event('system_control', {
                 'action': 'resume',
                 'auto': False,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
+            logger.info("Resume event broadcast complete")
 
             return jsonify({'status': 'resumed'}), 200
 
@@ -4198,10 +4204,13 @@ radios:
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
         """Broadcast an event to all connected WebSocket clients."""
         try:
-            self.socketio.emit('event', {
+            event_data = {
                 'type': event_type,
                 **data
-            }, namespace='/', broadcast=True)
+            }
+            logger.debug(f"Broadcasting event '{event_type}' to all clients: {event_data}")
+            self.socketio.emit('event', event_data, namespace='/', broadcast=True)
+            logger.debug(f"Event '{event_type}' broadcast complete")
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
 
