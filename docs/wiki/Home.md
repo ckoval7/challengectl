@@ -15,6 +15,8 @@ ChallengeCtl consists of four main components:
 - **Listener**: A client application that captures RF transmissions using SDR receivers and generates waterfall images for spectrum visualization
 - **Frontend**: A Vue.js web application for monitoring system status, managing challenges, and viewing real-time logs
 
+!["Screenshot of Public Dashboard"](/docs/images/live_status.png "Public Dashboard")
+
 ## Documentation
 
 ### Getting Started
