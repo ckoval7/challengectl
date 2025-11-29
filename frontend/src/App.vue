@@ -286,6 +286,7 @@ export default {
 
     // Initialize theme from localStorage or default to dark
     onMounted(() => {
+      console.log('[App.vue] onMounted called')
       const savedTheme = localStorage.getItem('theme')
       if (savedTheme) {
         isDark.value = savedTheme === 'dark'
@@ -294,7 +295,10 @@ export default {
       loadConferenceName()
 
       // Connect WebSocket if authenticated
-      if (checkAuth()) {
+      const isAuthenticated = checkAuth()
+      console.log('[App.vue] checkAuth() returned:', isAuthenticated)
+      if (isAuthenticated) {
+        console.log('[App.vue] Registering WebSocket listeners')
         loadPauseState()
         websocket.connect()
         websocket.on('system_control', handleSystemControl)
@@ -302,6 +306,9 @@ export default {
 
         // Reload pause state on WebSocket reconnection to sync with server
         websocket.socket?.on('connect', handleWebSocketReconnect)
+        console.log('[App.vue] WebSocket listeners registered')
+      } else {
+        console.log('[App.vue] Not authenticated, skipping WebSocket setup')
       }
     })
 
