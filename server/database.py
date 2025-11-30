@@ -762,14 +762,47 @@ class Database:
 
         return base_priority + minutes_waiting
 
-    def calculate_dynamic_priority(self, challenge: Dict, now: Optional[datetime] = None) -> float:
+    def shift_challenge_timings(self, pause_duration_seconds: float) -> int:
+        """Shift all challenge next_tx times forward by pause duration.
+
+        This prevents challenges from accumulating priority during system pause.
+
+        Args:
+            pause_duration_seconds: Duration of pause in seconds
+
+        Returns:
+            Number of challenges shifted
+        """
+        if pause_duration_seconds <= 0:
+            logger.warning(f"Invalid pause duration: {pause_duration_seconds}s, skipping timing shift")
+            return 0
+
+        shift_delta = timedelta(seconds=pause_duration_seconds)
+        shifted_count = 0
+
+        with self.timing_lock:
+            for challenge_id, timing in self.challenge_timing.items():
+                if 'next_tx' in timing and timing['next_tx'] is not None:
+                    old_next_tx = timing['next_tx']
+                    timing['next_tx'] = old_next_tx + shift_delta
+                    shifted_count += 1
+                    logger.debug(f"Shifted challenge {challenge_id} next_tx from {old_next_tx.isoformat()} "
+                               f"to {timing['next_tx'].isoformat()} (+{pause_duration_seconds:.1f}s)")
+
+        if shifted_count > 0:
+            logger.info(f"Shifted {shifted_count} challenge timings forward by {pause_duration_seconds:.1f}s due to system pause")
+
+        return shifted_count
+
+    def calculate_dynamic_priority(self, challenge: Dict, now: Optional[datetime] = None, manually_triggered: Optional[set] = None) -> float:
         """Calculate dynamic priority for a challenge based on time waiting.
 
-        Dynamic priority = base_priority + minutes_waiting_boost
+        Dynamic priority = base_priority + minutes_waiting_boost + manual_trigger_boost
 
         Args:
             challenge: Challenge dictionary with 'priority' and 'last_tx_time' fields
             now: Current time (defaults to now if not provided)
+            manually_triggered: Set of challenge_ids that were manually triggered (highest priority)
 
         Returns:
             Float priority value (higher = more urgent)
@@ -778,6 +811,11 @@ class Database:
             now = datetime.now(timezone.utc)
 
         base_priority = challenge.get('priority', 0)
+
+        # Check if this challenge was manually triggered - give it maximum priority boost
+        if manually_triggered and challenge['challenge_id'] in manually_triggered:
+            # Manually triggered challenges get priority 10000 (higher than never-transmitted 1000)
+            return 10000.0 + base_priority
 
         # Calculate minutes since challenge became ready
         # For never-transmitted challenges, use a high boost
@@ -810,11 +848,16 @@ class Database:
 
         return dynamic_priority
 
-    def assign_challenge(self, agent_id: str, timeout_minutes: int = 5) -> Optional[Dict]:
+    def assign_challenge(self, agent_id: str, timeout_minutes: int = 5, manually_triggered: Optional[set] = None) -> Optional[Dict]:
         """
         Assign next available challenge to an agent.
         Uses pessimistic locking to prevent race conditions.
-        Challenges are prioritized dynamically based on base priority + time waiting.
+        Challenges are prioritized dynamically based on base priority + time waiting + manual trigger boost.
+
+        Args:
+            agent_id: ID of the agent requesting work
+            timeout_minutes: Assignment timeout in minutes
+            manually_triggered: Set of challenge_ids that were manually triggered (get highest priority)
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -861,7 +904,7 @@ class Database:
 
                 # Sort by dynamic priority (highest first)
                 ready_challenges.sort(
-                    key=lambda c: self.calculate_dynamic_priority(c, now),
+                    key=lambda c: self.calculate_dynamic_priority(c, now, manually_triggered),
                     reverse=True
                 )
 

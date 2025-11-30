@@ -1,7 +1,7 @@
 <template>
   <div class="public-dashboard">
     <div class="header">
-      <h1>Live Challenge Status</h1>
+      <h1>{{ conference.name }}</h1>
       <div class="countdown-wrapper">
         <ConferenceCountdown />
       </div>
@@ -214,7 +214,7 @@ export default {
 
     // Conference info (could be loaded from config)
     const conference = ref({
-      name: 'RF CTF Challenge Status'
+      name: 'SDR Challenge Status'
     })
 
     // Initialize theme from localStorage or default to dark
@@ -256,6 +256,16 @@ export default {
     const hasAnyActiveStatusVisible = computed(() => {
       return challenges.value.some(c => c.is_active !== undefined)
     })
+
+    const loadConferenceInfo = async () => {
+      try {
+        const response = await api.get('/conference')
+        conference.value.name = response.data.name || 'SDR Challenge Status'
+      } catch (err) {
+        console.error('Error loading conference info:', err)
+        // Keep default name on error
+      }
+    }
 
     const loadChallenges = async () => {
       try {
@@ -318,6 +328,7 @@ export default {
 
     onMounted(() => {
       initTheme()
+      loadConferenceInfo() // Load conference name from backend
       loadChallenges() // Initial load
       connectWebSocket() // Connect to real-time updates
     })

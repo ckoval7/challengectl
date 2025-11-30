@@ -251,6 +251,11 @@ class ChallengeCtlServer:
 
                 # Auto-pause if outside hours and not already paused
                 if outside_hours and not is_paused:
+                    # Record pause start time to freeze challenge timing
+                    pause_start = now.isoformat()
+                    self.db.set_system_state('pause_start_time', pause_start)
+                    logger.info(f"Auto-pause: Pause start time recorded: {pause_start}")
+
                     self.db.set_system_state('paused', 'true')
                     self.db.set_system_state('auto_paused', 'true')  # Mark as auto-paused
                     logger.info("Auto-pause: System paused (outside daily hours)")
@@ -263,6 +268,30 @@ class ChallengeCtlServer:
 
                 # Auto-resume if inside hours and was auto-paused
                 elif not outside_hours and is_paused and auto_paused:
+                    # Calculate pause duration and shift challenge timings to prevent priority accumulation
+                    pause_start_str = self.db.get_system_state('pause_start_time', None)
+                    if pause_start_str:
+                        try:
+                            pause_start = datetime.fromisoformat(pause_start_str)
+                            if pause_start.tzinfo is None:
+                                pause_start = pause_start.replace(tzinfo=timezone.utc)
+
+                            pause_duration = (now - pause_start).total_seconds()
+
+                            if pause_duration > 0:
+                                logger.info(f"Auto-pause: System was paused for {pause_duration:.1f}s, shifting challenge timings forward")
+                                shifted = self.db.shift_challenge_timings(pause_duration)
+                                logger.info(f"Auto-pause: Shifted {shifted} challenge(s) to compensate for pause duration")
+                            else:
+                                logger.warning(f"Auto-pause: Invalid pause duration: {pause_duration:.1f}s, not shifting timings")
+
+                            # Clear pause start time
+                            self.db.set_system_state('pause_start_time', '')
+                        except Exception as e:
+                            logger.error(f"Auto-pause: Error calculating pause duration: {e}")
+                    else:
+                        logger.debug("Auto-pause: No pause_start_time found, skipping timing shift")
+
                     self.db.set_system_state('paused', 'false')
                     self.db.set_system_state('auto_paused', 'false')  # Clear auto-paused flag
                     logger.info("Auto-pause: System resumed (within daily hours)")

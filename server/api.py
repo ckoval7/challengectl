@@ -207,6 +207,11 @@ class ChallengeCtlAPI:
         self.force_record_challenges = set()
         self.force_record_lock = threading.Lock()
 
+        # In-memory tracking for manually triggered challenges to give them assignment priority
+        # Used when "Trigger Now" is pressed to ensure the challenge is assigned before others
+        self.manually_triggered_challenges = set()
+        self.manually_triggered_lock = threading.Lock()
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -2056,10 +2061,17 @@ class ChallengeCtlAPI:
             if self.db.get_system_state('paused', 'false') == 'true':
                 return jsonify({'task': None, 'message': 'System paused'}), 200
 
-            # Assign challenge to runner
-            challenge = self.db.assign_challenge(agent_id)
+            # Assign challenge to runner (pass manually triggered set for priority boost)
+            with self.manually_triggered_lock:
+                manually_triggered = self.manually_triggered_challenges.copy()
+            challenge = self.db.assign_challenge(agent_id, manually_triggered=manually_triggered)
 
             if challenge:
+                # Clear manual trigger flag now that challenge has been assigned
+                with self.manually_triggered_lock:
+                    if challenge['challenge_id'] in self.manually_triggered_challenges:
+                        self.manually_triggered_challenges.discard(challenge['challenge_id'])
+                        logger.debug(f"Cleared manual trigger priority for challenge {challenge['name']}")
                 # Process frequency_ranges or manual_frequency_range if present
                 config = challenge['config'].copy()
                 frequency_ranges = config.get('frequency_ranges')
@@ -3688,6 +3700,11 @@ radios:
                     self.force_record_challenges.add(challenge_id)
                     logger.info(f"Challenge {challenge['name']} marked for priority recording on next transmission")
 
+                # Mark this challenge for priority assignment
+                with self.manually_triggered_lock:
+                    self.manually_triggered_challenges.add(challenge_id)
+                    logger.info(f"Challenge {challenge['name']} marked for priority assignment")
+
                 return jsonify({'status': 'triggered'}), 200
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
@@ -3834,6 +3851,12 @@ radios:
         def pause_system():
             """Pause all transmissions."""
             logger.info(f"Pause request received from user {request.admin_username}")
+
+            # Record pause start time to freeze challenge timing
+            pause_start = datetime.now(timezone.utc).isoformat()
+            self.db.set_system_state('pause_start_time', pause_start)
+            logger.info(f"Pause start time recorded: {pause_start}")
+
             self.db.set_system_state('paused', 'true')
             # Clear auto_paused flag when manually pausing (manual override)
             self.db.set_system_state('auto_paused', 'false')
@@ -3854,6 +3877,32 @@ radios:
         def resume_system():
             """Resume transmissions."""
             logger.info(f"Resume request received from user {request.admin_username}")
+
+            # Calculate pause duration and shift challenge timings to prevent priority accumulation during pause
+            pause_start_str = self.db.get_system_state('pause_start_time', None)
+            if pause_start_str:
+                try:
+                    pause_start = datetime.fromisoformat(pause_start_str)
+                    if pause_start.tzinfo is None:
+                        pause_start = pause_start.replace(tzinfo=timezone.utc)
+
+                    resume_time = datetime.now(timezone.utc)
+                    pause_duration = (resume_time - pause_start).total_seconds()
+
+                    if pause_duration > 0:
+                        logger.info(f"System was paused for {pause_duration:.1f}s, shifting challenge timings forward")
+                        shifted = self.db.shift_challenge_timings(pause_duration)
+                        logger.info(f"Shifted {shifted} challenge(s) to compensate for pause duration")
+                    else:
+                        logger.warning(f"Invalid pause duration: {pause_duration:.1f}s, not shifting timings")
+
+                    # Clear pause start time
+                    self.db.set_system_state('pause_start_time', '')
+                except Exception as e:
+                    logger.error(f"Error calculating pause duration: {e}")
+            else:
+                logger.debug("No pause_start_time found, skipping timing shift")
+
             self.db.set_system_state('paused', 'false')
             # Clear auto_paused flag when manually resuming (manual override)
             self.db.set_system_state('auto_paused', 'false')
