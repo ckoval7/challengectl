@@ -25,7 +25,7 @@ Ready for testing :)
   - [ ] CW - Potentially possible, TBD
   - [ ] ASK - Likely not possible
   - [x] Freq Hopper
-  - [x] LRS (Dan?)
+  - [ ] LRS (Dan?)
 - [ ] Update Flowgraphs to use parameters (instead of variables) for flags, device args, gain settings
   - [x] NBFM
   - [x] SSB
