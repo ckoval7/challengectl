@@ -1,7 +1,7 @@
 <template>
   <div class="public-dashboard">
     <div class="header">
-      <h1>{{ conference.name }}</h1>
+      <h1>{{ conference.name }} SDR Challenge Status</h1>
       <div class="countdown-wrapper">
         <ConferenceCountdown />
       </div>
