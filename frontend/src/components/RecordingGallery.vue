@@ -115,6 +115,7 @@
       append-to-body
       :close-on-click-modal="true"
       :close-on-press-escape="true"
+      class="waterfall-dialog"
     >
       <div
         v-if="selectedPreviewRecording"
@@ -435,8 +436,8 @@ function previewRecording(recording) {
 
 .preview-image {
   width: 100%;
-  max-height: 70vh;
-  object-fit: contain;
+  height: auto;
+  display: block;
   background: var(--el-fill-color-darker);
   border-radius: 4px;
 }
@@ -449,5 +450,12 @@ function previewRecording(recording) {
 
 .error-message {
   margin-top: 12px;
+}
+
+/* Waterfall dialog with 100% width image and vertical scrolling */
+:deep(.waterfall-dialog .el-dialog__body) {
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>

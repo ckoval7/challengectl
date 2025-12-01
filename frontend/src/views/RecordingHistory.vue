@@ -115,6 +115,7 @@
       :title="`Recording #${selectedRecording?.recording_id} - Waterfall`"
       width="90%"
       append-to-body
+      class="waterfall-dialog"
       @close="closeImageModal"
     >
       <div
@@ -403,9 +404,17 @@ h1 {
 }
 
 .modal-image img {
-  max-width: 100%;
+  width: 100%;
   height: auto;
+  display: block;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
+}
+
+/* Waterfall dialog with 100% width image and vertical scrolling */
+:deep(.waterfall-dialog .el-dialog__body) {
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>
