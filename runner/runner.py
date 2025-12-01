@@ -876,7 +876,7 @@ class ChallengeCtlRunner:
                 speed = config.get('speed', 15)
                 def run_cw():
                     cw_opts = cw.argument_parser().parse_args('')
-                    cw_opts.deviveargs = device_string
+                    cw_opts.deviceargs = device_string
                     cw_opts.freq = frequency
                     cw_opts.flag = flag
                     cw_opts.speed = speed
