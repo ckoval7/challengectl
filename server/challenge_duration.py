@@ -194,7 +194,7 @@ def calculate_challenge_duration(config: Dict, files_dir: str = "files",
     elif modulation == 'cw':
         # CW morse code
         message = config.get('flag', '')
-        wpm = config.get('speed', 35)
+        wpm = config.get('speed', 15)
         duration = calculate_cw_duration(message, wpm)
         logger.debug(f"Calculated CW duration: {duration}s (message: {len(message)} chars, {wpm} WPM)")
 
@@ -267,11 +267,46 @@ def calculate_challenge_duration(config: Dict, files_dir: str = "files",
         logger.debug(f"Calculated pager duration: {duration}s (message: {len(message)} chars)")
 
     elif modulation == 'ask':
-        # ASK - similar to CW
+        # ASK transmission handled by rfhs_ask_source block
         message = config.get('flag', '')
-        # ASK is typically faster than CW
-        duration = len(message) * 0.1  # Rough estimate: 100ms per bit
-        logger.debug(f"Calculated ASK duration: {duration}s")
+        baud_rate = config.get('baud_rate', 2400)
+        repeat = config.get('repeat', 10)  # Default from GRC
+
+        try:
+            # Calculate bits transmitted
+            # The rfhs_ask_source block encodes text to hex, then to binary
+            # Each character in the message becomes hex, each hex char = 4 bits
+
+            # For ASCII text: each char is ~8 bits (2 hex chars)
+            # Add framing overhead: preamble + postamble
+            # Conservative estimate: 8 bits per char + overhead
+
+            message_bits = len(message) * 8  # ASCII encoding
+
+            # Add framing overhead (preamble + postamble)
+            # Based on typical ASK framing: ~25 bits overhead
+            overhead_bits = 25
+
+            bits_per_iteration = message_bits + overhead_bits
+
+            # Multiply by repeat count
+            total_bits = bits_per_iteration * repeat
+
+            # Duration = bits / baud_rate
+            duration = total_bits / baud_rate
+
+            # Add processing buffer (~0.5s for GNU Radio startup/shutdown)
+            duration += 0.5
+
+            logger.debug(f"Calculated ASK duration: {duration:.3f}s "
+                        f"(message: {len(message)} chars = {message_bits} bits, "
+                        f"overhead: {overhead_bits} bits, "
+                        f"bits_per_iter: {bits_per_iteration}, "
+                        f"repeat: {repeat}, baud_rate: {baud_rate})")
+        except Exception as e:
+            # Fallback if calculation fails
+            duration = 5.0
+            logger.warning(f"Could not calculate ASK duration: {e}, using default: {duration}s")
 
     else:
         # Unknown modulation - use safe default

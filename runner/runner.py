@@ -895,12 +895,17 @@ class ChallengeCtlRunner:
                 success = (p.exitcode == 0)
 
             elif modulation == 'ask':
+                baud_rate = config.get('baud_rate', 2400)
+                repeat = config.get('repeat', 10)
+
                 def run_ask():
                     ask_opts = ask.argument_parser().parse_args('')
                     ask_opts.deviceargs = device_string
                     ask_opts.freq = frequency
                     ask_opts.flag = flag
                     ask_opts.antenna = antenna
+                    ask_opts.baud_rate = baud_rate
+                    ask_opts.repeat = repeat
                     # Pass gain settings (fixes bug where gains weren't being used)
                     if rf_gain is not None:
                         ask_opts.rfgain = rf_gain

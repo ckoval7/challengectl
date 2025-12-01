@@ -721,6 +721,35 @@
             />
           </el-form-item>
 
+          <!-- ASK settings -->
+          <template v-if="challengeForm.modulation === 'ask'">
+            <el-form-item label="Baud Rate">
+              <el-input-number
+                v-model="challengeForm.baud_rate"
+                :min="300"
+                :max="10000"
+                :step="100"
+                class="w-full"
+              />
+              <div class="hint-text">
+                Transmission speed in symbols per second (default: 2400)
+              </div>
+            </el-form-item>
+
+            <el-form-item label="Repeat Count">
+              <el-input-number
+                v-model="challengeForm.ask_repeat"
+                :min="1"
+                :max="100"
+                :step="1"
+                class="w-full"
+              />
+              <div class="hint-text">
+                Number of times to repeat the message (default: 10)
+              </div>
+            </el-form-item>
+          </template>
+
           <!-- FHSS settings -->
           <template v-if="challengeForm.modulation === 'fhss'">
             <el-form-item label="Channel Spacing (Hz)">
@@ -1102,11 +1131,13 @@ const challengeForm = ref({
   public_fields: ['name', 'modulation', 'frequency', 'status'],
   wav_samplerate: 48000,
   mode: 'usb',
-  speed: 35,
+  speed: 15,
   channel_spacing: 10000,
   hop_rate: 10,
   hop_time: 60,
   seed: '',
+  baud_rate: 2400,
+  ask_repeat: 10,
 })
 
 const flagFile = ref(null)
@@ -1567,11 +1598,13 @@ function resetForm() {
     public_fields: ['name', 'modulation', 'frequency', 'status'],
     wav_samplerate: 48000,
     mode: 'usb',
-    speed: 35,
+    speed: 15,
     channel_spacing: 10000,
     hop_rate: 10,
     hop_time: 60,
     seed: '',
+    baud_rate: 2400,
+    ask_repeat: 10,
   }
   frequencyMode.value = 'direct'
   flagFile.value = null
@@ -1694,6 +1727,10 @@ async function createChallenge() {
     }
     if (challengeForm.value.modulation === 'cw') {
       config.speed = challengeForm.value.speed
+    }
+    if (challengeForm.value.modulation === 'ask') {
+      config.baud_rate = challengeForm.value.baud_rate
+      config.repeat = challengeForm.value.ask_repeat
     }
     if (challengeForm.value.modulation === 'fhss') {
       config.channel_spacing = challengeForm.value.channel_spacing

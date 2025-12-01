@@ -14,7 +14,9 @@ all:
 # Amplitude Shift Keying
 ask:
   mandatory: []
-  optional: []
+  optional:
+    - baud_rate
+    - repeat
 
 # Morse Code / Continuous Wave
 cw:
