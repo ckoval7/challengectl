@@ -249,8 +249,8 @@
           >
             <template #default="scope">
               {{ scope.row.assigned_frequency ? formatFrequency(scope.row.assigned_frequency)
-                 : scope.row.config?.frequency ? formatFrequency(scope.row.config.frequency)
-                 : 'N/A' }}
+                : scope.row.config?.frequency ? formatFrequency(scope.row.config.frequency)
+                  : 'N/A' }}
             </template>
           </el-table-column>
           <el-table-column
@@ -1431,7 +1431,7 @@ function handleChallengeAssigned(event) {
 
 function handleTransmissionComplete(event) {
   console.log('Transmission complete:', event)
-  const { challenge_id, success, recording_priority, will_be_recorded, challenge: updatedChallenge } = event
+  const { challenge_id, recording_priority, will_be_recorded, challenge: updatedChallenge } = event
 
   const challenge = challengesMap.value.get(challenge_id)
   if (challenge && updatedChallenge) {

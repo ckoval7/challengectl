@@ -3270,6 +3270,66 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Key not found'}), 404
 
+        # Helper functions for YAML generation
+        def generate_single_antenna_device_yaml(device: dict) -> str:
+            """Generate YAML for legacy single-antenna device format."""
+            yaml_lines = []
+            yaml_lines.append(f"  - name: {device.get('name', '0')}")
+            yaml_lines.append(f"    model: {device.get('model', 'hackrf')}")
+            yaml_lines.append(f"    rf_gain: {device.get('rf_gain', 14)}")
+
+            if device.get('model') == 'hackrf' and 'if_gain' in device:
+                yaml_lines.append(f"    if_gain: {device.get('if_gain')}")
+
+            if 'bias_t' in device:
+                bias_t_value = str(device.get('bias_t')).lower()
+                yaml_lines.append(f"    bias_t: {bias_t_value}")
+
+            freq_limits = device.get('frequency_limits', [])
+            if freq_limits:
+                yaml_lines.append("    frequency_limits:")
+                for limit in freq_limits:
+                    yaml_lines.append(f"      - \"{limit}\"")
+
+            return '\n'.join(yaml_lines) + '\n'
+
+        def generate_multi_antenna_device_yaml(device: dict) -> str:
+            """Generate YAML for new multi-antenna device format."""
+            yaml_lines = []
+            yaml_lines.append(f"  - name: {device.get('name', '0')}")
+            yaml_lines.append(f"    model: {device.get('model', 'bladerf')}")
+            yaml_lines.append(f"    rf_gain: {device.get('rf_gain', 43)}  # Default fallback")
+
+            bias_t_value = str(device.get('bias_t', False)).lower()
+            yaml_lines.append(f"    bias_t: {bias_t_value}  # Default fallback")
+
+            if device.get('model') == 'hackrf' and 'if_gain' in device:
+                yaml_lines.append(f"    if_gain: {device.get('if_gain')}")
+
+            antennas = device.get('antennas', [])
+            if antennas:
+                yaml_lines.append("    antennas:")
+
+                for antenna in antennas:
+                    antenna_name = antenna.get('name', 'TX1')
+                    yaml_lines.append(f"      {antenna_name}:")
+
+                    if not antenna.get('enabled', True):
+                        yaml_lines.append("        enabled: false")
+
+                    antenna_bias_t = str(antenna.get('bias_t', False)).lower()
+                    yaml_lines.append(f"        bias_t: {antenna_bias_t}")
+
+                    yaml_lines.append(f"        rf_gain: {antenna.get('rf_gain', 43)}")
+
+                    freq_limits = antenna.get('frequency_limits', [])
+                    if freq_limits:
+                        yaml_lines.append("        frequency_limits:")
+                        for limit in freq_limits:
+                            yaml_lines.append(f"          - \"{limit}\"")
+
+            return '\n'.join(yaml_lines) + '\n'
+
         # Provisioning endpoint (uses provisioning API key, no CSRF)
         @self.app.route('/api/provisioning/provision', methods=['POST'])
         @self.require_provisioning_key
@@ -3387,24 +3447,19 @@ radios:
             # Add device configurations
             if devices:
                 for device in devices:
-                    config_yaml += f"  - name: {device.get('name', '0')}\n"
-                    config_yaml += f"    model: {device.get('model', 'hackrf')}\n"
-                    config_yaml += f"    rf_gain: {device.get('rf_gain', 14)}\n"
+                    use_multi_antenna = device.get('use_multi_antenna', False)
 
-                    if device.get('model') == 'hackrf' and 'if_gain' in device:
-                        config_yaml += f"    if_gain: {device.get('if_gain')}\n"
-
-                    freq_limits = device.get('frequency_limits', [])
-                    if freq_limits:
-                        config_yaml += "    frequency_limits:\n"
-                        for limit in freq_limits:
-                            config_yaml += f"      - \"{limit}\"\n"
+                    if use_multi_antenna and device.get('antennas'):
+                        config_yaml += generate_multi_antenna_device_yaml(device)
+                    else:
+                        config_yaml += generate_single_antenna_device_yaml(device)
             else:
                 # Default device if none specified
                 config_yaml += """  - name: 0
     model: hackrf
     rf_gain: 14
     if_gain: 32
+    bias_t: true
     frequency_limits:
       - "144000000-148000000"  # 2m ham band
       - "420000000-450000000"  # 70cm ham band

@@ -208,7 +208,10 @@
                           style="font-size: 12px; color: #606266; margin-top: 4px;"
                         >
                           <span v-if="devScope.row.rf_gain !== undefined">RF Gain: {{ devScope.row.rf_gain }} dB</span>
-                          <span v-if="devScope.row.if_gain !== undefined" style="margin-left: 8px;">IF Gain: {{ devScope.row.if_gain }} dB</span>
+                          <span
+                            v-if="devScope.row.if_gain !== undefined"
+                            style="margin-left: 8px;"
+                          >IF Gain: {{ devScope.row.if_gain }} dB</span>
                         </div>
                       </div>
                     </template>
@@ -311,6 +314,7 @@
                     v-model="device.model"
                     placeholder="Select SDR model"
                     :teleported="false"
+                    @change="onDeviceModelChange(device)"
                   >
                     <el-option
                       label="HackRF"
@@ -331,36 +335,168 @@
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="RF Gain">
-                  <el-input-number
-                    v-model="device.rf_gain"
-                    :min="0"
-                    :max="100"
-                  />
-                </el-form-item>
+                <!-- Single Antenna Mode (HackRF, RTL-SDR) -->
+                <template v-if="!device.useMultiAntenna">
+                  <el-form-item label="RF Gain">
+                    <el-input-number
+                      v-model="device.rf_gain"
+                      :min="0"
+                      :max="100"
+                    />
+                  </el-form-item>
 
-                <el-form-item
-                  v-if="device.model === 'hackrf'"
-                  label="IF Gain"
-                >
-                  <el-input-number
-                    v-model="device.if_gain"
-                    :min="0"
-                    :max="47"
-                  />
-                </el-form-item>
+                  <el-form-item
+                    v-if="device.model === 'hackrf'"
+                    label="IF Gain"
+                  >
+                    <el-input-number
+                      v-model="device.if_gain"
+                      :min="0"
+                      :max="47"
+                    />
+                  </el-form-item>
 
-                <el-form-item label="Frequency Limits">
-                  <el-input
-                    v-model="device.frequency_limits"
-                    type="textarea"
-                    :rows="2"
-                    placeholder="e.g., 144000000-148000000, 420000000-450000000"
-                  />
-                  <div class="hint-text">
-                    Comma-separated ranges (optional). Leave blank for full range.
+                  <el-form-item label="Bias-T">
+                    <el-checkbox v-model="device.bias_t">
+                      Enable Bias-T
+                    </el-checkbox>
+                    <div class="hint-text">
+                      Enable to power external LNA (Low Noise Amplifier)
+                    </div>
+                  </el-form-item>
+
+                  <el-form-item label="Frequency Limits">
+                    <el-input
+                      v-model="device.frequency_limits"
+                      type="textarea"
+                      :rows="2"
+                      placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                    />
+                    <div class="hint-text">
+                      Comma-separated ranges (optional). Leave blank for full range.
+                    </div>
+                  </el-form-item>
+                </template>
+
+                <!-- Multi-Antenna Mode (BladeRF, USRP, LimeSDR) -->
+                <template v-else>
+                  <el-alert
+                    type="info"
+                    :closable="false"
+                    show-icon
+                    class="mb-15"
+                  >
+                    <template #title>
+                      Multi-Antenna Configuration
+                    </template>
+                    This device supports multiple antennas with independent settings.
+                    Configure each antenna below.
+                  </el-alert>
+
+                  <el-form-item label="Default RF Gain">
+                    <el-input-number
+                      v-model="device.rf_gain"
+                      :min="0"
+                      :max="100"
+                    />
+                    <div class="hint-text">
+                      Fallback gain if not specified per-antenna
+                    </div>
+                  </el-form-item>
+
+                  <el-form-item label="Default Bias-T">
+                    <el-checkbox v-model="device.bias_t">
+                      Enable Bias-T (default)
+                    </el-checkbox>
+                    <div class="hint-text">
+                      Fallback bias-t if not specified per-antenna
+                    </div>
+                  </el-form-item>
+
+                  <!-- Antennas Section -->
+                  <div class="antennas-section">
+                    <h4>Antennas</h4>
+
+                    <el-card
+                      v-for="(antenna, antennaIdx) in device.antennas"
+                      :key="antenna._uid"
+                      class="antenna-card mb-10"
+                      shadow="hover"
+                    >
+                      <template #header>
+                        <div class="antenna-card-header">
+                          <span>Antenna: {{ antenna.name }}</span>
+                          <el-button
+                            type="danger"
+                            size="small"
+                            plain
+                            :disabled="device.antennas.length <= 1"
+                            @click="removeAntenna(device, antennaIdx)"
+                          >
+                            Remove
+                          </el-button>
+                        </div>
+                      </template>
+
+                      <el-form-item label="Antenna Name">
+                        <el-input
+                          v-model="antenna.name"
+                          placeholder="e.g., TX1, TX2, TX/RX"
+                        />
+                      </el-form-item>
+
+                      <el-form-item label="Enabled">
+                        <el-checkbox v-model="antenna.enabled">
+                          Antenna Enabled
+                        </el-checkbox>
+                        <div class="hint-text">
+                          Disable for maintenance without removing configuration
+                        </div>
+                      </el-form-item>
+
+                      <el-form-item label="RF Gain">
+                        <el-input-number
+                          v-model="antenna.rf_gain"
+                          :min="0"
+                          :max="100"
+                        />
+                        <div class="hint-text">
+                          Optimal gain for this antenna's frequency range
+                        </div>
+                      </el-form-item>
+
+                      <el-form-item label="Bias-T">
+                        <el-checkbox v-model="antenna.bias_t">
+                          Enable Bias-T for this antenna
+                        </el-checkbox>
+                        <div class="hint-text">
+                          Enable to power external LNA on this antenna
+                        </div>
+                      </el-form-item>
+
+                      <el-form-item label="Frequency Limits">
+                        <el-input
+                          v-model="antenna.frequency_limits"
+                          type="textarea"
+                          :rows="2"
+                          placeholder="e.g., 144000000-148000000, 420000000-450000000"
+                        />
+                        <div class="hint-text">
+                          Comma-separated ranges for this antenna
+                        </div>
+                      </el-form-item>
+                    </el-card>
+
+                    <el-button
+                      type="primary"
+                      plain
+                      class="w-full"
+                      @click="addAntenna(device)"
+                    >
+                      + Add Antenna
+                    </el-button>
                   </div>
-                </el-form-item>
+                </template>
 
                 <el-divider v-if="index < addRunnerForm.devices.length - 1" />
               </div>
@@ -1602,6 +1738,46 @@ export default {
       return `device_${Date.now()}_${deviceIdCounter++}`
     }
 
+    // Antenna ID generator
+    const generateAntennaId = () => `antenna-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+    // Device model configurations for multi-antenna support
+    const MULTI_ANTENNA_MODELS = {
+      'bladerf': {
+        defaultAntennas: [
+          { name: 'TX1', enabled: true, rf_gain: 43, bias_t: true,
+            frequency_limits: '144000000-148000000, 420000000-450000000' },
+          { name: 'TX2', enabled: true, rf_gain: 50, bias_t: false,
+            frequency_limits: '900000000-915000000, 2400000000-2500000000' }
+        ],
+        defaultRfGain: 43,
+        defaultBiasT: false
+      },
+      'usrp': {
+        defaultAntennas: [
+          { name: 'TX/RX', enabled: true, rf_gain: 25, bias_t: false,
+            frequency_limits: '70000000-6000000000' }
+        ],
+        defaultRfGain: 20,
+        defaultBiasT: false
+      },
+      'limesdr': {
+        defaultAntennas: [
+          { name: 'TX1', enabled: true, rf_gain: 40, bias_t: false, frequency_limits: '' },
+          { name: 'TX2', enabled: true, rf_gain: 40, bias_t: false, frequency_limits: '' }
+        ],
+        defaultRfGain: 40,
+        defaultBiasT: false
+      }
+    }
+
+    const SINGLE_ANTENNA_MODELS = {
+      'hackrf': { defaultRfGain: 14, defaultIfGain: 32, defaultBiasT: true },
+      'rtlsdr': { defaultGain: 40 }
+    }
+
+    const isMultiAntennaModel = (model) => model in MULTI_ANTENNA_MODELS
+
     // Runner enrollment state
     // Note: Kept separate from listener enrollment due to significantly different
     // form structures (runners have complex multi-device config, listeners are simpler)
@@ -1617,7 +1793,10 @@ export default {
           model: 'hackrf',
           rf_gain: 14,
           if_gain: 32,
-          frequency_limits: '144000000-148000000, 420000000-450000000'
+          bias_t: true,
+          frequency_limits: '144000000-148000000, 420000000-450000000',
+          useMultiAntenna: false,
+          antennas: []
         }
       ]
     })
@@ -1712,7 +1891,10 @@ export default {
             model: 'hackrf',
             rf_gain: 14,
             if_gain: 32,
-            frequency_limits: '144000000-148000000, 420000000-450000000'
+            bias_t: true,
+            frequency_limits: '144000000-148000000, 420000000-450000000',
+            useMultiAntenna: false,
+            antennas: []
           }
         ]
       }
@@ -1745,12 +1927,66 @@ export default {
         model: 'hackrf',
         rf_gain: 14,
         if_gain: 32,
-        frequency_limits: '144000000-148000000, 420000000-450000000'
+        bias_t: true,
+        frequency_limits: '144000000-148000000, 420000000-450000000',
+        useMultiAntenna: false,
+        antennas: []
       })
     }
 
     const removeDevice = (index) => {
       addRunnerForm.value.devices.splice(index, 1)
+    }
+
+    const onDeviceModelChange = (device) => {
+      const model = device.model
+
+      if (isMultiAntennaModel(model)) {
+        // Switch to multi-antenna mode
+        device.useMultiAntenna = true
+        const modelConfig = MULTI_ANTENNA_MODELS[model]
+        device.rf_gain = modelConfig.defaultRfGain
+        device.bias_t = modelConfig.defaultBiasT
+        device.antennas = modelConfig.defaultAntennas.map(ant => ({
+          _uid: generateAntennaId(),
+          ...ant
+        }))
+        device.frequency_limits = ''
+      } else {
+        // Switch to single-antenna mode
+        device.useMultiAntenna = false
+        const modelConfig = SINGLE_ANTENNA_MODELS[model]
+        if (modelConfig) {
+          device.rf_gain = modelConfig.defaultRfGain
+          if (model === 'hackrf') {
+            device.if_gain = modelConfig.defaultIfGain
+          }
+          device.bias_t = modelConfig.defaultBiasT
+        }
+        device.antennas = []
+        if (model === 'hackrf') {
+          device.frequency_limits = '144000000-148000000, 420000000-450000000'
+        }
+      }
+    }
+
+    const addAntenna = (device) => {
+      device.antennas.push({
+        _uid: generateAntennaId(),
+        name: `TX${device.antennas.length + 1}`,
+        enabled: true,
+        rf_gain: device.rf_gain,
+        bias_t: device.bias_t,
+        frequency_limits: ''
+      })
+    }
+
+    const removeAntenna = (device, antennaIndex) => {
+      if (device.antennas.length > 1) {
+        device.antennas.splice(antennaIndex, 1)
+      } else {
+        ElMessage.warning('At least one antenna is required')
+      }
     }
 
     const addListenerDevice = () => {
@@ -1769,9 +2005,66 @@ export default {
       addListenerForm.value.devices.splice(index, 1)
     }
 
+    // Validation functions
+    const validateDeviceConfiguration = (device) => {
+      const errors = []
+
+      if (!device.name?.trim()) errors.push('Device name is required')
+      if (!device.model) errors.push('Device model is required')
+
+      if (device.useMultiAntenna) {
+        if (!device.antennas?.length) {
+          errors.push('At least one antenna is required for multi-antenna devices')
+        }
+
+        const antennaNames = device.antennas.map(a => a.name)
+        const duplicates = antennaNames.filter((name, idx) => antennaNames.indexOf(name) !== idx)
+        if (duplicates.length > 0) {
+          errors.push(`Duplicate antenna names: ${duplicates.join(', ')}`)
+        }
+
+        device.antennas.forEach((antenna, idx) => {
+          if (!antenna.name?.trim()) {
+            errors.push(`Antenna ${idx + 1}: Name is required`)
+          }
+          if (antenna.rf_gain < 0) {
+            errors.push(`Antenna ${antenna.name}: RF gain must be >= 0`)
+          }
+        })
+      } else {
+        if (device.rf_gain < 0) errors.push('RF gain must be >= 0')
+        if (device.model === 'hackrf' && device.if_gain < 0) {
+          errors.push('IF gain must be >= 0 for HackRF')
+        }
+      }
+
+      return errors
+    }
+
+    const validateAllDevices = () => {
+      const allErrors = []
+      addRunnerForm.value.devices.forEach((device, idx) => {
+        const errors = validateDeviceConfiguration(device)
+        if (errors.length > 0) {
+          allErrors.push(`Device ${idx + 1} (${device.name}):`)
+          allErrors.push(...errors.map(e => `  - ${e}`))
+        }
+      })
+
+      if (allErrors.length > 0) {
+        ElMessage.error({ message: allErrors.join('\n'), duration: 5000 })
+        return false
+      }
+      return true
+    }
+
     const generateEnrollmentToken = async () => {
       if (!addRunnerForm.value.runnerName) {
         ElMessage.warning('Please enter a runner name')
+        return
+      }
+
+      if (!validateAllDevices()) {
         return
       }
 
@@ -1803,10 +2096,78 @@ export default {
             model: 'hackrf',
             rf_gain: 14,
             if_gain: 32,
-            frequency_limits: '144000000-148000000, 420000000-450000000'
+            bias_t: true,
+            frequency_limits: '144000000-148000000, 420000000-450000000',
+            useMultiAntenna: false,
+            antennas: []
           }
         ]
       }
+    }
+
+    // YAML generation helper functions
+    const generateSingleAntennaDeviceYaml = (device) => {
+      const freqLimits = device.frequency_limits
+        ? device.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
+        : []
+
+      let yaml = `  - name: ${device.name}\n`
+      yaml += `    model: ${device.model}\n`
+      yaml += `    rf_gain: ${device.rf_gain}\n`
+
+      if (device.model === 'hackrf' && device.if_gain !== undefined) {
+        yaml += `    if_gain: ${device.if_gain}\n`
+      }
+
+      if (device.bias_t !== undefined) {
+        yaml += `    bias_t: ${device.bias_t}\n`
+      }
+
+      if (freqLimits.length > 0) {
+        yaml += `    frequency_limits:\n`
+        freqLimits.forEach(limit => {
+          yaml += `      - "${limit}"\n`
+        })
+      }
+
+      return yaml
+    }
+
+    const generateMultiAntennaDeviceYaml = (device) => {
+      let yaml = `  - name: ${device.name}\n`
+      yaml += `    model: ${device.model}\n`
+      yaml += `    rf_gain: ${device.rf_gain}  # Default fallback\n`
+      yaml += `    bias_t: ${device.bias_t}  # Default fallback\n`
+
+      if (device.model === 'hackrf' && device.if_gain !== undefined) {
+        yaml += `    if_gain: ${device.if_gain}\n`
+      }
+
+      yaml += `    antennas:\n`
+
+      device.antennas.forEach(antenna => {
+        const freqLimits = antenna.frequency_limits
+          ? antenna.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
+          : []
+
+        yaml += `      ${antenna.name}:\n`
+
+        if (antenna.enabled !== undefined && !antenna.enabled) {
+          yaml += `        enabled: false\n`
+        }
+
+        yaml += `        bias_t: ${antenna.bias_t}\n`
+        yaml += `        rf_gain: ${antenna.rf_gain}\n`
+
+        if (freqLimits.length > 0) {
+          yaml += `        frequency_limits:\n`
+          freqLimits.forEach(limit => {
+            yaml += `          - "${limit}"\n`
+          })
+        }
+      })
+
+      return yaml
     }
 
     // Generate complete runner-config.yml
@@ -1876,26 +2237,11 @@ radios:
   # Individual device configuration
   devices:
 ${addRunnerForm.value.devices.map(device => {
-  const freqLimits = device.frequency_limits
-    ? device.frequency_limits.split(',').map(f => f.trim()).filter(f => f)
-    : []
-
-  let deviceYaml = `  - name: ${device.name}\n`
-  deviceYaml += `    model: ${device.model}\n`
-  deviceYaml += `    rf_gain: ${device.rf_gain}\n`
-
-  if (device.model === 'hackrf' && device.if_gain !== undefined) {
-    deviceYaml += `    if_gain: ${device.if_gain}\n`
+  if (device.useMultiAntenna && device.antennas && device.antennas.length > 0) {
+    return generateMultiAntennaDeviceYaml(device)
+  } else {
+    return generateSingleAntennaDeviceYaml(device)
   }
-
-  if (freqLimits.length > 0) {
-    deviceYaml += `    frequency_limits:\n`
-    freqLimits.forEach(limit => {
-      deviceYaml += `      - "${limit}"\n`
-    })
-  }
-
-  return deviceYaml
 }).join('\n')}
 `
       return config
@@ -2744,6 +3090,9 @@ curl -k \\
       showAddRunnerDialog,
       addDevice,
       removeDevice,
+      onDeviceModelChange,
+      addAntenna,
+      removeAntenna,
       generateDeviceId,
       generateEnrollmentToken,
       closeAddRunnerDialog,
@@ -2948,5 +3297,30 @@ curl -k \\
 
 .device-header h4 {
   margin: 0;
+}
+
+.antennas-section {
+  margin-top: 15px;
+}
+
+.antennas-section h4 {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.antenna-card {
+  margin-bottom: 10px;
+}
+
+.antenna-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
 }
 </style>
