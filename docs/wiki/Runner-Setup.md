@@ -30,6 +30,7 @@ This comprehensive guide covers setting up and configuring ChallengeCtl runners.
 The runner requires additional software for SDR operations:
 
 - **GNU Radio**: Version 3.8 or higher (for signal generation and transmission)
+- **gr-rfhs**: Contains modules needed for CW, ASK, and LRS
 - **gr-osmosdr**: For SDR hardware interface
 - **gr-paint**: For spectrum painting challenges (must be compiled from source)
 - **gr-mixalot**: For POCSAG paging challenges (must be compiled from source)
@@ -42,8 +43,7 @@ ChallengeCtl runners support the following SDR devices:
 - **HackRF One**: 1 MHz to 6 GHz, half-duplex
 - **LimeSDR**: 100 kHz to 3.8 GHz, full-duplex
 - **USRP**: Universal Software Radio Peripheral (various models)
-- **RTL-SDR**: Receive-only (limited transmit support via mod)
-- **bladeRF**: 300 MHz to 3.8 GHz
+- **bladeRF**: 47 MHz to 3.8 GHz
 
 ## Installation
 
@@ -68,6 +68,21 @@ sudo apt-get install git cmake g++ libboost-all-dev libgmp-dev swig \
   python3-pyqt5 liblog4cpp5-dev libzmq3-dev python3-yaml python3-click \
   python3-click-plugins python3-zmq python3-scipy python3-gi \
   python3-gi-cairo gobject-introspection gir1.2-gtk-3.0
+```
+
+
+**Install gr-rfhs (required core modules):**
+
+```bash
+cd /tmp
+git clone https://github.com/ckoval7/gr-rfhs
+cd gr-rfhs
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+sudo ldconfig
 ```
 
 **Install gr-paint (required for spectrum painting challenges):**

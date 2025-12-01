@@ -28,7 +28,7 @@ from multiprocessing import Process
 
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from challenges import ask, cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_pager, lrs_tx  # noqa: E402
+from challenges import ask_tx as ask, cw_tx as cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_tx
 
 # Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
@@ -873,15 +873,45 @@ class ChallengeCtlRunner:
 
             # Execute based on modulation type
             if modulation == 'cw':
-                speed = config.get('speed', 35)
-                p = Process(target=cw.main, args=(flag, speed, frequency, device_string, antenna, rf_gain, if_gain))
+                speed = config.get('speed', 15)
+                def run_cw():
+                    cw_opts = cw.argument_parser().parse_args('')
+                    cw_opts.deviveargs = device_string
+                    cw_opts.freq = frequency
+                    cw_opts.flag = flag
+                    cw_opts.speed = speed
+                    cw_opts.antenna = antenna
+                    # Pass gain settings (fixes bug where gains weren't being used)
+                    if rf_gain is not None:
+                        cw_opts.rfgain = rf_gain
+                    if if_gain is not None:
+                        cw_opts.ifgain = if_gain
+                    cw.main(options=cw_opts)
+
+                
+                p = Process(target=run_cw)
                 p.start()
                 p.join()
                 success = (p.exitcode == 0)
 
             elif modulation == 'ask':
-                ask.main(flag.encode("utf-8").hex(), frequency, device_string, antenna, rf_gain, if_gain)
-                success = True
+                def run_ask():
+                    ask_opts = ask.argument_parser().parse_args('')
+                    ask_opts.deviceargs = device_string
+                    ask_opts.freq = frequency
+                    ask_opts.flag = flag
+                    ask_opts.antenna = antenna
+                    # Pass gain settings (fixes bug where gains weren't being used)
+                    if rf_gain is not None:
+                        ask_opts.rfgain = rf_gain
+                    if if_gain is not None:
+                        ask_opts.ifgain = if_gain
+                    ask.main(options=ask_opts)
+
+                p = Process(target=run_ask)
+                p.start()
+                p.join()
+                success = (p.exitcode == 0)
 
             elif modulation == 'nbfm':
                 wav_rate = config.get('wav_samplerate', 48000)
@@ -1003,23 +1033,45 @@ class ChallengeCtlRunner:
                 success = True
 
             elif modulation == 'lrs':
-                # Parse pager parameters and generate data in memory
-                lrspageropts = lrs_pager.argument_parser().parse_args(flag.split())
-                pager_data = lrs_pager.main(options=lrspageropts)
+                def run_lrs(systemid, pagerid, pager_function):
+                    lrs_opts = lrs_tx.argument_parser().parse_args('')
+                    lrs_opts.deviceargs = device_string
+                    lrs_opts.freq = frequency
+                    lrs_opts.systemid = systemid
+                    lrs_opts.pagerid = pagerid
+                    lrs_opts.function = pager_function
+                    lrs_opts.printkey = True
+                    lrs_opts.antenna = antenna
+                    # Pass gain settings (fixes bug where gains weren't being used)
+                    if rf_gain is not None:
+                        lrs_opts.rf_gain = rf_gain
+                    if if_gain is not None:
+                        lrs_opts.if_gain = if_gain
+                    lrs_tx.main(options=lrs_opts)
+                try:
+                    parts = flag.split()
+                    
+                    # Check for the correct number of arguments
+                    if len(parts) != 6:
+                        raise ValueError("Incorrect number of arguments.")
+                        
+                    # Check for the correct flags in the correct positions
+                    if parts[0] != '-s' or parts[2] != '-p' or parts[4] != '-pf':
+                        raise ValueError("Incorrect flag structure.")
 
-                # Configure and run transmitter with in-memory data
-                lrsopts = lrs_tx.argument_parser().parse_args('')
-                lrsopts.deviceargs = device_string
-                lrsopts.freq = frequency
-                lrsopts.antenna = antenna
-                # Pass gain settings
-                if rf_gain is not None:
-                    lrsopts.rf_gain = rf_gain
-                if if_gain is not None:
-                    lrsopts.if_gain = if_gain
-                lrs_tx.main(options=lrsopts, data=pager_data)
-
-                success = True
+                    # Parse the values (indices 1, 3, 5) and convert to integers
+                    systemid, pagerid, pager_function = map(int, parts[1::2])
+                    p = Process(target=run_lrs, args=(systemid, pagerid, pager_function))
+                    p.start()
+                    p.join()
+                    success = (p.exitcode == 0)
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing string: {e}")
+                    # Assign error values
+                    # systemid, pagerid, pager_function = 1, 1, 1
+                    logger.error(f"Bad flag for LRS: {flag}")
+                    success = False
+                # systemid, pagerid, pager_function = [int(x) for x in flag.split()[1::2]]
 
             elif modulation == 'paint':
                 p = Process(target=spectrum_paint.main, args=(frequency, device_string, antenna, rf_gain, if_gain))

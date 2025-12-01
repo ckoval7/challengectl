@@ -1,21 +1,17 @@
 options:
   parameters:
-    author: Dan/Corey
+    author: corey
     catch_exceptions: 'True'
     category: '[GRC Hier Blocks]'
     cmake_opt: ''
-    comment: 'LRS Pager transmitter using in-memory data.
-
-      Note: This flowgraph receives pager data at runtime via the main() function''s
-      data parameter. The vector_source block is populated programmatically, not from
-      a file or hardcoded values.'
+    comment: ''
     copyright: RFHS
-    description: LRS Pager TX with in-memory data source
+    description: Transmit ASK CTF Challenge
     gen_cmake: 'On'
     gen_linking: dynamic
     generate_options: no_gui
     hier_block_src_path: '.:'
-    id: lrs_tx
+    id: ask_tx
     max_nouts: '0'
     output_language: python
     placement: (0,0)
@@ -26,45 +22,17 @@ options:
     run_options: run
     sizing_mode: fixed
     thread_safe_setters: ''
-    title: LRS TX
+    title: ASK Transmit
     window_size: (1000,1000)
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [8, 8]
+    coordinate: [8, 4.0]
     rotation: 0
     state: enabled
 
 blocks:
-- name: samp_rate
-  id: variable
-  parameters:
-    comment: ''
-    value: '2400000'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [0, 500.0]
-    rotation: 0
-    state: enabled
-- name: analog_frequency_modulator_fc_0
-  id: analog_frequency_modulator_fc
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: FM modulation with sensitivity 6.26 rad/sample
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    sensitivity: '6.26'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [528, 244.0]
-    rotation: 0
-    state: true
 - name: antenna
   id: parameter
   parameters:
@@ -79,9 +47,26 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [832, 4.0]
+    coordinate: [968, 4.0]
     rotation: 0
     state: true
+- name: baud_rate
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Baud Rate
+    short_id: ''
+    type: intx
+    value: '2400'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [96, 316.0]
+    rotation: 0
+    state: enabled
 - name: bbgain
   id: parameter
   parameters:
@@ -96,27 +81,27 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [504, 4.0]
+    coordinate: [640, 4.0]
     rotation: 0
     state: true
-- name: blocks_repeat_0
-  id: blocks_repeat
+- name: blocks_moving_average_xx_0
+  id: blocks_moving_average_xx
   parameters:
     affinity: ''
     alias: ''
-    comment: 'Repeat each sample 3190 times to slow down transmission
-
-      and match pager baud rate'
-    interp: '3190'
+    comment: ''
+    length: int(samp_rate/baud_rate)
+    max_iter: '4000'
     maxoutbuf: '0'
     minoutbuf: '0'
-    type: float
+    scale: 0.9/(samp_rate/baud_rate)
+    type: complex
     vlen: '1'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [240, 268.0]
+    coordinate: [424, 188.0]
     rotation: 0
     state: enabled
 - name: deviceargs
@@ -133,9 +118,26 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [200, 4.0]
+    coordinate: [336, 4.0]
     rotation: 0
     state: true
+- name: flag
+  id: parameter
+  parameters:
+    alias: ''
+    comment: ''
+    hide: none
+    label: Flag
+    short_id: m
+    type: str
+    value: RFHS
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 316.0]
+    rotation: 0
+    state: enabled
 - name: freq
   id: parameter
   parameters:
@@ -145,31 +147,14 @@ blocks:
     label: Center Frequency
     short_id: f
     type: intx
-    value: '467750000'
+    value: '146550000'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [360, 4.0]
+    coordinate: [496, 4.0]
     rotation: 0
     state: true
-- name: function
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: Pager Function
-    short_id: ''
-    type: intx
-    value: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [224, 372.0]
-    rotation: 0
-    state: enabled
 - name: ifgain
   id: parameter
   parameters:
@@ -184,9 +169,33 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [640, 4.0]
+    coordinate: [776, 4.0]
     rotation: 0
     state: true
+- name: low_pass_filter_0
+  id: low_pass_filter
+  parameters:
+    affinity: ''
+    alias: ''
+    beta: '6.76'
+    comment: ''
+    cutoff_freq: '3000'
+    decim: '1'
+    gain: '1'
+    interp: '1'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samp_rate: samp_rate
+    type: fir_filter_ccf
+    width: '300'
+    win: window.WIN_HAMMING
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [648, 164.0]
+    rotation: 0
+    state: enabled
 - name: osmosdr_sink_0
   id: osmosdr_sink
   parameters:
@@ -445,41 +454,44 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [848, 180.0]
+    coordinate: [920, 132.0]
     rotation: 0
     state: enabled
-- name: pagerid
+- name: rational_resampler_xxx_0
+  id: rational_resampler_xxx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    decim: '1'
+    fbw: '0'
+    interp: '1'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    taps: '[]'
+    type: fcc
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [216, 188.0]
+    rotation: 0
+    state: enabled
+- name: repeat
   id: parameter
   parameters:
     alias: ''
     comment: ''
     hide: none
-    label: Pager ID
-    short_id: p
+    label: Repeat
+    short_id: r
     type: intx
-    value: '1'
+    value: '10'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [120, 388.0]
-    rotation: 0
-    state: enabled
-- name: printkey
-  id: parameter
-  parameters:
-    alias: ''
-    comment: ''
-    hide: none
-    label: Print Key
-    short_id: k
-    type: intx
-    value: '0'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [352, 356.0]
+    coordinate: [208, 316.0]
     rotation: 0
     state: enabled
 - name: rfgain
@@ -496,52 +508,51 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [736, 4.0]
+    coordinate: [872, 4.0]
     rotation: 0
     state: true
-- name: rfhs_lrs_source_0
-  id: rfhs_lrs_source
+- name: rfhs_ask_source_0
+  id: rfhs_ask_source
   parameters:
     affinity: ''
     alias: ''
+    baud_rate: baud_rate
     comment: ''
-    function: function
     maxoutbuf: '0'
     minoutbuf: '0'
-    pagerid: pagerid
-    printkey: printkey
-    randomkey: 'False'
-    systemid: systemid
-    verbose: 'False'
+    repeat: repeat
+    samp_rate: samp_rate
+    text: flag
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [0, 228.0]
+    coordinate: [0, 188.0]
     rotation: 0
     state: enabled
-- name: systemid
+- name: samp_rate
   id: parameter
   parameters:
     alias: ''
     comment: ''
     hide: none
-    label: System ID
+    label: Sample Rate
     short_id: s
     type: intx
-    value: '1'
+    value: '2400000'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [8, 388.0]
+    coordinate: [216, 4.0]
     rotation: 0
     state: enabled
 
 connections:
-- [analog_frequency_modulator_fc_0, '0', osmosdr_sink_0, '0']
-- [blocks_repeat_0, '0', analog_frequency_modulator_fc_0, '0']
-- [rfhs_lrs_source_0, '0', blocks_repeat_0, '0']
+- [blocks_moving_average_xx_0, '0', low_pass_filter_0, '0']
+- [low_pass_filter_0, '0', osmosdr_sink_0, '0']
+- [rational_resampler_xxx_0, '0', blocks_moving_average_xx_0, '0']
+- [rfhs_ask_source_0, '0', rational_resampler_xxx_0, '0']
 
 metadata:
   file_format: 1
