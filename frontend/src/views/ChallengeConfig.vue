@@ -534,6 +534,12 @@
                 Choose File
               </el-button>
             </el-upload>
+            <el-progress
+              v-if="uploadingFile"
+              :percentage="uploadProgress"
+              :stroke-width="6"
+              style="margin-top: 10px"
+            />
           </el-form-item>
 
           <el-form-item
@@ -791,9 +797,10 @@
           <el-form-item>
             <el-button
               type="primary"
+              :loading="uploadingFile"
               @click="createChallenge"
             >
-              Create Challenge
+              {{ uploadingFile ? 'Uploading...' : 'Create Challenge' }}
             </el-button>
             <el-button @click="resetForm">
               Reset
@@ -850,6 +857,19 @@
             <el-button>Add Files</el-button>
           </el-upload>
 
+          <el-progress
+            v-if="importing"
+            :percentage="importProgress"
+            :stroke-width="6"
+            style="margin-top: 20px"
+          />
+          <div
+            v-if="importing"
+            style="margin-top: 8px; color: #606266; font-size: 14px;"
+          >
+            Uploading {{ importFileCount }} file(s)...
+          </div>
+
           <div class="mt-30">
             <el-button
               type="primary"
@@ -857,7 +877,7 @@
               :loading="importing"
               @click="importChallenges"
             >
-              Import Challenges
+              {{ importing ? 'Importing...' : 'Import Challenges' }}
             </el-button>
             <el-button @click="clearImportForm">
               Clear
@@ -1104,6 +1124,12 @@ const loadingRanges = ref(false)
 const editDialogVisible = ref(false)
 const editForm = ref({})
 const editConfigJson = ref('')
+
+// Upload progress state
+const uploadingFile = ref(false)
+const uploadProgress = ref(0)
+const importProgress = ref(0)
+const importFileCount = ref(0)
 
 // WebSocket-first state management with Maps
 const challengesMap = ref(new Map())
@@ -1698,10 +1724,15 @@ async function createChallenge() {
     // Handle file upload
     if (flagFile.value) {
       try {
+        uploadingFile.value = true
+        uploadProgress.value = 0
         const formData = new FormData()
         formData.append('file', flagFile.value)
         const uploadResponse = await api.post('/files/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (progressEvent) => {
+            uploadProgress.value = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          }
         })
         config.flag_file_hash = uploadResponse.data.file_hash
         if (!challengeForm.value.flag) {
@@ -1711,6 +1742,9 @@ async function createChallenge() {
         console.error('Failed to upload file:', uploadError)
         ElMessage.error(uploadError.response?.data?.error || 'Failed to upload file')
         return
+      } finally {
+        uploadingFile.value = false
+        uploadProgress.value = 0
       }
     }
 
@@ -1763,6 +1797,8 @@ async function importChallenges() {
   }
 
   importing.value = true
+  importProgress.value = 0
+  importFileCount.value = challengeFiles.value.length + 1 // +1 for YAML file
 
   try {
     const formData = new FormData()
@@ -1773,7 +1809,10 @@ async function importChallenges() {
     })
 
     const response = await api.post('/challenges/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        importProgress.value = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+      }
     })
 
     const result = response.data
@@ -1796,6 +1835,8 @@ async function importChallenges() {
     ElMessage.error(error.response?.data?.error || 'Failed to import challenges')
   } finally {
     importing.value = false
+    importProgress.value = 0
+    importFileCount.value = 0
   }
 }
 
