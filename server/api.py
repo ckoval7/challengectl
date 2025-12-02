@@ -78,7 +78,7 @@ class WebSocketHandler(logging.Handler):
                 self.log_buffer.append(log_entry)
 
             # Broadcast to WebUI
-            self.socketio.emit('event', log_entry)
+            self.socketio.emit('event', log_entry, namespace='/')
         except Exception as e:
             # Try to log at debug level to avoid recursion
             # If this fails, silently ignore to prevent infinite loop
