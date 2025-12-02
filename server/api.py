@@ -27,6 +27,8 @@ import pyotp
 import random
 import re
 from PIL import Image
+import io
+import zipfile
 
 from database import Database
 from crypto import encrypt_totp_secret
@@ -3913,6 +3915,125 @@ radios:
             except Exception as e:
                 logger.error(f"Error importing challenges: {e}", exc_info=True)
                 return jsonify({'error': f'Failed to import challenges: {str(e)}'}), 500
+
+        @self.app.route('/api/challenges/export', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.limiter.limit("10 per minute")
+        def export_challenges():
+            """Export all challenges to ZIP file with YAML config and files."""
+            try:
+                # Fetch all challenges from database
+                challenges = self.db.get_all_challenges()
+
+                # Build YAML structure
+                yaml_challenges = []
+                file_hashes_to_export = set()
+                file_hash_to_info = {}
+
+                for challenge in challenges:
+                    config = challenge['config']
+
+                    # Build clean config dict (exclude runtime fields)
+                    clean_config = {
+                        'name': challenge['name'],
+                        'modulation': config['modulation'],
+                        'enabled': challenge['enabled'],
+                    }
+
+                    # Add frequency (one of three formats)
+                    if 'frequency' in config:
+                        clean_config['frequency'] = config['frequency']
+                    elif 'frequency_ranges' in config:
+                        clean_config['frequency_ranges'] = config['frequency_ranges']
+                    elif 'manual_frequency_range' in config:
+                        clean_config['manual_frequency_range'] = config['manual_frequency_range']
+
+                    # Add timing and priority
+                    if 'min_delay' in config:
+                        clean_config['min_delay'] = config['min_delay']
+                    if 'max_delay' in config:
+                        clean_config['max_delay'] = config['max_delay']
+                    if 'priority' in config:
+                        clean_config['priority'] = config['priority']
+
+                    # Handle flag field (convert hash to relative path)
+                    if 'flag_file_hash' in config:
+                        file_hash = config['flag_file_hash']
+                        file_info = self.db.get_file(file_hash)
+
+                        if file_info:
+                            filename = file_info['filename']
+                            clean_config['flag'] = f"challenges/{filename}"
+                            file_hashes_to_export.add(file_hash)
+                            file_hash_to_info[file_hash] = {
+                                'filename': filename,
+                                'path': file_info['file_path']
+                            }
+                        else:
+                            # Missing file metadata - use hash as fallback
+                            clean_config['flag'] = f"challenges/{file_hash}.wav"
+                            logger.warning(f"Missing file metadata for hash: {file_hash}")
+                    elif 'flag' in config:
+                        # Text flag or existing path reference
+                        clean_config['flag'] = config['flag']
+
+                    # Add modulation-specific fields
+                    modulation_fields = ['wav_samplerate', 'mode', 'speed', 'channel_spacing',
+                                       'hop_rate', 'hop_time', 'seed', 'baud_rate', 'repeat',
+                                       'capcode', 'public_view', 'duration']
+                    for field in modulation_fields:
+                        if field in config:
+                            clean_config[field] = config[field]
+
+                    yaml_challenges.append(clean_config)
+
+                # Generate YAML content
+                yaml_content = yaml.dump(yaml_challenges,
+                                        default_flow_style=False,
+                                        allow_unicode=True,
+                                        sort_keys=False)
+
+                # Create ZIP file in memory
+                zip_buffer = io.BytesIO()
+                timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    # Add YAML file
+                    zip_file.writestr('challenges.yml', yaml_content)
+
+                    # Add challenge files
+                    missing_files = []
+                    for file_hash in file_hashes_to_export:
+                        if file_hash in file_hash_to_info:
+                            info = file_hash_to_info[file_hash]
+                            file_path = info['path']
+                            filename = info['filename']
+
+                            if os.path.exists(file_path):
+                                with open(file_path, 'rb') as f:
+                                    zip_file.writestr(f'challenges/{filename}', f.read())
+                            else:
+                                missing_files.append(filename)
+                                logger.warning(f"File not found on disk: {file_path}")
+
+                # Send ZIP file
+                zip_buffer.seek(0)
+                response = make_response(zip_buffer.getvalue())
+                response.headers['Content-Type'] = 'application/zip'
+                response.headers['Content-Disposition'] = f'attachment; filename="challengectl-export-{timestamp}.zip"'
+
+                # Add warning header if files are missing
+                if missing_files:
+                    response.headers['X-Export-Warnings'] = f"Missing {len(missing_files)} file(s)"
+
+                logger.info(f"Exported {len(yaml_challenges)} challenges, {len(file_hashes_to_export)} files, {len(missing_files)} missing")
+
+                return response
+
+            except Exception as e:
+                logger.error(f"Error exporting challenges: {e}", exc_info=True)
+                return jsonify({'error': f'Failed to export challenges: {str(e)}'}), 500
 
         @self.app.route('/api/transmissions', methods=['GET'])
         @self.require_admin_auth

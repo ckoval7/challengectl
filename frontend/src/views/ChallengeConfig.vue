@@ -951,6 +951,14 @@ print(response.json())</code></pre>
           >
             Refresh List
           </el-button>
+
+          <el-button
+            type="primary"
+            :loading="exporting"
+            @click="exportAllChallenges"
+          >
+            {{ exporting ? 'Exporting...' : 'Export All Challenges' }}
+          </el-button>
         </div>
 
         <el-table
@@ -1120,6 +1128,7 @@ const { isMobile } = useBreakpoint()
 const activeTab = ref('status')
 const systemPaused = ref(false)
 const importing = ref(false)
+const exporting = ref(false)
 const loadingRanges = ref(false)
 const editDialogVisible = ref(false)
 const editForm = ref({})
@@ -1413,7 +1422,16 @@ function handleRecordingImageUploaded(event) {
 
 function handleChallengeUpdated(event) {
   console.log('Challenge updated:', event)
-  const { challenge } = event
+  const { challenge, action } = event
+
+  // Handle challenge deletion
+  if (action === 'deleted' && challenge && challenge.challenge_id) {
+    challengesMap.value.delete(challenge.challenge_id)
+    recordingsMap.value.delete(challenge.challenge_id)
+    recordingPlaceholders.value.delete(challenge.challenge_id)
+    recalculateQueuePositions()
+    return
+  }
 
   // Update single challenge in Map
   if (challenge && challenge.challenge_id) {
@@ -1837,6 +1855,49 @@ async function importChallenges() {
     importing.value = false
     importProgress.value = 0
     importFileCount.value = 0
+  }
+}
+
+// Export all challenges to ZIP
+async function exportAllChallenges() {
+  exporting.value = true
+  try {
+    const response = await api.post('/challenges/export', {}, {
+      responseType: 'blob'
+    })
+
+    // Create download
+    const blob = new Blob([response.data], { type: 'application/zip' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+
+    // Extract filename from Content-Disposition or use default
+    const contentDisposition = response.headers['content-disposition']
+    let filename = 'challengectl-export.zip'
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^"]+)"?/)
+      if (match) filename = match[1]
+    }
+
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    // Show warnings if present
+    const warnings = response.headers['x-export-warnings']
+    if (warnings) {
+      ElMessage.warning(`Export completed: ${warnings}`)
+    } else {
+      ElMessage.success('Challenges exported successfully')
+    }
+  } catch (error) {
+    console.error('Export failed:', error)
+    ElMessage.error(error.response?.data?.error || 'Failed to export challenges')
+  } finally {
+    exporting.value = false
   }
 }
 
