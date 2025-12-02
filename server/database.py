@@ -44,6 +44,8 @@ class Database:
                 isolation_level='IMMEDIATE'  # Use immediate locks for better concurrency
             )
             self._local.conn.row_factory = sqlite3.Row  # Access columns by name
+            # Enable foreign key constraints (required for CASCADE deletes)
+            self._local.conn.execute('PRAGMA foreign_keys = ON')
 
         try:
             yield self._local.conn
@@ -1439,10 +1441,21 @@ class Database:
                 conn.commit()
                 logger.info(f"Granted permission '{permission_name}' to user {username} by {granted_by}")
                 return True
-            except sqlite3.IntegrityError:
-                # Permission already exists
-                logger.debug(f"Permission '{permission_name}' already granted to user {username}")
-                return True
+            except sqlite3.IntegrityError as e:
+                # Check if it's a UNIQUE constraint (duplicate permission) or FOREIGN KEY constraint (non-existent user)
+                error_msg = str(e).lower()
+                if 'unique' in error_msg:
+                    # Permission already exists - this is okay
+                    logger.debug(f"Permission '{permission_name}' already granted to user {username}")
+                    return True
+                elif 'foreign key' in error_msg:
+                    # User doesn't exist - this is an error
+                    logger.error(f"Cannot grant permission to non-existent user {username}")
+                    return False
+                else:
+                    # Other integrity error
+                    logger.error(f"Integrity error granting permission to {username}: {e}")
+                    return False
             except Exception as e:
                 logger.error(f"Error granting permission to {username}: {e}")
                 return False

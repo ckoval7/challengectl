@@ -186,7 +186,7 @@ class TestInitialAdminPermissions:
         with temp_db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT permission_name, granted_by FROM user_permissions WHERE username = ?",
+                "SELECT permission_name, granted_by FROM permissions WHERE username = ?",
                 (username,)
             )
             permissions = cursor.fetchall()
@@ -242,7 +242,7 @@ class TestPermissionWorkflows:
         with temp_db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT granted_by FROM user_permissions WHERE username = ? AND permission_name = ?",
+                "SELECT granted_by FROM permissions WHERE username = ? AND permission_name = ?",
                 ('user1', 'create_users')
             )
             row = cursor.fetchone()
