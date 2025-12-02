@@ -2749,6 +2749,17 @@ class ChallengeCtlAPI:
             """Enable an agent (runner or listener)."""
             success = self.db.enable_agent(agent_id)
             if success:
+                # Get agent details to determine type for event name
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    # Broadcast enabled event
+                    event_name = 'runner_enabled' if agent.get('agent_type') == 'runner' else 'listener_enabled'
+                    self.broadcast_event(event_name, {
+                        'agent_id': agent_id,
+                        'runner_id': agent_id if agent.get('agent_type') == 'runner' else None,
+                        'listener_id': agent_id if agent.get('agent_type') == 'listener' else None,
+                        'enabled': True
+                    })
                 return jsonify({'status': 'enabled'}), 200
             else:
                 return jsonify({'error': 'Agent not found'}), 404
@@ -2759,6 +2770,17 @@ class ChallengeCtlAPI:
             """Disable an agent (runner or listener)."""
             success = self.db.disable_agent(agent_id)
             if success:
+                # Get agent details to determine type for event name
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    # Broadcast disabled event
+                    event_name = 'runner_enabled' if agent.get('agent_type') == 'runner' else 'listener_enabled'
+                    self.broadcast_event(event_name, {
+                        'agent_id': agent_id,
+                        'runner_id': agent_id if agent.get('agent_type') == 'runner' else None,
+                        'listener_id': agent_id if agent.get('agent_type') == 'listener' else None,
+                        'enabled': False
+                    })
                 return jsonify({'status': 'disabled'}), 200
             else:
                 return jsonify({'error': 'Agent not found'}), 404

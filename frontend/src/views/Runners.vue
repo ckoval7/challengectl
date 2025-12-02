@@ -2875,6 +2875,16 @@ logging:
       }
     }
 
+    const handleListenerEnabledEvent = (event) => {
+      console.log('Agents page received listener_enabled event:', event)
+
+      const listener = listeners.value.find(l => l.agent_id === event.agent_id || l.agent_id === event.listener_id)
+      if (listener) {
+        listener.enabled = event.enabled
+        console.log(`Updated listener ${event.agent_id} enabled status to:`, event.enabled)
+      }
+    }
+
     const handleListenerStatusEvent = (event) => {
       console.log('Agents page received listener_status event:', event)
 
@@ -2932,6 +2942,7 @@ logging:
       websocket.on('runner_status', handleRunnerStatusEvent)
       websocket.on('listener_status', handleListenerStatusEvent)
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
+      websocket.on('listener_enabled', handleListenerEnabledEvent)
       websocket.on('device_status', handleDeviceStatusEvent)
     })
 
@@ -3045,6 +3056,7 @@ curl -k \\
       websocket.off('runner_status', handleRunnerStatusEvent)
       websocket.off('listener_status', handleListenerStatusEvent)
       websocket.off('runner_enabled', handleRunnerEnabledEvent)
+      websocket.off('listener_enabled', handleListenerEnabledEvent)
       websocket.off('device_status', handleDeviceStatusEvent)
     })
 
