@@ -33,6 +33,18 @@ options:
     state: enabled
 
 blocks:
+- name: cw_samp_rate
+  id: variable
+  parameters:
+    comment: ''
+    value: int(samp_rate/100)
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [408, 344.0]
+    rotation: 0
+    state: true
 - name: antenna
   id: parameter
   parameters:
@@ -65,6 +77,26 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [640, 4.0]
+    rotation: 0
+    state: true
+- name: blocks_moving_average_xx_0
+  id: blocks_moving_average_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    length: int(1.2/speed*cw_samp_rate/2)
+    max_iter: '4000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    scale: 1/(1.2/speed*cw_samp_rate/2)
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [216, 156.0]
     rotation: 0
     state: true
 - name: deviceargs
@@ -135,30 +167,6 @@ blocks:
     coordinate: [776, 4.0]
     rotation: 0
     state: true
-- name: low_pass_filter_0
-  id: low_pass_filter
-  parameters:
-    affinity: ''
-    alias: ''
-    beta: '6.76'
-    comment: ''
-    cutoff_freq: '3000'
-    decim: '1'
-    gain: '1'
-    interp: '1'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    samp_rate: samp_rate
-    type: fir_filter_ccf
-    width: '300'
-    win: window.WIN_HAMMING
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [504, 164.0]
-    rotation: 0
-    state: enabled
 - name: osmosdr_sink_0
   id: osmosdr_sink
   parameters:
@@ -417,7 +425,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [816, 132.0]
+    coordinate: [816, 116.0]
     rotation: 0
     state: enabled
 - name: rational_resampler_xxx_0
@@ -426,9 +434,9 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    decim: '1'
+    decim: cw_samp_rate
     fbw: '0'
-    interp: '1'
+    interp: samp_rate
     maxoutbuf: '0'
     minoutbuf: '0'
     taps: '[]'
@@ -437,7 +445,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [240, 188.0]
+    coordinate: [464, 156.0]
     rotation: 0
     state: enabled
 - name: rfgain
@@ -465,14 +473,14 @@ blocks:
     comment: ''
     maxoutbuf: '0'
     minoutbuf: '0'
-    samp_rate: samp_rate
+    samp_rate: cw_samp_rate
     text: flag
     wpm: '15'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [0, 196.0]
+    coordinate: [0, 164.0]
     rotation: 0
     state: enabled
 - name: samp_rate
@@ -511,10 +519,9 @@ blocks:
     state: enabled
 
 connections:
-- [low_pass_filter_0, '0', osmosdr_sink_0, '0']
-- [rational_resampler_xxx_0, '0', low_pass_filter_0, '0']
-- [rfhs_cw_source_0, '0', rational_resampler_xxx_0, '0']
+- [blocks_moving_average_xx_0, '0', rational_resampler_xxx_0, '0']
+- [rational_resampler_xxx_0, '0', osmosdr_sink_0, '0']
+- [rfhs_cw_source_0, '0', blocks_moving_average_xx_0, '0']
 
 metadata:
   file_format: 1
-  grc_version: 3.10.9.2

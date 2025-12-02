@@ -9,7 +9,7 @@
 # Author: corey
 # Copyright: RFHS
 # Description: Transmit ASK CTF Challenge
-# GNU Radio version: 3.10.9.2
+# GNU Radio version: 3.10.1.1
 
 from gnuradio import blocks
 from gnuradio import filter
@@ -50,7 +50,6 @@ class ask_tx(gr.top_block):
         ##################################################
         # Blocks
         ##################################################
-
         self.rfhs_ask_source_0 = rfhs.ask_source(flag, samp_rate, baud_rate)
         self.rational_resampler_xxx_0 = filter.rational_resampler_fcc(
                 interpolation=1,
@@ -68,25 +67,15 @@ class ask_tx(gr.top_block):
         self.osmosdr_sink_0.set_bb_gain(bbgain, 0)
         self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
-        self.low_pass_filter_0 = filter.fir_filter_ccf(
-            1,
-            firdes.low_pass(
-                1,
-                samp_rate,
-                3000,
-                300,
-                window.WIN_HAMMING,
-                6.76))
-        self.blocks_moving_average_xx_0 = blocks.moving_average_cc((int(samp_rate/baud_rate)), 0.9/(samp_rate/baud_rate), 4000, 1)
+        self.blocks_moving_average_xx_0 = blocks.moving_average_ff(int(samp_rate/baud_rate/2), 0.9/(samp_rate/baud_rate/2), 4000, 1)
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.blocks_moving_average_xx_0, 0), (self.low_pass_filter_0, 0))
-        self.connect((self.low_pass_filter_0, 0), (self.osmosdr_sink_0, 0))
-        self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_moving_average_xx_0, 0))
-        self.connect((self.rfhs_ask_source_0, 0), (self.rational_resampler_xxx_0, 0))
+        self.connect((self.blocks_moving_average_xx_0, 0), (self.rational_resampler_xxx_0, 0))
+        self.connect((self.rational_resampler_xxx_0, 0), (self.osmosdr_sink_0, 0))
+        self.connect((self.rfhs_ask_source_0, 0), (self.blocks_moving_average_xx_0, 0))
 
 
     def get_antenna(self):
@@ -101,7 +90,7 @@ class ask_tx(gr.top_block):
 
     def set_baud_rate(self, baud_rate):
         self.baud_rate = baud_rate
-        self.blocks_moving_average_xx_0.set_length_and_scale((int(self.samp_rate/self.baud_rate)), 0.9/(self.samp_rate/self.baud_rate))
+        self.blocks_moving_average_xx_0.set_length_and_scale(int(self.samp_rate/self.baud_rate/2), 0.9/(self.samp_rate/self.baud_rate/2))
 
     def get_bbgain(self):
         return self.bbgain
@@ -154,8 +143,7 @@ class ask_tx(gr.top_block):
 
     def set_samp_rate(self, samp_rate):
         self.samp_rate = samp_rate
-        self.blocks_moving_average_xx_0.set_length_and_scale((int(self.samp_rate/self.baud_rate)), 0.9/(self.samp_rate/self.baud_rate))
-        self.low_pass_filter_0.set_taps(firdes.low_pass(1, self.samp_rate, 3000, 300, window.WIN_HAMMING, 6.76))
+        self.blocks_moving_average_xx_0.set_length_and_scale(int(self.samp_rate/self.baud_rate/2), 0.9/(self.samp_rate/self.baud_rate/2))
         self.osmosdr_sink_0.set_sample_rate(self.samp_rate)
 
 

@@ -90,20 +90,20 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    length: int(samp_rate/baud_rate)
+    length: int(samp_rate/baud_rate/2)
     max_iter: '4000'
     maxoutbuf: '0'
     minoutbuf: '0'
-    scale: 0.9/(samp_rate/baud_rate)
-    type: complex
+    scale: 0.9/(samp_rate/baud_rate/2)
+    type: float
     vlen: '1'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [424, 188.0]
+    coordinate: [304, 188.0]
     rotation: 0
-    state: enabled
+    state: true
 - name: deviceargs
   id: parameter
   parameters:
@@ -172,30 +172,6 @@ blocks:
     coordinate: [776, 4.0]
     rotation: 0
     state: true
-- name: low_pass_filter_0
-  id: low_pass_filter
-  parameters:
-    affinity: ''
-    alias: ''
-    beta: '6.76'
-    comment: ''
-    cutoff_freq: '3000'
-    decim: '1'
-    gain: '1'
-    interp: '1'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    samp_rate: samp_rate
-    type: fir_filter_ccf
-    width: '300'
-    win: window.WIN_HAMMING
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [648, 164.0]
-    rotation: 0
-    state: enabled
 - name: osmosdr_sink_0
   id: osmosdr_sink
   parameters:
@@ -474,7 +450,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [216, 188.0]
+    coordinate: [584, 188.0]
     rotation: 0
     state: enabled
 - name: repeat
@@ -549,11 +525,9 @@ blocks:
     state: enabled
 
 connections:
-- [blocks_moving_average_xx_0, '0', low_pass_filter_0, '0']
-- [low_pass_filter_0, '0', osmosdr_sink_0, '0']
-- [rational_resampler_xxx_0, '0', blocks_moving_average_xx_0, '0']
-- [rfhs_ask_source_0, '0', rational_resampler_xxx_0, '0']
+- [blocks_moving_average_xx_0, '0', rational_resampler_xxx_0, '0']
+- [rational_resampler_xxx_0, '0', osmosdr_sink_0, '0']
+- [rfhs_ask_source_0, '0', blocks_moving_average_xx_0, '0']
 
 metadata:
   file_format: 1
-  grc_version: 3.10.9.2

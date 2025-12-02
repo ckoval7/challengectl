@@ -9,8 +9,9 @@
 # Author: corey
 # Copyright: RFHS
 # Description: Transmit Morse Code for CW Challenge
-# GNU Radio version: 3.10.9.2
+# GNU Radio version: 3.10.1.1
 
+from gnuradio import blocks
 from gnuradio import filter
 from gnuradio.filter import firdes
 from gnuradio import gr
@@ -46,13 +47,17 @@ class cw_tx(gr.top_block):
         self.speed = speed
 
         ##################################################
+        # Variables
+        ##################################################
+        self.cw_samp_rate = cw_samp_rate = int(samp_rate/100)
+
+        ##################################################
         # Blocks
         ##################################################
-
-        self.rfhs_cw_source_0 = rfhs.cw_source(flag, 15, samp_rate)
+        self.rfhs_cw_source_0 = rfhs.cw_source(flag, 15, cw_samp_rate)
         self.rational_resampler_xxx_0 = filter.rational_resampler_fcc(
-                interpolation=1,
-                decimation=1,
+                interpolation=samp_rate,
+                decimation=cw_samp_rate,
                 taps=[],
                 fractional_bw=0)
         self.osmosdr_sink_0 = osmosdr.sink(
@@ -66,23 +71,15 @@ class cw_tx(gr.top_block):
         self.osmosdr_sink_0.set_bb_gain(bbgain, 0)
         self.osmosdr_sink_0.set_antenna(antenna, 0)
         self.osmosdr_sink_0.set_bandwidth(0, 0)
-        self.low_pass_filter_0 = filter.fir_filter_ccf(
-            1,
-            firdes.low_pass(
-                1,
-                samp_rate,
-                3000,
-                300,
-                window.WIN_HAMMING,
-                6.76))
+        self.blocks_moving_average_xx_0 = blocks.moving_average_ff(int(1.2/speed*cw_samp_rate/2), 1/(1.2/speed*cw_samp_rate/2), 4000, 1)
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.low_pass_filter_0, 0), (self.osmosdr_sink_0, 0))
-        self.connect((self.rational_resampler_xxx_0, 0), (self.low_pass_filter_0, 0))
-        self.connect((self.rfhs_cw_source_0, 0), (self.rational_resampler_xxx_0, 0))
+        self.connect((self.blocks_moving_average_xx_0, 0), (self.rational_resampler_xxx_0, 0))
+        self.connect((self.rational_resampler_xxx_0, 0), (self.osmosdr_sink_0, 0))
+        self.connect((self.rfhs_cw_source_0, 0), (self.blocks_moving_average_xx_0, 0))
 
 
     def get_antenna(self):
@@ -137,7 +134,7 @@ class cw_tx(gr.top_block):
 
     def set_samp_rate(self, samp_rate):
         self.samp_rate = samp_rate
-        self.low_pass_filter_0.set_taps(firdes.low_pass(1, self.samp_rate, 3000, 300, window.WIN_HAMMING, 6.76))
+        self.set_cw_samp_rate(int(self.samp_rate/100))
         self.osmosdr_sink_0.set_sample_rate(self.samp_rate)
 
     def get_speed(self):
@@ -145,6 +142,14 @@ class cw_tx(gr.top_block):
 
     def set_speed(self, speed):
         self.speed = speed
+        self.blocks_moving_average_xx_0.set_length_and_scale(int(1.2/self.speed*self.cw_samp_rate/2), 1/(1.2/self.speed*self.cw_samp_rate/2))
+
+    def get_cw_samp_rate(self):
+        return self.cw_samp_rate
+
+    def set_cw_samp_rate(self, cw_samp_rate):
+        self.cw_samp_rate = cw_samp_rate
+        self.blocks_moving_average_xx_0.set_length_and_scale(int(1.2/self.speed*self.cw_samp_rate/2), 1/(1.2/self.speed*self.cw_samp_rate/2))
 
 
 
