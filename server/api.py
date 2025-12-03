@@ -264,6 +264,22 @@ class ChallengeCtlAPI:
         """
         return self.config.get('server', {}).get('recording_priority_threshold', 1.0)
 
+    def get_recording_outlier_threshold(self) -> float:
+        """Get the recording outlier threshold from config.
+
+        Returns:
+            Outlier threshold multiplier (default 2.0)
+        """
+        return self.config.get('server', {}).get('recording_outlier_threshold', 2.0)
+
+    def is_recording_outlier_blocking_enabled(self) -> bool:
+        """Check if recording outlier blocking is enabled.
+
+        Returns:
+            True if enabled, False otherwise (default False)
+        """
+        return self.config.get('server', {}).get('recording_outlier_blocking_enabled', False)
+
     def select_random_frequency(self, frequency_ranges: List[str]) -> Optional[float]:
         """Select a random frequency from one or more named frequency ranges.
 
@@ -379,7 +395,12 @@ class ChallengeCtlAPI:
         # Ensure completed_at is timezone-aware
         if completed_at.tzinfo is None:
             completed_at = completed_at.replace(tzinfo=timezone.utc)
-        minutes_since = (now - completed_at).total_seconds() / 60.0
+
+        # Subtract accumulated pause time to freeze priority growth during system pause
+        total_pause_seconds = float(self.db.get_system_state('total_pause_seconds', '0'))
+        elapsed_seconds = (now - completed_at).total_seconds()
+        active_seconds = max(0, elapsed_seconds - total_pause_seconds)
+        minutes_since = active_seconds / 60.0
 
         # Time multiplier: gradually increases up to 10x over hours
         # max(1.0, ...) ensures minimum 1x multiplier
@@ -410,6 +431,117 @@ class ChallengeCtlAPI:
         priority = self.calculate_recording_priority(challenge)
         logger.debug(f"Recording priority for {challenge['name']}: {priority:.2f}")
         return priority >= threshold
+
+    def check_recording_outlier_blocking(self, current_challenge_id: str) -> tuple:
+        """Check if recording should be blocked due to outlier priority.
+
+        When enabled, this prevents listener assignments when one challenge has
+        disproportionately high priority compared to the median. This ensures fair
+        recording distribution and prevents wasting listener resources on non-outlier
+        challenges when a high-priority challenge is waiting.
+
+        Blocking logic:
+        1. Calculate priority for ALL enabled challenges
+        2. Exclude never-recorded challenges (priority=1000.0) from median calculation
+        3. Calculate median priority across recorded-at-least-once challenges
+        4. If max_priority > (median_priority * outlier_threshold):
+           - Block all recordings EXCEPT:
+             - The outlier challenge itself (needs recording to reduce priority)
+             - Never-recorded challenges (always get first recording)
+
+        Args:
+            current_challenge_id: Challenge ID that just completed transmission
+
+        Returns:
+            Tuple of (should_block: bool, reason: Optional[str])
+            - (False, None) = Don't block, proceed with normal recording logic
+            - (True, "reason") = Block recording, with explanation for logging
+
+        Examples:
+            # Outlier blocking active, current challenge is NOT the outlier
+            >>> check_recording_outlier_blocking("challenge-1")
+            (True, "Blocking: outlier challenge-5 has priority 20.0 > median 2.5 * 2.0")
+
+            # Outlier blocking active, current challenge IS the outlier
+            >>> check_recording_outlier_blocking("challenge-5")
+            (False, None)  # Don't block - outlier needs recording to reduce priority
+
+            # Current challenge never recorded
+            >>> check_recording_outlier_blocking("challenge-new")
+            (False, None)  # Don't block - always record first time
+        """
+        # 1. Check if feature is enabled
+        if not self.is_recording_outlier_blocking_enabled():
+            return (False, None)
+
+        # 2. Get outlier threshold from config
+        outlier_threshold = self.get_recording_outlier_threshold()
+
+        # 3. Get all enabled challenges
+        challenges = self.db.get_all_challenges()
+        enabled_challenges = [c for c in challenges if c['enabled']]
+
+        # Edge case: 0 or 1 enabled challenges
+        if len(enabled_challenges) <= 1:
+            return (False, None)  # Can't have outliers with 0-1 challenges
+
+        # 4. Calculate priority for each enabled challenge
+        priorities = []  # List of tuples: (challenge_id, priority)
+        never_recorded_ids = set()
+
+        for challenge in enabled_challenges:
+            priority = self.calculate_recording_priority(challenge)
+
+            # Track never-recorded challenges (priority=1000.0 or manually triggered)
+            if priority >= 1000.0:
+                never_recorded_ids.add(challenge['challenge_id'])
+            else:
+                # Only include recorded-at-least-once challenges in median calculation
+                priorities.append((challenge['challenge_id'], priority))
+
+        # Edge case: All challenges never recorded OR only 1 recorded challenge
+        if len(priorities) < 2:
+            return (False, None)  # Need at least 2 recorded challenges for median
+
+        # 5. Calculate median priority (exclude never-recorded)
+        priority_values = [p for _, p in priorities]
+        priority_values.sort()
+        n = len(priority_values)
+
+        if n % 2 == 0:
+            median_priority = (priority_values[n//2 - 1] + priority_values[n//2]) / 2.0
+        else:
+            median_priority = priority_values[n//2]
+
+        # 6. Find max priority (exclude never-recorded)
+        max_priority_id, max_priority = max(priorities, key=lambda x: x[1])
+
+        # 7. Check if outlier exists
+        if max_priority <= (median_priority * outlier_threshold):
+            # No outlier detected
+            logger.debug(f"No recording outlier: max={max_priority:.2f}, "
+                        f"median={median_priority:.2f}, threshold={outlier_threshold}")
+            return (False, None)
+
+        # 8. Outlier detected - check if current challenge is exempt
+        current_is_outlier = (current_challenge_id == max_priority_id)
+        current_never_recorded = (current_challenge_id in never_recorded_ids)
+
+        if current_is_outlier or current_never_recorded:
+            # Don't block outlier itself or never-recorded challenges
+            reason = "outlier" if current_is_outlier else "never-recorded"
+            logger.info(f"Recording outlier detected but allowing {current_challenge_id} ({reason}): "
+                       f"outlier={max_priority_id} priority={max_priority:.2f} > "
+                       f"median={median_priority:.2f} * {outlier_threshold}")
+            return (False, None)
+
+        # 9. Block this recording
+        reason = (f"Outlier blocking: challenge {max_priority_id} has priority {max_priority:.2f} > "
+                 f"median {median_priority:.2f} * {outlier_threshold:.1f} = "
+                 f"{median_priority * outlier_threshold:.2f}")
+
+        logger.info(f"Blocking recording for {current_challenge_id}: {reason}")
+        return (True, reason)
 
     def require_api_key(self, f):
         """Decorator to require API key authentication (for runners and listeners).
@@ -2146,131 +2278,138 @@ class ChallengeCtlAPI:
                 # Broadcast updated public challenges (challenge is now active)
                 self.broadcast_public_challenges()
 
-                # Check if we should assign a listener to record this transmission
-                threshold = self.get_recording_priority_threshold()
-                if self.should_assign_listener(challenge, threshold):
-                    # Find available listener agents with WebSocket connection
-                    listener_agents = self.db.get_all_agents(agent_type='listener')
-                    logger.debug(f"Found {len(listener_agents)} total listener agents")
+                # Check for outlier blocking BEFORE normal priority check
+                should_block, block_reason = self.check_recording_outlier_blocking(challenge['challenge_id'])
 
-                    # Filter listeners by online/enabled/websocket status
-                    online_listeners = [
-                        l for l in listener_agents
-                        if l['status'] == 'online'
-                        and l['enabled']
-                        and l.get('websocket_connected')
-                    ]
+                if should_block:
+                    # Log blocking decision
+                    logger.info(f"Skipping listener assignment for {challenge['name']}: {block_reason}")
+                else:
+                    # Check if we should assign a listener to record this transmission
+                    threshold = self.get_recording_priority_threshold()
+                    if self.should_assign_listener(challenge, threshold):
+                        # Find available listener agents with WebSocket connection
+                        listener_agents = self.db.get_all_agents(agent_type='listener')
+                        logger.debug(f"Found {len(listener_agents)} total listener agents")
 
-                    logger.info(f"Online listeners: {len(online_listeners)} "
-                               f"(total: {len(listener_agents)}, "
-                               f"online: {len([l for l in listener_agents if l['status'] == 'online'])}, "
-                               f"enabled: {len([l for l in listener_agents if l['enabled']])}, "
-                               f"websocket: {len([l for l in listener_agents if l.get('websocket_connected')])})")
+                        # Filter listeners by online/enabled/websocket status
+                        online_listeners = [
+                            l for l in listener_agents
+                            if l['status'] == 'online'
+                            and l['enabled']
+                            and l.get('websocket_connected')
+                        ]
 
-                    # Check device availability for parallel recording support
-                    available_listeners = []
-                    for listener in online_listeners:
-                        # Parse devices JSON to get device count
-                        devices = listener.get('devices', '[]')
-                        if isinstance(devices, str):
-                            try:
-                                devices = json.loads(devices)
-                            except (json.JSONDecodeError, TypeError):
-                                devices = []
+                        logger.info(f"Online listeners: {len(online_listeners)} "
+                                   f"(total: {len(listener_agents)}, "
+                                   f"online: {len([l for l in listener_agents if l['status'] == 'online'])}, "
+                                   f"enabled: {len([l for l in listener_agents if l['enabled']])}, "
+                                   f"websocket: {len([l for l in listener_agents if l.get('websocket_connected')])})")
 
-                        device_count = len(devices) if devices else 1  # Default to 1 if no devices defined
+                        # Check device availability for parallel recording support
+                        available_listeners = []
+                        for listener in online_listeners:
+                            # Parse devices JSON to get device count
+                            devices = listener.get('devices', '[]')
+                            if isinstance(devices, str):
+                                try:
+                                    devices = json.loads(devices)
+                                except (json.JSONDecodeError, TypeError):
+                                    devices = []
 
-                        # Count active assignments for this listener
-                        active_count = self.db.get_listener_active_assignment_count(listener['agent_id'])
+                            device_count = len(devices) if devices else 1  # Default to 1 if no devices defined
 
-                        # Listener is available if it has capacity (devices > active assignments)
-                        if active_count < device_count:
-                            available_listeners.append({
-                                'listener': listener,
-                                'device_count': device_count,
-                                'active_count': active_count,
-                                'available_devices': device_count - active_count
-                            })
-                            logger.debug(f"Listener {listener['agent_id']}: {active_count}/{device_count} devices busy, "
-                                       f"{device_count - active_count} available")
+                            # Count active assignments for this listener
+                            active_count = self.db.get_listener_active_assignment_count(listener['agent_id'])
+
+                            # Listener is available if it has capacity (devices > active assignments)
+                            if active_count < device_count:
+                                available_listeners.append({
+                                    'listener': listener,
+                                    'device_count': device_count,
+                                    'active_count': active_count,
+                                    'available_devices': device_count - active_count
+                                })
+                                logger.debug(f"Listener {listener['agent_id']}: {active_count}/{device_count} devices busy, "
+                                           f"{device_count - active_count} available")
+                            else:
+                                logger.debug(f"Listener {listener['agent_id']}: all {device_count} device(s) busy "
+                                           f"({active_count} active assignments)")
+
+                        logger.info(f"Available listeners with capacity: {len(available_listeners)}")
+
+                        if available_listeners:
+                            # Select listener with most available devices (best parallelism)
+                            best_listener_info = max(available_listeners, key=lambda x: x['available_devices'])
+                            listener = best_listener_info['listener']
+                            listener_id = listener['agent_id']
+
+                            logger.debug(f"Selected listener {listener_id} with {best_listener_info['available_devices']} "
+                                       f"available device(s)")
+
+                            # Calculate expected transmission timing
+                            expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
+
+                            # Calculate challenge duration (automatically from file/params if not explicitly set)
+                            challenge_duration = calculate_challenge_duration(
+                                config=config,
+                                files_dir=self.files_dir,
+                                include_pre_paint=False,  # Pre-paint is handled by runner, not listener
+                                pre_paint_duration=0.0
+                            )
+                            # Add buffer for listener recording (5s pre-roll + 5s post-roll)
+                            expected_duration = challenge_duration + 10.0
+
+                            logger.debug(f"Challenge duration: {challenge_duration}s, listener recording duration: {expected_duration}s")
+
+                            # Create listener assignment
+                            assignment_id = self.db.create_listener_assignment(
+                                agent_id=listener_id,
+                                challenge_id=challenge['challenge_id'],
+                                transmission_id=transmission_id,
+                                frequency=int(config.get('frequency', 0)),
+                                expected_start=expected_start,
+                                expected_duration=expected_duration
+                            )
+
+                            if assignment_id > 0:
+                                # Push assignment to listener via WebSocket
+                                # Note: This uses SocketIO rooms - listener must join 'agent_<id>' room
+                                assignment_data = {
+                                    'assignment_id': assignment_id,
+                                    'challenge_id': challenge['challenge_id'],
+                                    'challenge_name': challenge['name'],
+                                    'transmission_id': transmission_id,
+                                    'frequency': int(config.get('frequency', 0)),
+                                    'expected_start': expected_start.isoformat(),
+                                    'expected_duration': expected_duration,
+                                    'runner_id': agent_id,
+                                    'timestamp': datetime.now(timezone.utc).isoformat()
+                                }
+
+                                logger.debug(f"Emitting recording_assignment to room 'agent_{listener_id}' on namespace '/agents': {assignment_data}")
+                                self.socketio.emit('recording_assignment', assignment_data,
+                                                 room=f'agent_{listener_id}', namespace='/agents')
+
+                                logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
+
+                                # Clear forced recording flag after successful assignment
+                                with self.force_record_lock:
+                                    if challenge['challenge_id'] in self.force_record_challenges:
+                                        self.force_record_challenges.discard(challenge['challenge_id'])
+                                        logger.debug(f"Cleared forced recording flag for challenge {challenge['name']}")
+                            else:
+                                logger.error(f"Failed to create listener assignment for {challenge['name']}")
                         else:
-                            logger.debug(f"Listener {listener['agent_id']}: all {device_count} device(s) busy "
-                                       f"({active_count} active assignments)")
-
-                    logger.info(f"Available listeners with capacity: {len(available_listeners)}")
-
-                    if available_listeners:
-                        # Select listener with most available devices (best parallelism)
-                        best_listener_info = max(available_listeners, key=lambda x: x['available_devices'])
-                        listener = best_listener_info['listener']
-                        listener_id = listener['agent_id']
-
-                        logger.debug(f"Selected listener {listener_id} with {best_listener_info['available_devices']} "
-                                   f"available device(s)")
-
-                        # Calculate expected transmission timing
-                        expected_start = datetime.now(timezone.utc) + timedelta(seconds=5)  # 5s delay for setup
-
-                        # Calculate challenge duration (automatically from file/params if not explicitly set)
-                        challenge_duration = calculate_challenge_duration(
-                            config=config,
-                            files_dir=self.files_dir,
-                            include_pre_paint=False,  # Pre-paint is handled by runner, not listener
-                            pre_paint_duration=0.0
-                        )
-                        # Add buffer for listener recording (5s pre-roll + 5s post-roll)
-                        expected_duration = challenge_duration + 10.0
-
-                        logger.debug(f"Challenge duration: {challenge_duration}s, listener recording duration: {expected_duration}s")
-
-                        # Create listener assignment
-                        assignment_id = self.db.create_listener_assignment(
-                            agent_id=listener_id,
-                            challenge_id=challenge['challenge_id'],
-                            transmission_id=transmission_id,
-                            frequency=int(config.get('frequency', 0)),
-                            expected_start=expected_start,
-                            expected_duration=expected_duration
-                        )
-
-                        if assignment_id > 0:
-                            # Push assignment to listener via WebSocket
-                            # Note: This uses SocketIO rooms - listener must join 'agent_<id>' room
-                            assignment_data = {
-                                'assignment_id': assignment_id,
-                                'challenge_id': challenge['challenge_id'],
-                                'challenge_name': challenge['name'],
-                                'transmission_id': transmission_id,
-                                'frequency': int(config.get('frequency', 0)),
-                                'expected_start': expected_start.isoformat(),
-                                'expected_duration': expected_duration,
-                                'runner_id': agent_id,
-                                'timestamp': datetime.now(timezone.utc).isoformat()
-                            }
-
-                            logger.debug(f"Emitting recording_assignment to room 'agent_{listener_id}' on namespace '/agents': {assignment_data}")
-                            self.socketio.emit('recording_assignment', assignment_data,
-                                             room=f'agent_{listener_id}', namespace='/agents')
-
-                            logger.info(f"Assigned listener {listener_id} to record {challenge['name']} at {config.get('frequency')} Hz")
-
-                            # Clear forced recording flag after successful assignment
+                            logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
+                            # Clear forced recording flag if no listeners available (prevents flag from staying set indefinitely)
                             with self.force_record_lock:
                                 if challenge['challenge_id'] in self.force_record_challenges:
                                     self.force_record_challenges.discard(challenge['challenge_id'])
-                                    logger.debug(f"Cleared forced recording flag for challenge {challenge['name']}")
-                        else:
-                            logger.error(f"Failed to create listener assignment for {challenge['name']}")
+                                    logger.debug(f"Cleared forced recording flag for challenge {challenge['name']} (no listeners available)")
                     else:
-                        logger.warning(f"No available listeners for recording {challenge['name']} - all listeners are offline, disabled, or not WebSocket connected")
-                        # Clear forced recording flag if no listeners available (prevents flag from staying set indefinitely)
-                        with self.force_record_lock:
-                            if challenge['challenge_id'] in self.force_record_challenges:
-                                self.force_record_challenges.discard(challenge['challenge_id'])
-                                logger.debug(f"Cleared forced recording flag for challenge {challenge['name']} (no listeners available)")
-                else:
-                    priority = self.calculate_recording_priority(challenge)
-                    logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold {threshold:.2f}")
+                        priority = self.calculate_recording_priority(challenge)
+                        logger.info(f"Skipping listener assignment for {challenge['name']} - priority {priority:.2f} below threshold {threshold:.2f}")
 
                 return jsonify({
                     'task': {
@@ -4091,6 +4230,12 @@ radios:
                         logger.info(f"System was paused for {pause_duration:.1f}s, shifting challenge timings forward")
                         shifted = self.db.shift_challenge_timings(pause_duration)
                         logger.info(f"Shifted {shifted} challenge(s) to compensate for pause duration")
+
+                        # Accumulate total pause time for recording priority calculations
+                        total_pause = float(self.db.get_system_state('total_pause_seconds', '0'))
+                        total_pause += pause_duration
+                        self.db.set_system_state('total_pause_seconds', str(total_pause))
+                        logger.info(f"Accumulated pause time: {total_pause:.1f}s total")
                     else:
                         logger.warning(f"Invalid pause duration: {pause_duration:.1f}s, not shifting timings")
 

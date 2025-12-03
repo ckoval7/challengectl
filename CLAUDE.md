@@ -196,6 +196,59 @@ Listeners are specialized agents that capture and record RF transmissions:
 - Recording threshold: **1.0** (transmissions with priority ≥ 1.0 are recorded)
 - Never-recorded challenges: priority = 1000.0 (always recorded first time)
 
+**Recording outlier blocking:**
+Server supports optional outlier blocking to ensure fair listener resource distribution when one challenge has disproportionately high recording priority:
+
+*Configuration:*
+```yaml
+server:
+  recording_outlier_blocking_enabled: false  # Enable feature (default: false)
+  recording_outlier_threshold: 2.0  # Block if max_priority > median_priority × threshold
+```
+
+*How it works:*
+1. When a transmission completes, server calculates recording priority for ALL enabled challenges
+2. Never-recorded challenges (priority = 1000.0) are excluded from median calculation
+3. Server calculates median priority across recorded-at-least-once challenges
+4. If `max_priority > (median_priority × outlier_threshold)`:
+   - **Block ALL recordings** except the outlier challenge itself and never-recorded challenges
+   - Outlier challenge must be recorded to reduce its priority and lift the blocking
+   - This ensures listener resources are reserved for the highest-priority challenge
+
+*Example scenario:*
+- Challenge A: priority = 4.5 (2 transmissions since last recording)
+- Challenge B: priority = 5.2 (3 transmissions since last recording)
+- Challenge C: priority = 4.8 (2 transmissions since last recording)
+- Challenge D: priority = 12.0 (20 transmissions since last recording) ← **outlier**
+- Challenge E: priority = 5.1 (3 transmissions since last recording)
+
+Calculation:
+- Median priority (excluding never-recorded): 5.1
+- Max priority: 12.0
+- Outlier check: 12.0 > (5.1 × 2.0) = 12.0 > 10.2 ✓ **BLOCKING ACTIVE**
+
+Recording decisions while blocking is active:
+- Challenge A completes → **BLOCKED** (not the outlier, resources reserved for D)
+- Challenge B completes → **BLOCKED** (not the outlier)
+- Challenge D completes → **ALLOWED** (is the outlier, needs recording to reduce priority)
+- Challenge E completes → **BLOCKED** (not the outlier)
+- Never-recorded challenge → **ALLOWED** (always record first transmission)
+
+Once Challenge D is recorded, its priority drops and blocking is automatically lifted.
+
+*Use cases:*
+- Prevent wasting listener resources on low-priority challenges when a high-priority challenge is waiting
+- Ensure high-priority challenges (those waiting longest for recording) get recorded promptly
+- Maintain fair recording distribution across challenges over time
+
+*Edge cases handled:*
+- Feature disabled by default (must be explicitly enabled in config)
+- No blocking with 0-1 enabled challenges (can't have outliers)
+- No blocking when all challenges are never-recorded (can't calculate median)
+- No blocking when only 1 challenge has been recorded (need ≥2 for median)
+- Disabled challenges excluded from outlier calculation
+- Manual "Trigger Now" recordings bypass blocking (treated as never-recorded, priority = 1000.0)
+
 **Unified agent model:**
 - Both runners and listeners stored in `agents` table with `agent_type` field
 - Listeners have additional WebSocket tracking: `websocket_connected`, `websocket_last_connected`
