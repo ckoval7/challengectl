@@ -4543,7 +4543,15 @@ radios:
         existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
 
         # Build map of existing devices by device_id
-        devices_by_id = {d['device_id']: d for d in existing_devices}
+        # Filter out devices without device_id (legacy format)
+        devices_by_id = {}
+        devices_without_id = []
+        for d in existing_devices:
+            if 'device_id' in d:
+                devices_by_id[d['device_id']] = d
+            else:
+                # Keep legacy devices that don't have device_id
+                devices_without_id.append(d)
 
         # Merge auto-detected devices
         for new_dev in auto_detected:
@@ -4563,7 +4571,8 @@ radios:
                 # Add new device
                 devices_by_id[device_id] = new_dev
 
-        return list(devices_by_id.values())
+        # Return merged devices: auto-detected + legacy devices without device_id
+        return list(devices_by_id.values()) + devices_without_id
 
     def _was_device_previously_detected(self, agent: Dict, device: Dict) -> bool:
         """Check if device was previously detected (avoid duplicate broadcasts).
@@ -4578,7 +4587,7 @@ radios:
         existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
 
         device_id = device['device_id']
-        return any(d['device_id'] == device_id for d in existing_devices)
+        return any(d.get('device_id') == device_id for d in existing_devices)
 
     def _get_pending_device_updates(self, agent_id: str) -> List[Dict]:
         """Get pending device configuration updates for agent.
