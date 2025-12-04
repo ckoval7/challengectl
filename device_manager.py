@@ -1,0 +1,578 @@
+#!/usr/bin/env python3
+"""
+Shared Device Management Module for ChallengeCtl
+
+Provides common device auto-detection, probing, and management functionality
+for both runners (TX) and listeners (RX).
+"""
+
+import logging
+import time
+import threading
+from datetime import datetime, timezone
+from typing import List, Dict, Optional, Callable
+
+logger = logging.getLogger(__name__)
+
+
+class DeviceManager:
+    """Manages SDR device auto-detection, probing, and status tracking.
+
+    This class provides shared functionality for both runners and listeners:
+    - Auto-detection of SDR devices using osmosdr
+    - Periodic device probing for availability
+    - Device status tracking (online/offline/busy/disabled)
+    - Enabled/disabled state management
+    """
+
+    def __init__(
+        self,
+        configured_devices: List[Dict],
+        device_probe_interval: int = 30,
+        enable_auto_detection: bool = True,
+        agent_type: str = 'runner',
+        probe_callback: Optional[Callable] = None
+    ):
+        """Initialize device manager.
+
+        Args:
+            configured_devices: List of devices from configuration
+            device_probe_interval: Seconds between probes (0 to disable)
+            enable_auto_detection: Enable automatic device detection
+            agent_type: 'runner' or 'listener' (determines device filtering)
+            probe_callback: Optional callback(device) -> bool for custom probing
+        """
+        self.configured_devices = configured_devices
+        self.device_probe_interval = device_probe_interval
+        self.enable_auto_detection = enable_auto_detection
+        self.agent_type = agent_type
+        self.probe_callback = probe_callback
+
+        # Auto-detected devices
+        self.auto_detected_devices = []
+        self.auto_detected_lock = threading.Lock()
+        self.last_auto_detection = 0
+
+        # Device status tracking
+        self.offline_devices = set()  # Set of device_ids that are offline
+        self.busy_devices = set()  # Set of device_ids currently in use
+        self.device_failure_counts = {}  # Map of device_id -> consecutive failure count
+        self.device_lock = threading.Lock()
+
+        # Probe thread
+        self.probe_thread = None
+        self.running = False
+
+    def get_all_devices(self) -> List[Dict]:
+        """Get combined list of configured + auto-detected devices.
+
+        Returns:
+            List of all device dicts (configured + auto-detected)
+        """
+        with self.auto_detected_lock:
+            return self.configured_devices + self.auto_detected_devices
+
+    def get_available_devices(self, frequency: Optional[int] = None) -> List[Dict]:
+        """Get list of available devices (enabled, online, not busy).
+
+        Args:
+            frequency: Optional frequency filter (Hz)
+
+        Returns:
+            List of available device dicts
+        """
+        available = []
+
+        with self.device_lock:
+            all_devices = self.get_all_devices()
+            for device in all_devices:
+                device_id = device.get('device_id')
+
+                # Skip disabled devices
+                if not device.get('enabled', True):
+                    continue
+
+                # Skip offline devices
+                if device_id in self.offline_devices:
+                    continue
+
+                # Skip busy devices
+                if device_id in self.busy_devices:
+                    continue
+
+                # Check frequency compatibility if specified
+                if frequency is not None:
+                    if not self._device_supports_frequency(device, frequency):
+                        continue
+
+                available.append(device)
+
+        return available
+
+    def _device_supports_frequency(self, device: Dict, frequency: int) -> bool:
+        """Check if device supports a given frequency.
+
+        Args:
+            device: Device dict
+            frequency: Frequency in Hz
+
+        Returns:
+            True if device supports frequency, False otherwise
+        """
+        freq_limits = device.get('frequency_limits', [])
+
+        # No limits = accepts all frequencies
+        if not freq_limits:
+            return True
+
+        # Check if frequency is within any range
+        for freq_range in freq_limits:
+            try:
+                if '-' in str(freq_range):
+                    min_freq, max_freq = map(int, str(freq_range).split('-'))
+                    if min_freq <= frequency <= max_freq:
+                        return True
+            except (ValueError, AttributeError):
+                logger.warning(f"Invalid frequency range format: {freq_range}")
+                continue
+
+        return False
+
+    def mark_device_busy(self, device_id: int):
+        """Mark a device as busy."""
+        with self.device_lock:
+            self.busy_devices.add(device_id)
+
+    def mark_device_available(self, device_id: int):
+        """Mark a device as available (not busy)."""
+        with self.device_lock:
+            self.busy_devices.discard(device_id)
+
+    def mark_device_offline(self, device_id: int):
+        """Mark a device as offline."""
+        with self.device_lock:
+            self.offline_devices.add(device_id)
+            self.device_failure_counts[device_id] = self.device_failure_counts.get(device_id, 0) + 1
+
+    def mark_device_online(self, device_id: int):
+        """Mark a device as online."""
+        with self.device_lock:
+            self.offline_devices.discard(device_id)
+            self.device_failure_counts[device_id] = 0
+
+    def record_device_success(self, device_id: int):
+        """Record successful operation on device.
+
+        Args:
+            device_id: Device ID
+
+        Returns:
+            None
+        """
+        with self.device_lock:
+            self.device_failure_counts[device_id] = 0
+            # If device was offline, keep it offline until explicit online marking
+            # (trust verification - requires successful operation after probe)
+
+    def record_device_failure(self, device_id: int) -> int:
+        """Record failed operation on device.
+
+        Args:
+            device_id: Device ID
+
+        Returns:
+            Number of consecutive failures
+        """
+        with self.device_lock:
+            self.device_failure_counts[device_id] = self.device_failure_counts.get(device_id, 0) + 1
+            failure_count = self.device_failure_counts[device_id]
+
+            # Mark offline after 3 consecutive failures
+            if failure_count >= 3:
+                self.offline_devices.add(device_id)
+
+            return failure_count
+
+    def auto_detect_devices(self) -> List[Dict]:
+        """Auto-detect new SDR devices using osmosdr.
+
+        Returns:
+            List of newly-detected device dicts
+        """
+        try:
+            import osmosdr
+        except ImportError:
+            logger.warning("osmosdr not available, auto-detection disabled")
+            return []
+
+        newly_detected = []
+
+        try:
+            # Find all SDR devices
+            devices = osmosdr.device.find()
+
+            for device in devices:
+                devicestring = device.to_string()
+                attributes = devicestring.split(',')
+
+                # Extract driver type
+                driver = None
+                for attr in attributes:
+                    if attr.startswith('driver='):
+                        driver = attr.split('=')[1]
+                        break
+
+                if not driver:
+                    continue
+
+                # Filter by agent type
+                if not self._should_detect_device(driver):
+                    logger.debug(f"Skipping {driver} device (not suitable for {self.agent_type})")
+                    continue
+
+                # Parse device info
+                device_info = self._parse_detected_device(driver, attributes)
+                if not device_info:
+                    continue
+
+                # Check if already known
+                if self._is_device_known(device_info):
+                    continue
+
+                # Assign device_id
+                all_devices = self.get_all_devices()
+                max_id = max([d.get('device_id', -1) for d in all_devices], default=-1)
+                device_info['device_id'] = max_id + 1
+                device_info['source'] = 'auto_detected'
+                device_info['enabled'] = False  # Disabled by default
+                device_info['auto_detected_at'] = datetime.now(timezone.utc).isoformat()
+
+                newly_detected.append(device_info)
+                logger.info(f"Auto-detected new device: {device_info['model']} {device_info.get('name', 'unknown')}")
+
+            return newly_detected
+
+        except Exception as e:
+            logger.error(f"Error during auto-detection: {e}", exc_info=True)
+            return []
+
+    def _should_detect_device(self, driver: str) -> bool:
+        """Determine if device should be detected based on agent type.
+
+        Args:
+            driver: Driver name (e.g., 'rtlsdr', 'hackrf', 'bladerf')
+
+        Returns:
+            True if device should be detected for this agent type
+        """
+        # RX-only devices
+        rx_only_drivers = ['rtlsdr', 'airspy']
+
+        if self.agent_type == 'runner':
+            # Runners skip RX-only devices
+            return driver not in rx_only_drivers
+        else:
+            # Listeners detect all devices (including RX-only)
+            return True
+
+    def _parse_detected_device(self, driver: str, attributes: List[str]) -> Optional[Dict]:
+        """Parse osmosdr device attributes into device dict.
+
+        Args:
+            driver: Driver name
+            attributes: List of attribute strings from osmosdr
+
+        Returns:
+            Device dict or None if parsing fails
+        """
+        if driver == 'hackrf':
+            return self._parse_hackrf_device(attributes)
+        elif driver == 'bladerf':
+            return self._parse_bladerf_device(attributes)
+        elif driver == 'uhd':
+            return self._parse_uhd_device(attributes)
+        elif driver == 'rtlsdr':
+            return self._parse_rtlsdr_device(attributes)
+        elif driver == 'airspy':
+            return self._parse_airspy_device(attributes)
+        else:
+            logger.debug(f"Unknown driver type: {driver}")
+            return None
+
+    def _parse_hackrf_device(self, attributes: List[str]) -> Optional[Dict]:
+        """Parse HackRF device from osmosdr attributes."""
+        serial = None
+        for attr in attributes:
+            if attr.startswith('serial='):
+                # Remove leading zeros
+                serial = attr.replace('serial=', '').lstrip('0') or '0'
+                break
+
+        # Count existing HackRF devices
+        hackrf_count = sum(1 for d in self.get_all_devices() if d.get('model') == 'hackrf')
+
+        return {
+            'model': 'hackrf',
+            'name': str(hackrf_count),  # Index-based
+            'device_string': f'hackrf={hackrf_count}',
+            'antennas_config': {},  # No frequency limits = accepts all
+            'rf_gain': 14,
+            'if_gain': 32,
+            'bias_t': False,
+            'in_use': False
+        }
+
+    def _parse_bladerf_device(self, attributes: List[str]) -> Optional[Dict]:
+        """Parse BladeRF device from osmosdr attributes."""
+        serial = None
+        for attr in attributes:
+            if attr.startswith('serial='):
+                serial = attr.split('=')[1]
+                break
+
+        if not serial:
+            return None
+
+        return {
+            'model': 'bladerf',
+            'name': serial,
+            'device_string': f'bladerf={serial}',
+            'antennas_config': {},
+            'rf_gain': 43,
+            'if_gain': None,
+            'bias_t': False,
+            'in_use': False
+        }
+
+    def _parse_uhd_device(self, attributes: List[str]) -> Optional[Dict]:
+        """Parse USRP/UHD device from osmosdr attributes."""
+        device_type = None
+        serial = None
+
+        for attr in attributes:
+            if attr.startswith('type='):
+                device_type = attr.split('=')[1]
+            elif attr.startswith('serial='):
+                serial = attr.split('=')[1]
+
+        if not device_type or not serial:
+            return None
+
+        return {
+            'model': 'usrp',
+            'name': f'type={device_type}',
+            'device_string': f'uhd,type={device_type},serial={serial}',
+            'antennas_config': {},
+            'rf_gain': 20,
+            'if_gain': None,
+            'bias_t': False,
+            'in_use': False
+        }
+
+    def _parse_rtlsdr_device(self, attributes: List[str]) -> Optional[Dict]:
+        """Parse RTL-SDR device from osmosdr attributes."""
+        serial = None
+        for attr in attributes:
+            if attr.startswith('serial='):
+                serial = attr.split('=')[1]
+                break
+
+        # Count existing RTL-SDR devices
+        rtlsdr_count = sum(1 for d in self.get_all_devices() if d.get('model') == 'rtlsdr')
+
+        return {
+            'model': 'rtlsdr',
+            'name': str(rtlsdr_count),  # Index-based
+            'gain': 40,
+            'frequency_limits': [],
+            'in_use': False
+        }
+
+    def _parse_airspy_device(self, attributes: List[str]) -> Optional[Dict]:
+        """Parse AirSpy device from osmosdr attributes."""
+        serial = None
+        for attr in attributes:
+            if attr.startswith('serial='):
+                serial = attr.split('=')[1]
+                break
+
+        airspy_count = sum(1 for d in self.get_all_devices() if d.get('model') == 'airspy')
+
+        return {
+            'model': 'airspy',
+            'name': str(airspy_count),
+            'gain': 15,  # Default linearity gain
+            'frequency_limits': [],
+            'in_use': False
+        }
+
+    def _is_device_known(self, device_info: Dict) -> bool:
+        """Check if device is already known (configured or detected).
+
+        Args:
+            device_info: Device dict to check
+
+        Returns:
+            True if device already known, False otherwise
+        """
+        # For runners: compare by device_string
+        # For listeners: compare by model and name
+        all_devices = self.get_all_devices()
+
+        if 'device_string' in device_info:
+            # Runner-style comparison
+            device_string = device_info['device_string']
+            for dev in all_devices:
+                if dev.get('device_string') == device_string:
+                    return True
+        else:
+            # Listener-style comparison
+            model = device_info.get('model')
+            name = device_info.get('name')
+            for dev in all_devices:
+                if dev.get('model') == model and dev.get('name') == name:
+                    return True
+
+        return False
+
+    def probe_device(self, device: Dict) -> bool:
+        """Probe device availability.
+
+        Args:
+            device: Device dict
+
+        Returns:
+            True if device is available, False otherwise
+        """
+        # Use custom probe callback if provided
+        if self.probe_callback:
+            return self.probe_callback(device)
+
+        # Default: assume available (subclass should override)
+        return True
+
+    def device_probe_loop(self):
+        """Background thread for periodic device probing and auto-detection."""
+        logger.info("Device probe loop started")
+
+        while self.running:
+            try:
+                # Auto-detect new devices (if enabled)
+                if self.enable_auto_detection:
+                    now = time.time()
+                    if now - self.last_auto_detection >= self.device_probe_interval:
+                        newly_detected = self.auto_detect_devices()
+
+                        if newly_detected:
+                            with self.auto_detected_lock:
+                                self.auto_detected_devices.extend(newly_detected)
+
+                            for dev in newly_detected:
+                                logger.info(f"New device detected: {dev['model']} {dev.get('name', 'unknown')} "
+                                          f"(device_id={dev['device_id']}, enabled={dev['enabled']})")
+
+                        self.last_auto_detection = now
+
+                # Probe all known devices
+                all_devices = self.get_all_devices()
+                for device in all_devices:
+                    device_id = device.get('device_id')
+
+                    # Skip disabled devices (don't waste time probing)
+                    if not device.get('enabled', True):
+                        continue
+
+                    # Probe device
+                    is_available = self.probe_device(device)
+
+                    with self.device_lock:
+                        currently_offline = device_id in self.offline_devices
+
+                    # Update offline status based on probe result
+                    if is_available and currently_offline:
+                        # Device probe passed but was offline
+                        # Keep offline until successful operation (trust verification)
+                        logger.info(f"Device {device_id} probe successful, but keeping offline "
+                                  f"until successful operation")
+                    elif not is_available and not currently_offline:
+                        # Device probe failed and was online
+                        failure_count = self.record_device_failure(device_id)
+                        logger.warning(f"Device {device_id} probe failed (failure {failure_count}/3)")
+
+                        if failure_count >= 3:
+                            logger.error(f"Device {device_id} marked OFFLINE after 3 consecutive probe failures")
+
+                # Wait before next probe cycle
+                time.sleep(self.device_probe_interval)
+
+            except Exception as e:
+                logger.error(f"Error in device probe loop: {e}", exc_info=True)
+                time.sleep(self.device_probe_interval)
+
+    def start_probe_loop(self):
+        """Start the device probe loop in a background thread."""
+        if self.device_probe_interval <= 0:
+            logger.info("Device probing disabled (interval = 0)")
+            return
+
+        self.running = True
+        self.probe_thread = threading.Thread(target=self.device_probe_loop, daemon=True)
+        self.probe_thread.start()
+        logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, "
+                   f"auto-detect: {self.enable_auto_detection})")
+
+    def stop_probe_loop(self):
+        """Stop the device probe loop."""
+        self.running = False
+        if self.probe_thread:
+            self.probe_thread.join(timeout=2)
+
+    def get_device_status_dict(self) -> Dict[int, str]:
+        """Get device status dictionary for heartbeat.
+
+        Returns:
+            Dict mapping device_id to status string (online/busy/offline/disabled)
+        """
+        device_status = {}
+
+        with self.device_lock:
+            all_devices = self.get_all_devices()
+            for device in all_devices:
+                device_id = device.get('device_id')
+
+                if not device.get('enabled', True):
+                    device_status[device_id] = 'disabled'
+                elif device_id in self.offline_devices:
+                    device_status[device_id] = 'offline'
+                elif device_id in self.busy_devices:
+                    device_status[device_id] = 'busy'
+                else:
+                    device_status[device_id] = 'online'
+
+        return device_status
+
+    def apply_device_config_updates(self, updates: List[Dict]):
+        """Apply device configuration updates from server.
+
+        Args:
+            updates: List of device config update dicts with device_id and enabled fields
+        """
+        for update in updates:
+            device_id = update.get('device_id')
+            enabled = update.get('enabled')
+
+            if device_id is None or enabled is None:
+                continue
+
+            # Find device (configured or auto-detected)
+            all_devices = self.get_all_devices()
+            for device in all_devices:
+                if device.get('device_id') == device_id:
+                    old_enabled = device.get('enabled', True)
+                    device['enabled'] = enabled
+
+                    if old_enabled != enabled:
+                        status = "enabled" if enabled else "disabled"
+                        logger.info(f"Device {device_id} ({device.get('model')} {device.get('name')}) {status} via server")
+
+                    break

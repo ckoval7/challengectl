@@ -2141,6 +2141,71 @@ class Database:
                 logger.info(f"Disabled agent: {agent_id}")
             return cursor.rowcount > 0
 
+    def update_agent_devices(self, agent_id: str, devices: List[Dict]) -> bool:
+        """Update agent's device list.
+
+        Args:
+            agent_id: Agent ID
+            devices: List of device dicts
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE agents
+                SET devices = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (json.dumps(devices), agent_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_device_enabled(self, agent_id: str, device_id: int, enabled: bool) -> bool:
+        """Update enabled flag for a specific device.
+
+        Args:
+            agent_id: Agent ID
+            device_id: Device ID (integer)
+            enabled: New enabled state
+
+        Returns:
+            True if successful, False if agent or device not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get current devices
+            cursor.execute('SELECT devices FROM agents WHERE agent_id = ?', (agent_id,))
+            row = cursor.fetchone()
+
+            if not row or not row['devices']:
+                return False
+
+            # Parse devices JSON
+            devices = json.loads(row['devices']) if isinstance(row['devices'], str) else row['devices']
+
+            # Find and update device
+            device_found = False
+            for device in devices:
+                if device.get('device_id') == device_id:
+                    device['enabled'] = enabled
+                    device_found = True
+                    break
+
+            if not device_found:
+                return False
+
+            # Update devices in database
+            cursor.execute('''
+                UPDATE agents
+                SET devices = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+            ''', (json.dumps(devices), agent_id))
+            conn.commit()
+
+            return True
+
     def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent from the system.
 

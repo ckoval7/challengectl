@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import local listener modules
 from spectrum_listener import SpectrumListener
 from waterfall_generator import generate_waterfall
+from device_manager import DeviceManager
 
 # Initial basic logging setup with default INFO level
 # This will be reconfigured in main() after parsing CLI args to use the --log-level parameter
@@ -156,6 +157,10 @@ class ListenerAgent:
         self.simulate = simulate
         self.log_level = log_level
 
+        # Device probing and auto-detection configuration
+        self.device_probe_interval = self.config['agent'].get('device_probe_interval', 30)
+        self.enable_auto_detection = self.config['agent'].get('enable_auto_detection', True)
+
         # TLS configuration
         self.ca_cert = self.config['agent'].get('ca_cert')
         self.verify_ssl = self.config['agent'].get('verify_ssl', True)
@@ -163,8 +168,17 @@ class ListenerAgent:
         if simulate:
             logger.info("Simulation mode enabled - will generate test data without SDR hardware")
 
-        # Device info
-        self.devices = self.detect_devices()
+        # Load devices from configuration
+        configured_devices = self.detect_devices()
+
+        # Initialize device manager
+        self.device_manager = DeviceManager(
+            configured_devices=configured_devices,
+            device_probe_interval=self.device_probe_interval,
+            enable_auto_detection=self.enable_auto_detection,
+            agent_type='listener',
+            probe_callback=None  # Listeners don't have custom probe logic
+        )
 
         # HTTP session for connection pooling
         self.session = requests.Session()
@@ -226,6 +240,11 @@ class ListenerAgent:
 
         logger.info(f"Listener initialized: {self.agent_id}")
 
+    @property
+    def devices(self):
+        """Get all devices (backward compatibility)."""
+        return self.device_manager.get_all_devices()
+
     def load_config(self, config_path: str) -> Dict:
         """Load listener configuration from YAML file."""
         try:
@@ -251,15 +270,18 @@ class ListenerAgent:
 
         if devices_config:
             # New format: multiple devices with gain and frequency_limits
-            for device in devices_config:
+            for idx, device in enumerate(devices_config):
                 device_info = {
+                    'device_id': idx,  # Add device_id for consistency with runner
                     'name': str(device.get('name', '0')),
                     'model': device.get('model', 'rtlsdr'),
                     'gain': device.get('gain', 40),
                     'frequency_limits': device.get('frequency_limits', []),
                     'waterfall_min_dbm': device.get('waterfall_min_dbm'),
                     'waterfall_max_dbm': device.get('waterfall_max_dbm'),
-                    'in_use': False  # Track device availability
+                    'in_use': False,  # Track device availability
+                    'source': 'config',  # Mark as configured device
+                    'enabled': True  # Configured devices enabled by default
                 }
                 devices.append(device_info)
                 logger.info(f"Configured device: {device_info['model']}={device_info['name']} "
@@ -271,11 +293,14 @@ class ListenerAgent:
 
             if device_config:
                 device_info = {
+                    'device_id': 0,  # Single device gets ID 0
                     'name': device_config.get('id', 'rtlsdr=0'),
                     'model': device_config.get('type', 'rtlsdr'),
                     'gain': gain,
                     'frequency_limits': [],
-                    'in_use': False
+                    'in_use': False,
+                    'source': 'config',
+                    'enabled': True
                 }
                 devices.append(device_info)
                 logger.info(f"Configured device (legacy format): {device_info['model']}={device_info['name']} "
@@ -300,41 +325,19 @@ class ListenerAgent:
         Returns:
             Device dict if found, None if no suitable device available
         """
-        available_devices = []
+        # Get available devices from device manager
+        devices = self.device_manager.get_available_devices(frequency=frequency)
 
-        for device in self.devices:
-            # Skip devices currently in use
-            if device.get('in_use', False):
-                continue
-
-            freq_limits = device.get('frequency_limits', [])
-
-            # If no frequency limits, device can handle any frequency
-            if not freq_limits:
-                available_devices.append(device)
-                continue
-
-            # Check if frequency is within any of the device's ranges
-            for freq_range in freq_limits:
-                try:
-                    # Parse range like "144000000-148000000"
-                    if '-' in freq_range:
-                        min_freq, max_freq = map(int, freq_range.split('-'))
-                        if min_freq <= frequency <= max_freq:
-                            available_devices.append(device)
-                            break
-                except ValueError:
-                    logger.warning(f"Invalid frequency range format: {freq_range}")
-
-        if not available_devices:
+        if not devices:
             logger.error(f"No available device for frequency {frequency} Hz")
             return None
 
         # Return first available device
-        selected = available_devices[0]
+        selected = devices[0]
         logger.info(f"Selected device {selected['model']}={selected['name']} "
                    f"for {frequency} Hz (gain: {selected['gain']} dB)")
         return selected
+
 
     def register_websocket_handlers(self):
         """Register WebSocket event handlers for SocketIO client."""
@@ -943,13 +946,42 @@ class ListenerAgent:
     def send_heartbeat_http(self):
         """Send heartbeat to server via HTTP."""
         try:
+            # Get device status from device manager
+            device_status = self.device_manager.get_device_status_dict()
+
+            # Get auto-detected devices
+            with self.device_manager.auto_detected_lock:
+                auto_detected_payload = [
+                    {
+                        'device_id': d['device_id'],
+                        'model': d['model'],
+                        'name': d['name'],
+                        'device_string': d.get('device_string', f"{d['model']}={d['name']}"),
+                        'source': 'auto_detected',
+                        'enabled': d.get('enabled', False),
+                        'auto_detected_at': d.get('auto_detected_at')
+                    }
+                    for d in self.device_manager.auto_detected_devices
+                ]
+
+            # Send heartbeat with device status and auto-detected devices
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/heartbeat",
+                json={
+                    'device_status': device_status,
+                    'auto_detected_devices': auto_detected_payload
+                },
                 timeout=5
             )
 
             if response.status_code == 200:
                 logger.debug("Heartbeat sent successfully")
+
+                # Apply config updates from server response
+                data = response.json()
+                device_updates = data.get('device_config_updates', [])
+                if device_updates:
+                    self.device_manager.apply_device_config_updates(device_updates)
             else:
                 logger.warning(f"Heartbeat failed: {response.status_code}")
 
@@ -1042,6 +1074,12 @@ class ListenerAgent:
         self.heartbeat_thread = threading.Thread(target=self.heartbeat_loop, daemon=True)
         self.heartbeat_thread.start()
 
+        # Start device probe loop thread
+        if self.device_probe_interval > 0:
+            self.device_manager.start_probe_loop()
+            print(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+            logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+
         print(f"Listener agent {self.agent_id} running, waiting for assignments...")
         print("Press Ctrl+C to stop")
         logger.info(f"Listener agent {self.agent_id} running, waiting for assignments...")
@@ -1066,6 +1104,9 @@ class ListenerAgent:
         print("\n" + "="*60, flush=True)
         print("SHUTTING DOWN LISTENER", flush=True)
         print("="*60, flush=True)
+
+        # Stop device probe loop
+        self.device_manager.stop_probe_loop()
 
         # Disconnect WebSocket
         if self.sio.connected:

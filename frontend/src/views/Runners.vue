@@ -216,6 +216,34 @@
                       </div>
                     </template>
                   </el-table-column>
+                  <el-table-column
+                    label="Actions"
+                    width="220"
+                    align="center"
+                  >
+                    <template #default="devScope">
+                      <el-space>
+                        <!-- Enable/Disable button -->
+                        <el-button
+                          v-if="devScope.row.enabled !== undefined"
+                          size="small"
+                          :type="devScope.row.enabled ? 'warning' : 'success'"
+                          @click="toggleDeviceEnabled(scope.row.agent_id, devScope.row.device_id, devScope.row.enabled)"
+                        >
+                          {{ devScope.row.enabled ? 'Disable' : 'Enable' }}
+                        </el-button>
+
+                        <!-- Auto-detected badge -->
+                        <el-tag
+                          v-if="devScope.row.source === 'auto_detected'"
+                          size="small"
+                          type="info"
+                        >
+                          Auto-detected
+                        </el-tag>
+                      </el-space>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </div>
             </template>
@@ -805,6 +833,108 @@
           row-key="agent_id"
           class="w-full"
         >
+          <el-table-column type="expand">
+            <template #default="scope">
+              <div class="p-xl">
+                <h4>Devices:</h4>
+                <el-table
+                  :data="scope.row.devices || []"
+                  class="w-full"
+                >
+                  <el-table-column
+                    prop="device_id"
+                    label="ID"
+                    width="80"
+                  />
+                  <el-table-column
+                    prop="model"
+                    label="Model"
+                    width="150"
+                  />
+                  <el-table-column
+                    prop="name"
+                    label="Name/Serial"
+                  />
+                  <el-table-column
+                    label="Status"
+                    width="120"
+                  >
+                    <template #default="devScope">
+                      <el-tag
+                        :type="devScope.row.status === 'online' ? 'success' : devScope.row.status === 'busy' ? 'warning' : 'danger'"
+                        size="small"
+                      >
+                        {{ devScope.row.status || 'unknown' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Frequency Limits & Gain">
+                    <template #default="devScope">
+                      <div v-if="devScope.row.antennas_config">
+                        <!-- Per-antenna frequency limits -->
+                        <div
+                          v-for="(antennaInfo, antennaName) in devScope.row.antennas_config"
+                          :key="antennaName"
+                          style="margin-bottom: 4px;"
+                        >
+                          <el-tag
+                            size="small"
+                            :type="antennaInfo.enabled === false ? 'info' : 'success'"
+                            style="margin-right: 8px;"
+                          >
+                            {{ antennaName || 'Default' }}
+                          </el-tag>
+                          <span style="font-size: 13px;">
+                            {{ formatFrequencyLimits(antennaInfo.frequency_limits) }}
+                          </span>
+                          <span
+                            v-if="antennaInfo.rf_gain !== undefined"
+                            style="font-size: 12px; color: #606266; margin-left: 8px;"
+                          >
+                            (Gain: {{ antennaInfo.rf_gain }} dB)
+                          </span>
+                        </div>
+                      </div>
+                      <div v-else>
+                        <!-- Legacy format -->
+                        <div>
+                          {{ formatFrequencyLimits(devScope.row.frequency_limits) }}
+                        </div>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="Actions"
+                    width="220"
+                    align="center"
+                  >
+                    <template #default="devScope">
+                      <el-space>
+                        <!-- Enable/Disable button -->
+                        <el-button
+                          v-if="devScope.row.enabled !== undefined"
+                          size="small"
+                          :type="devScope.row.enabled ? 'warning' : 'success'"
+                          @click="toggleDeviceEnabled(scope.row.agent_id, devScope.row.device_id, devScope.row.enabled)"
+                        >
+                          {{ devScope.row.enabled ? 'Disable' : 'Enable' }}
+                        </el-button>
+
+                        <!-- Auto-detected badge -->
+                        <el-tag
+                          v-if="devScope.row.source === 'auto_detected'"
+                          size="small"
+                          type="info"
+                        >
+                          Auto-detected
+                        </el-tag>
+                      </el-space>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column
             v-if="!isMobile"
             prop="agent_id"
@@ -1718,7 +1848,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api'
 import { websocket } from '../websocket'
 import { userPermissions } from '../auth'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { formatDateTime } from '../utils/time'
 import { ArrowDown, Switch as SwitchIcon, Tools, Key, Delete } from '@element-plus/icons-vue'
 import { useBreakpoint } from '../composables/useBreakpoint'
@@ -2856,6 +2986,46 @@ logging:
       }
     }
 
+    const toggleDeviceEnabled = async (agentId, deviceId, currentlyEnabled) => {
+      try {
+        const action = currentlyEnabled ? 'disable' : 'enable'
+        const response = await fetch(`/api/agents/${agentId}/devices/${deviceId}/${action}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (response.ok) {
+          ElMessage.success(`Device ${deviceId} ${action}d successfully`)
+          // Refresh agents list
+          loadRunners()
+          loadListeners()
+        } else {
+          const data = await response.json()
+          ElMessage.error(`Failed to ${action} device: ${data.error || 'Unknown error'}`)
+        }
+      } catch (error) {
+        console.error(`Error ${currentlyEnabled ? 'disabling' : 'enabling'} device:`, error)
+        ElMessage.error(`Failed to ${currentlyEnabled ? 'disable' : 'enable'} device`)
+      }
+    }
+
+    const updateDeviceInState = (agentId, deviceId, updates) => {
+      // Find agent in runners or listeners
+      let agent = runners.value.find(r => r.agent_id === agentId)
+      if (!agent) {
+        agent = listeners.value.find(l => l.agent_id === agentId)
+      }
+
+      if (agent && agent.devices) {
+        const device = agent.devices.find(d => d.device_id === deviceId)
+        if (device) {
+          Object.assign(device, updates)
+        }
+      }
+    }
+
     const handleRunnerStatusEvent = (event) => {
       console.log('Runners page received runner_status event:', event)
 
@@ -2962,6 +3132,29 @@ logging:
       websocket.on('runner_enabled', handleRunnerEnabledEvent)
       websocket.on('listener_enabled', handleListenerEnabledEvent)
       websocket.on('device_status', handleDeviceStatusEvent)
+
+      // Handle device detection event
+      websocket.on('device_detected', (data) => {
+        console.log('Device detected:', data)
+        ElNotification({
+          title: 'New Device Detected',
+          message: `${data.model} (${data.name}) detected on ${data.agent_id}. Enable in device settings.`,
+          type: 'info',
+          duration: 10000
+        })
+
+        // Refresh agents to show new device
+        loadRunners()
+        loadListeners()
+      })
+
+      // Handle device config update event
+      websocket.on('device_config_updated', (data) => {
+        console.log('Device config updated:', data)
+
+        // Update device in local state without full refresh
+        updateDeviceInState(data.agent_id, data.device_id, { enabled: data.enabled })
+      })
     })
 
     // Provisioning Keys state
@@ -3144,6 +3337,8 @@ curl -k \\
       kickListener,
       handleRunnerAction,
       handleListenerAction,
+      toggleDeviceEnabled,
+      updateDeviceInState,
       addListenerDialogVisible,
       addListenerForm,
       listenerEnrollmentData,

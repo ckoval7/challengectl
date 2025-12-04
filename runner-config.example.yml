@@ -49,6 +49,15 @@ runner:
   # This matches the behavior of the original challengectl
   spectrum_paint_before_challenge: true
 
+  # Device Probing and Auto-Detection
+  # Interval (in seconds) for device health probing and auto-detection
+  # Set to 0 to disable probing (not recommended)
+  device_probe_interval: 30
+
+  # Enable automatic detection of newly-connected SDR devices
+  # Detected devices will be disabled by default and require manual enablement via web UI
+  enable_auto_detection: true
+
 # Radio/SDR Device Configuration
 # Same format as standalone challengectl-v2
 radios:

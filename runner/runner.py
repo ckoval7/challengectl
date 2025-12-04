@@ -29,6 +29,7 @@ from multiprocessing import Process
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from challenges import ask_tx as ask, cw_tx as cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_tx
+from device_manager import DeviceManager
 
 # Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
@@ -134,12 +135,25 @@ class ChallengeCtlRunner:
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
         self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', True)
 
+        # Device probing and auto-detection configuration
+        self.device_probe_interval = self.config['runner'].get('device_probe_interval', 30)
+        self.enable_auto_detection = self.config['runner'].get('enable_auto_detection', True)
+
         # TLS configuration
         self.ca_cert = self.config['runner'].get('ca_cert')
         self.verify_ssl = self.config['runner'].get('verify_ssl', True)
 
-        # Devices from configuration
-        self.devices = self.load_devices()
+        # Load devices from configuration
+        configured_devices = self.load_devices()
+
+        # Initialize device manager
+        self.device_manager = DeviceManager(
+            configured_devices=configured_devices,
+            device_probe_interval=self.device_probe_interval,
+            enable_auto_detection=self.enable_auto_detection,
+            agent_type='runner',
+            probe_callback=self.check_device_available
+        )
 
         # Cache directory setup
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -149,12 +163,8 @@ class ChallengeCtlRunner:
         self.current_task = None
         self._shutdown_initiated = False
 
-        # Device availability tracking for parallel execution
-        self.device_lock = threading.Lock()
-        self.busy_devices = set()  # Set of device_ids currently in use
+        # Active task tracking
         self.active_tasks = {}  # Map of challenge_id -> (thread, device_id)
-        self.offline_devices = set()  # Set of device_ids that have failed and are offline
-        self.device_failure_counts = {}  # Map of device_id -> consecutive failure count
 
         # HTTP session for connection pooling
         self.session = requests.Session()
@@ -190,6 +200,11 @@ class ChallengeCtlRunner:
             logger.info("Using system CA certificates")
 
         logger.info(f"Runner initialized: {self.runner_id}")
+
+    @property
+    def devices(self):
+        """Get all devices (backward compatibility)."""
+        return self.device_manager.get_all_devices()
 
     def load_config(self, config_path: str) -> Dict:
         """Load runner configuration from YAML."""
@@ -282,7 +297,9 @@ class ChallengeCtlRunner:
                 'antennas_config': antennas_config,  # {antenna_name: {frequency_limits: [...], rf_gain: X, bias_t: bool}}
                 'rf_gain': device_rf_gain,  # Device-level gain for legacy support
                 'if_gain': device_if_gain,  # Device-level if_gain (HackRF only)
-                'bias_t': device_bias_t     # Device-level bias_t for legacy support
+                'bias_t': device_bias_t,    # Device-level bias_t for legacy support
+                'source': 'config',         # Mark as configured device
+                'enabled': True             # Configured devices enabled by default
             }
 
             devices.append(device_info)
@@ -462,28 +479,52 @@ class ChallengeCtlRunner:
             return False
 
     def send_heartbeat(self):
-        """Send periodic heartbeat to server with device status."""
+        """Send periodic heartbeat to server with device status and auto-detected devices."""
         try:
-            # Collect device status
-            device_status = {}
-            with self.device_lock:
-                for device in self.devices:
-                    device_id = device['device_id']
-                    if device_id in self.offline_devices:
-                        device_status[device_id] = 'offline'
-                    elif device_id in self.busy_devices:
-                        device_status[device_id] = 'busy'
-                    else:
-                        device_status[device_id] = 'online'
+            # Get device status from device manager
+            device_status = self.device_manager.get_device_status_dict()
+
+            # Include auto-detected devices in payload
+            with self.device_manager.auto_detected_lock:
+                auto_detected_payload = [
+                    {
+                        'device_id': d['device_id'],
+                        'model': d['model'],
+                        'name': d['name'],
+                        'device_string': d['device_string'],
+                        'antennas_config': d['antennas_config'],
+                        'rf_gain': d.get('rf_gain'),
+                        'if_gain': d.get('if_gain'),
+                        'bias_t': d.get('bias_t'),
+                        'source': d['source'],
+                        'enabled': d['enabled'],
+                        'auto_detected_at': d['auto_detected_at']
+                    }
+                    for d in self.device_manager.auto_detected_devices
+                ]
+
+            payload = {
+                'device_status': device_status
+            }
+
+            if auto_detected_payload:
+                payload['auto_detected_devices'] = auto_detected_payload
 
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.runner_id}/heartbeat",
-                json={'device_status': device_status},
+                json=payload,
                 timeout=5
             )
 
             if response.status_code == 200:
                 logger.debug("Heartbeat sent")
+
+                # Check for device config updates from server
+                response_data = response.json()
+                device_updates = response_data.get('device_config_updates', [])
+
+                if device_updates:
+                    self.device_manager.apply_device_config_updates(device_updates)
             else:
                 logger.warning(f"Heartbeat failed: {response.status_code}")
 
@@ -653,56 +694,44 @@ class ChallengeCtlRunner:
         Returns:
             Device dict or None if all devices are busy, offline, or incompatible
         """
-        with self.device_lock:
-            for device in self.devices:
-                device_id = device['device_id']
+        available_devices = self.device_manager.get_available_devices(frequency=frequency)
 
-                # Check if device is available (not busy or offline)
-                if device_id not in self.busy_devices and device_id not in self.offline_devices:
-                    # If frequency specified, verify device has compatible antenna
-                    if frequency is not None:
-                        antenna_info = self.select_antenna_for_frequency(device, frequency)
-                        if antenna_info is None:
-                            # Device doesn't support this frequency, skip it
-                            logger.debug(f"Device {device.get('name')} doesn't support frequency {frequency} Hz")
-                            continue
+        # Filter by antenna compatibility for runners (frequency already filtered by DeviceManager)
+        # But we need additional antenna selection logic for multi-antenna devices
+        for device in available_devices:
+            if frequency is not None:
+                antenna_info = self.select_antenna_for_frequency(device, frequency)
+                if antenna_info is None:
+                    # Device doesn't support this frequency, skip it
+                    logger.debug(f"Device {device.get('name')} doesn't support frequency {frequency} Hz")
+                    continue
 
-                    return device
-            return None
+            return device
+
+        return None
 
     def mark_device_busy(self, device_id: int):
         """Mark a device as busy."""
-        with self.device_lock:
-            self.busy_devices.add(device_id)
+        self.device_manager.mark_device_busy(device_id)
 
     def mark_device_available(self, device_id: int):
         """Mark a device as available."""
-        with self.device_lock:
-            self.busy_devices.discard(device_id)
+        self.device_manager.mark_device_available(device_id)
 
     def get_available_device_count(self) -> int:
         """Get number of devices currently available (not busy and not offline)."""
-        with self.device_lock:
-            total = len(self.devices)
-            unavailable = len(self.busy_devices) + len(self.offline_devices)
-            return max(0, total - unavailable)
+        available = self.device_manager.get_available_devices()
+        return len(available)
 
     def mark_device_offline(self, device_id: int):
         """Mark a device as offline due to hardware failure."""
-        with self.device_lock:
-            if device_id not in self.offline_devices:
-                self.offline_devices.add(device_id)
-                # Also ensure it's not marked as busy
-                self.busy_devices.discard(device_id)
-                logger.error(f"Device {device_id} marked as OFFLINE due to hardware failure")
+        self.device_manager.mark_device_offline(device_id)
+        logger.error(f"Device {device_id} marked as OFFLINE due to hardware failure")
 
     def mark_device_online(self, device_id: int):
         """Mark a previously offline device as online again."""
-        with self.device_lock:
-            if device_id in self.offline_devices:
-                self.offline_devices.remove(device_id)
-                self.device_failure_counts.pop(device_id, None)
-                logger.info(f"Device {device_id} marked as ONLINE")
+        self.device_manager.mark_device_online(device_id)
+        logger.info(f"Device {device_id} marked as ONLINE")
 
     def record_device_failure(self, device_id: int) -> int:
         """Record a device failure and return consecutive failure count.
@@ -712,22 +741,19 @@ class ChallengeCtlRunner:
         Returns:
             int: Number of consecutive failures
         """
-        with self.device_lock:
-            count = self.device_failure_counts.get(device_id, 0) + 1
-            self.device_failure_counts[device_id] = count
+        count = self.device_manager.record_device_failure(device_id)
 
-            if count >= 3:
-                self.mark_device_offline(device_id)
+        if count >= 3:
+            self.mark_device_offline(device_id)
 
-            return count
+        return count
 
     def record_device_success(self, device_id: int):
         """Record a successful device operation, resetting failure count."""
-        with self.device_lock:
-            self.device_failure_counts[device_id] = 0
-            # If device was offline, bring it back online
-            if device_id in self.offline_devices:
-                self.mark_device_online(device_id)
+        self.device_manager.record_device_success(device_id)
+        # If device was offline, bring it back online
+        if device_id not in self.device_manager.offline_devices:
+            logger.info(f"Device {device_id} brought back ONLINE after successful operation")
 
     def check_device_available(self, device: Dict) -> bool:
         """Check if a device is actually available by attempting to probe it.
@@ -1177,6 +1203,13 @@ class ChallengeCtlRunner:
         device_id = device['device_id']
 
         try:
+            # Check if device is still enabled before executing
+            if not device.get('enabled', True):
+                error_msg = f"Device {device_id} was disabled before execution could start"
+                logger.warning(error_msg)
+                self.report_completion(challenge_id, False, device_id, 0, error_msg, transmission_id)
+                return
+
             # Mark device as busy
             self.mark_device_busy(device_id)
 
@@ -1386,6 +1419,12 @@ class ChallengeCtlRunner:
         print("Heartbeat thread started")
         logger.info("Heartbeat thread started")
 
+        # Start device probe loop thread
+        if self.device_probe_interval > 0:
+            self.device_manager.start_probe_loop()
+            print(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+            logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+
         # Start task loop (blocking)
         print("Starting task loop...")
         print("Press Ctrl+C to shutdown")
@@ -1439,6 +1478,9 @@ class ChallengeCtlRunner:
                 logger.info("All tasks completed")
         else:
             print("Step 1/3: No active tasks to wait for", flush=True)
+
+        # Stop device probe loop
+        self.device_manager.stop_probe_loop()
 
         # Sign out from server
         print("Step 2/3: Signing out from server...", flush=True)

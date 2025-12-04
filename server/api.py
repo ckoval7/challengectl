@@ -2077,9 +2077,34 @@ class ChallengeCtlAPI:
             if request.runner_id != agent_id:
                 return jsonify({'error': 'Unauthorized'}), 403
 
-            # Get optional device status from request body
+            # Get optional device status and auto-detected devices from request body
             data = request.get_json(silent=True) or {}
             device_status = data.get('device_status')  # Map of device_id -> status
+            auto_detected = data.get('auto_detected_devices', [])  # List of auto-detected device dicts
+
+            # Merge auto-detected devices into agent's device list
+            if auto_detected:
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    # Merge auto-detected devices with existing devices
+                    merged_devices = self._merge_auto_detected_devices(agent, auto_detected)
+
+                    # Update agent devices in database
+                    self.db.update_agent_devices(agent_id, merged_devices)
+
+                    # Broadcast device detection events
+                    for dev in auto_detected:
+                        # Only broadcast if this is a newly-detected device (not previously seen)
+                        if not self._was_device_previously_detected(agent, dev):
+                            self.broadcast_event('device_detected', {
+                                'agent_id': agent_id,
+                                'device_id': dev['device_id'],
+                                'model': dev['model'],
+                                'name': dev['name'],
+                                'enabled': dev['enabled'],
+                                'auto_detected_at': dev['auto_detected_at']
+                            })
+                            logger.info(f"New device detected on {agent_id}: {dev['model']} {dev['name']}")
 
             # Update agent heartbeat in database (not device status)
             success, previous_status = self.db.update_agent_heartbeat(agent_id, None)
@@ -2137,9 +2162,85 @@ class ChallengeCtlAPI:
                         'timestamp': heartbeat_time
                     })
 
-                return jsonify({'status': 'ok'}), 200
+                # Prepare response with device config updates
+                response_data = {'status': 'ok'}
+
+                # Check if any devices need config updates (enabled/disabled changes)
+                # This allows server to push config changes to runner
+                device_updates = self._get_pending_device_updates(agent_id)
+                if device_updates:
+                    response_data['device_config_updates'] = device_updates
+
+                return jsonify(response_data), 200
             else:
                 return jsonify({'error': 'Agent not found'}), 404
+
+        def _merge_auto_detected_devices(self, agent: Dict, auto_detected: List[Dict]) -> List[Dict]:
+            """Merge auto-detected devices with agent's existing devices.
+
+            Args:
+                agent: Agent dict with 'devices' field
+                auto_detected: List of auto-detected device dicts
+
+            Returns:
+                Merged device list
+            """
+            existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
+
+            # Build map of existing devices by device_id
+            devices_by_id = {d['device_id']: d for d in existing_devices}
+
+            # Merge auto-detected devices
+            for new_dev in auto_detected:
+                device_id = new_dev['device_id']
+
+                if device_id in devices_by_id:
+                    # Update existing device (preserve enabled flag if already set by admin)
+                    existing = devices_by_id[device_id]
+
+                    # Only update if source is auto_detected (don't overwrite configured devices)
+                    if existing.get('source') == 'auto_detected':
+                        # Preserve admin-set enabled flag
+                        admin_enabled = existing.get('enabled')
+                        new_dev['enabled'] = admin_enabled if admin_enabled is not None else new_dev['enabled']
+                        devices_by_id[device_id] = new_dev
+                else:
+                    # Add new device
+                    devices_by_id[device_id] = new_dev
+
+            return list(devices_by_id.values())
+
+        def _was_device_previously_detected(self, agent: Dict, device: Dict) -> bool:
+            """Check if device was previously detected (avoid duplicate broadcasts).
+
+            Args:
+                agent: Agent dict with 'devices' field
+                device: Device dict to check
+
+            Returns:
+                True if device already exists in agent's device list
+            """
+            existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
+
+            device_id = device['device_id']
+            return any(d['device_id'] == device_id for d in existing_devices)
+
+        def _get_pending_device_updates(self, agent_id: str) -> List[Dict]:
+            """Get pending device configuration updates for agent.
+
+            This is a placeholder for future implementation. Currently, device
+            config changes are applied immediately when API is called, so there
+            are no "pending" updates. In the future, this could implement a
+            queue of config changes to be pushed to the runner.
+
+            Args:
+                agent_id: Agent ID
+
+            Returns:
+                List of device update dicts with device_id and enabled fields
+            """
+            # Future: Could check a config_updates table or in-memory queue
+            return []
 
         @self.app.route('/api/agents/<agent_id>/signout', methods=['POST'])
         @self.require_api_key
@@ -2173,6 +2274,64 @@ class ChallengeCtlAPI:
                 return jsonify({'status': 'signed_out'}), 200
             else:
                 return jsonify({'error': 'Failed to sign out'}), 500
+
+        @self.app.route('/api/agents/<agent_id>/devices/<int:device_id>/enable', methods=['POST'])
+        @self.require_admin_auth
+        def enable_device(agent_id, device_id):
+            """Enable a specific device on an agent.
+
+            Args:
+                agent_id: Agent ID (runner or listener)
+                device_id: Device ID (integer)
+
+            Returns:
+                200 OK if successful
+                404 if agent or device not found
+            """
+            success = self.db.update_device_enabled(agent_id, device_id, True)
+
+            if success:
+                # Broadcast device config update event
+                self.broadcast_event('device_config_updated', {
+                    'agent_id': agent_id,
+                    'device_id': device_id,
+                    'enabled': True,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                logger.info(f"Device {device_id} on agent {agent_id} enabled")
+                return jsonify({'status': 'ok', 'enabled': True}), 200
+            else:
+                return jsonify({'error': 'Agent or device not found'}), 404
+
+        @self.app.route('/api/agents/<agent_id>/devices/<int:device_id>/disable', methods=['POST'])
+        @self.require_admin_auth
+        def disable_device(agent_id, device_id):
+            """Disable a specific device on an agent.
+
+            Args:
+                agent_id: Agent ID (runner or listener)
+                device_id: Device ID (integer)
+
+            Returns:
+                200 OK if successful
+                404 if agent or device not found
+            """
+            success = self.db.update_device_enabled(agent_id, device_id, False)
+
+            if success:
+                # Broadcast device config update event
+                self.broadcast_event('device_config_updated', {
+                    'agent_id': agent_id,
+                    'device_id': device_id,
+                    'enabled': False,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                logger.info(f"Device {device_id} on agent {agent_id} disabled")
+                return jsonify({'status': 'ok', 'enabled': False}), 200
+            else:
+                return jsonify({'error': 'Agent or device not found'}), 404
 
         @self.app.route('/api/agents/<agent_id>/task', methods=['GET'])
         @self.require_api_key

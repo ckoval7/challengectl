@@ -16,6 +16,15 @@ agent:
   # Heartbeat interval in seconds (how often to check in with server)
   heartbeat_interval: 30
 
+  # Device Probing and Auto-Detection
+  # Interval (in seconds) for device health probing and auto-detection
+  # Set to 0 to disable probing (not recommended)
+  device_probe_interval: 30
+
+  # Enable automatic detection of newly-connected SDR devices
+  # Detected devices will be disabled by default and require manual enablement via web UI
+  enable_auto_detection: true
+
   # WebSocket configuration
   websocket_enabled: true
   websocket_reconnect_delay: 5  # seconds between reconnection attempts
