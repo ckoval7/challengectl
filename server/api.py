@@ -3101,7 +3101,7 @@ class ChallengeCtlAPI:
             logger.info(f"Created enrollment token for runner: {runner_name} by {created_by}")
 
             return jsonify({
-                'token': enrollment_token,
+                'enrollment_token': enrollment_token,
                 'api_key': api_key,
                 'runner_name': runner_name,
                 'expires_at': expires_at.isoformat(),
@@ -3317,7 +3317,7 @@ class ChallengeCtlAPI:
 
             # Return response with appropriate ID field for backwards compatibility
             response = {
-                'token': enrollment_token,
+                'enrollment_token': enrollment_token,
                 'api_key': new_api_key,
                 'agent_id': agent_id,
                 'agent_type': agent_type,

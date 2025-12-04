@@ -2186,7 +2186,7 @@ runner:
   server_url: "${serverUrl.value}"
 
   # Enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
-  enrollment_token: "${enrollmentData.value.token}"
+  enrollment_token: "${enrollmentData.value.enrollment_token}"
   api_key: "${enrollmentData.value.api_key}"
 
   # TLS/SSL Configuration
@@ -2322,7 +2322,7 @@ ${addRunnerForm.value.devices.map(device => {
         })
 
         reEnrollData.value = {
-          token: response.data.token,
+          token: response.data.enrollment_token,
           api_key: response.data.api_key,
           runner_id: response.data.runner_id,
           expires_at: response.data.expires_at
@@ -2477,7 +2477,7 @@ radios:
         })
 
         reEnrollListenerData.value = {
-          token: response.data.token,
+          token: response.data.enrollment_token,
           api_key: response.data.api_key,
           listener_id: response.data.listener_id || response.data.agent_id,
           expires_at: response.data.expires_at
@@ -2760,7 +2760,7 @@ agent:
   server_url: "${serverUrl.value}"
 
   # Enrollment credentials (enrollment_token can be left in config, it will be ignored once enrolled)
-  enrollment_token: "${response.data.token}"
+  enrollment_token: "${response.data.enrollment_token}"
   api_key: "${response.data.api_key}"
 
   heartbeat_interval: 30
@@ -2789,7 +2789,7 @@ logging:
         listenerEnrollmentData.value = {
           listener_name: addListenerForm.value.listenerName,
           api_key: response.data.api_key,
-          enrollment_token: response.data.token,
+          enrollment_token: response.data.enrollment_token,
           expires_at: response.data.expires_at,
           config_yaml: configYaml
         }
