@@ -349,6 +349,15 @@ export default {
         } else {
           loadDashboard()  // Reload if new runner
         }
+      } else if (event.type === 'device_status') {
+        // Update device status within a runner
+        const runner = runners.value.find(r => r.runner_id === event.agent_id)
+        if (runner && runner.devices) {
+          const device = runner.devices.find(d => d.device_id === event.device_id)
+          if (device) {
+            device.status = event.status
+          }
+        }
       } else if (event.type === 'transmission_complete') {
         // Add to recent transmissions
         recentTransmissions.value.unshift({
@@ -445,11 +454,13 @@ export default {
       // Connect WebSocket
       websocket.connect()
       websocket.on('runner_status', handleWebSocketEvent)
+      websocket.on('device_status', handleWebSocketEvent)
       websocket.on('transmission_complete', handleWebSocketEvent)
     })
 
     onUnmounted(() => {
       websocket.off('runner_status', handleWebSocketEvent)
+      websocket.off('device_status', handleWebSocketEvent)
       websocket.off('transmission_complete', handleWebSocketEvent)
     })
 
