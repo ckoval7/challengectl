@@ -3365,6 +3365,8 @@ curl -k \\
       // Frequency formatting helpers
       formatFrequency,
       formatFrequencyLimits,
+      // Runner status helper
+      getRunnerStatusType,
       // Icons
       ArrowDown,
       SwitchIcon,

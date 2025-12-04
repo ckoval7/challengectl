@@ -472,7 +472,8 @@ export default {
       clearDayTimes,
       toggleAutoPause,
       formatTime,
-      formatFrequency
+      formatFrequency,
+      getRunnerStatusType
     }
   }
 }
