@@ -30,104 +30,6 @@
           row-key="runner_id"
           class="w-full"
         >
-          <el-table-column
-            v-if="!isMobile"
-            prop="runner_id"
-            label="Runner ID"
-            width="180"
-          />
-          <el-table-column
-            prop="hostname"
-            label="Hostname"
-            :width="isMobile ? undefined : '200'"
-          />
-          <el-table-column
-            v-if="!isMobile"
-            prop="ip_address"
-            label="IP Address"
-            width="150"
-          />
-          <el-table-column
-            label="Status"
-            :width="isMobile ? '120' : '150'"
-          >
-            <template #default="scope">
-              <el-space>
-                <el-tag
-                  :type="getRunnerStatusType(scope.row)"
-                  size="small"
-                >
-                  {{ scope.row.status }}
-                </el-tag>
-                <el-tag
-                  v-if="!scope.row.enabled"
-                  type="warning"
-                  size="small"
-                >
-                  disabled
-                </el-tag>
-              </el-space>
-            </template>
-          </el-table-column>
-          <el-table-column
-            v-if="!isMobile"
-            label="Devices"
-            width="100"
-          >
-            <template #default="scope">
-              {{ scope.row.devices?.length || 0 }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            v-if="!isMobile"
-            label="Last Heartbeat"
-            width="180"
-          >
-            <template #default="scope">
-              {{ formatTimestamp(scope.row.last_heartbeat) }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="Actions"
-            :width="isMobile ? '100' : '120'"
-            align="center"
-          >
-            <template #default="scope">
-              <el-dropdown @command="(command) => handleRunnerAction(command, scope.row)">
-                <el-button
-                  size="small"
-                  type="primary"
-                >
-                  Actions
-                  <el-icon class="ml-5">
-                    <ArrowDown />
-                  </el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
-                      <el-icon><SwitchIcon /></el-icon>
-                      {{ scope.row.enabled ? 'Disable Runner' : 'Enable Runner' }}
-                    </el-dropdown-item>
-                    <el-dropdown-item
-                      command="re-enroll"
-                      divided
-                    >
-                      <el-icon><Key /></el-icon>
-                      Re-enroll
-                    </el-dropdown-item>
-                    <el-dropdown-item
-                      command="kick"
-                      divided
-                    >
-                      <el-icon><Delete /></el-icon>
-                      <span style="color: var(--el-color-danger);">Kick</span>
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </template>
-          </el-table-column>
           <el-table-column type="expand">
             <template #default="scope">
               <div class="p-xl">
@@ -248,6 +150,105 @@
               </div>
             </template>
           </el-table-column>
+          <el-table-column
+            v-if="!isMobile"
+            prop="runner_id"
+            label="Runner ID"
+            width="180"
+          />
+          <el-table-column
+            prop="hostname"
+            label="Hostname"
+            :width="isMobile ? undefined : '200'"
+          />
+          <el-table-column
+            v-if="!isMobile"
+            prop="ip_address"
+            label="IP Address"
+            width="150"
+          />
+          <el-table-column
+            label="Status"
+            :width="isMobile ? '120' : '150'"
+          >
+            <template #default="scope">
+              <el-space>
+                <el-tag
+                  :type="getRunnerStatusType(scope.row)"
+                  size="small"
+                >
+                  {{ scope.row.status }}
+                </el-tag>
+                <el-tag
+                  v-if="!scope.row.enabled"
+                  type="warning"
+                  size="small"
+                >
+                  disabled
+                </el-tag>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="!isMobile"
+            label="Devices"
+            width="100"
+          >
+            <template #default="scope">
+              {{ scope.row.devices?.length || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="!isMobile"
+            label="Last Heartbeat"
+            width="180"
+          >
+            <template #default="scope">
+              {{ formatTimestamp(scope.row.last_heartbeat) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="Actions"
+            :width="isMobile ? '100' : '120'"
+            align="center"
+          >
+            <template #default="scope">
+              <el-dropdown @command="(command) => handleRunnerAction(command, scope.row)">
+                <el-button
+                  size="small"
+                  type="primary"
+                >
+                  Actions
+                  <el-icon class="ml-5">
+                    <ArrowDown />
+                  </el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :command="scope.row.enabled ? 'disable' : 'enable'">
+                      <el-icon><SwitchIcon /></el-icon>
+                      {{ scope.row.enabled ? 'Disable Runner' : 'Enable Runner' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      command="re-enroll"
+                      divided
+                    >
+                      <el-icon><Key /></el-icon>
+                      Re-enroll
+                    </el-dropdown-item>
+                    <el-dropdown-item
+                      command="kick"
+                      divided
+                    >
+                      <el-icon><Delete /></el-icon>
+                      <span style="color: var(--el-color-danger);">Kick</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </el-table-column>
+          
         </el-table>
 
         <!-- Add Runner Dialog -->
