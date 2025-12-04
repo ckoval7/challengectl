@@ -370,37 +370,73 @@ class DeviceManager:
         }
 
     def _parse_rtlsdr_device(self, attributes: List[str]) -> Optional[Dict]:
-        """Parse RTL-SDR device from osmosdr attributes."""
+        """Parse RTL-SDR device from osmosdr attributes.
+
+        Uses serial number as unique identifier. RTL-SDR devices always have serials
+        (either user-programmed or default like '00000001'). This ensures the same
+        physical device gets the same name across multiple detection cycles.
+        """
         serial = None
+        label = None
+
         for attr in attributes:
             if attr.startswith('serial='):
                 serial = attr.split('=')[1]
-                break
+            elif attr.startswith('label='):
+                label = attr.split('=', 1)[1]
 
-        # Count existing RTL-SDR devices
-        rtlsdr_count = sum(1 for d in self.get_all_devices() if d.get('model') == 'rtlsdr')
+        # Use serial number as name - RTL-SDR devices always have serials
+        # (either custom or default like '00000001', '00000002', etc.)
+        if serial:
+            name = serial
+        elif label:
+            # Fallback to label if somehow no serial (very rare)
+            name = f"label_{label.replace(' ', '_')}"
+            logger.warning(f"RTL-SDR detected without serial, using label: {label}")
+        else:
+            # This should never happen - RTL-SDR devices always have serials
+            # If it does, log an error and skip this device
+            logger.error("RTL-SDR detected without serial or label - skipping device")
+            return None
 
         return {
             'model': 'rtlsdr',
-            'name': str(rtlsdr_count),  # Index-based
+            'name': name,  # Serial or label-based (never index)
             'gain': 40,
             'frequency_limits': [],
             'in_use': False
         }
 
     def _parse_airspy_device(self, attributes: List[str]) -> Optional[Dict]:
-        """Parse AirSpy device from osmosdr attributes."""
+        """Parse AirSpy device from osmosdr attributes.
+
+        Uses serial number as unique identifier. AirSpy devices always have serials.
+        This ensures the same physical device gets the same name across detection cycles.
+        """
         serial = None
+        label = None
+
         for attr in attributes:
             if attr.startswith('serial='):
                 serial = attr.split('=')[1]
-                break
+            elif attr.startswith('label='):
+                label = attr.split('=', 1)[1]
 
-        airspy_count = sum(1 for d in self.get_all_devices() if d.get('model') == 'airspy')
+        # Use serial number as name - AirSpy devices always have serials
+        if serial:
+            name = serial
+        elif label:
+            # Fallback to label if somehow no serial (very rare)
+            name = f"label_{label.replace(' ', '_')}"
+            logger.warning(f"AirSpy detected without serial, using label: {label}")
+        else:
+            # This should never happen - AirSpy devices always have serials
+            logger.error("AirSpy detected without serial or label - skipping device")
+            return None
 
         return {
             'model': 'airspy',
-            'name': str(airspy_count),
+            'name': name,  # Serial or label-based (never index)
             'gain': 15,  # Default linearity gain
             'frequency_limits': [],
             'in_use': False
