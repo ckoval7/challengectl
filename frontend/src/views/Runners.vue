@@ -54,7 +54,7 @@
             <template #default="scope">
               <el-space>
                 <el-tag
-                  :type="scope.row.status === 'online' ? 'success' : 'info'"
+                  :type="getRunnerStatusType(scope.row)"
                   size="small"
                 >
                   {{ scope.row.status }}
@@ -1736,6 +1736,24 @@ export default {
     let deviceIdCounter = 0
     const generateDeviceId = () => {
       return `device_${Date.now()}_${deviceIdCounter++}`
+    }
+
+    // Helper to determine runner status tag type
+    // Returns 'warning' if runner is online but has offline devices
+    const getRunnerStatusType = (runner) => {
+      if (runner.status !== 'online') {
+        return 'info'  // Offline runner = gray
+      }
+
+      // Runner is online - check if any devices are offline
+      if (runner.devices && runner.devices.length > 0) {
+        const hasOfflineDevice = runner.devices.some(d => d.status === 'offline')
+        if (hasOfflineDevice) {
+          return 'warning'  // Online runner with offline device(s) = yellow
+        }
+      }
+
+      return 'success'  // Online runner with all devices online = green
     }
 
     // Antenna ID generator
