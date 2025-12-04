@@ -2175,73 +2175,6 @@ class ChallengeCtlAPI:
             else:
                 return jsonify({'error': 'Agent not found'}), 404
 
-        def _merge_auto_detected_devices(self, agent: Dict, auto_detected: List[Dict]) -> List[Dict]:
-            """Merge auto-detected devices with agent's existing devices.
-
-            Args:
-                agent: Agent dict with 'devices' field
-                auto_detected: List of auto-detected device dicts
-
-            Returns:
-                Merged device list
-            """
-            existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
-
-            # Build map of existing devices by device_id
-            devices_by_id = {d['device_id']: d for d in existing_devices}
-
-            # Merge auto-detected devices
-            for new_dev in auto_detected:
-                device_id = new_dev['device_id']
-
-                if device_id in devices_by_id:
-                    # Update existing device (preserve enabled flag if already set by admin)
-                    existing = devices_by_id[device_id]
-
-                    # Only update if source is auto_detected (don't overwrite configured devices)
-                    if existing.get('source') == 'auto_detected':
-                        # Preserve admin-set enabled flag
-                        admin_enabled = existing.get('enabled')
-                        new_dev['enabled'] = admin_enabled if admin_enabled is not None else new_dev['enabled']
-                        devices_by_id[device_id] = new_dev
-                else:
-                    # Add new device
-                    devices_by_id[device_id] = new_dev
-
-            return list(devices_by_id.values())
-
-        def _was_device_previously_detected(self, agent: Dict, device: Dict) -> bool:
-            """Check if device was previously detected (avoid duplicate broadcasts).
-
-            Args:
-                agent: Agent dict with 'devices' field
-                device: Device dict to check
-
-            Returns:
-                True if device already exists in agent's device list
-            """
-            existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
-
-            device_id = device['device_id']
-            return any(d['device_id'] == device_id for d in existing_devices)
-
-        def _get_pending_device_updates(self, agent_id: str) -> List[Dict]:
-            """Get pending device configuration updates for agent.
-
-            This is a placeholder for future implementation. Currently, device
-            config changes are applied immediately when API is called, so there
-            are no "pending" updates. In the future, this could implement a
-            queue of config changes to be pushed to the runner.
-
-            Args:
-                agent_id: Agent ID
-
-            Returns:
-                List of device update dicts with device_id and enabled fields
-            """
-            # Future: Could check a config_updates table or in-memory queue
-            return []
-
         @self.app.route('/api/agents/<agent_id>/signout', methods=['POST'])
         @self.require_api_key
         @self.limiter.limit("100 per minute")
@@ -4577,6 +4510,73 @@ radios:
             # For all other paths (like /public, /runners, etc.), serve index.html
             # This allows Vue Router to handle the routing
             return send_from_directory(self.frontend_dir, 'index.html')
+
+    def _merge_auto_detected_devices(self, agent: Dict, auto_detected: List[Dict]) -> List[Dict]:
+        """Merge auto-detected devices with agent's existing devices.
+
+        Args:
+            agent: Agent dict with 'devices' field
+            auto_detected: List of auto-detected device dicts
+
+        Returns:
+            Merged device list
+        """
+        existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
+
+        # Build map of existing devices by device_id
+        devices_by_id = {d['device_id']: d for d in existing_devices}
+
+        # Merge auto-detected devices
+        for new_dev in auto_detected:
+            device_id = new_dev['device_id']
+
+            if device_id in devices_by_id:
+                # Update existing device (preserve enabled flag if already set by admin)
+                existing = devices_by_id[device_id]
+
+                # Only update if source is auto_detected (don't overwrite configured devices)
+                if existing.get('source') == 'auto_detected':
+                    # Preserve admin-set enabled flag
+                    admin_enabled = existing.get('enabled')
+                    new_dev['enabled'] = admin_enabled if admin_enabled is not None else new_dev['enabled']
+                    devices_by_id[device_id] = new_dev
+            else:
+                # Add new device
+                devices_by_id[device_id] = new_dev
+
+        return list(devices_by_id.values())
+
+    def _was_device_previously_detected(self, agent: Dict, device: Dict) -> bool:
+        """Check if device was previously detected (avoid duplicate broadcasts).
+
+        Args:
+            agent: Agent dict with 'devices' field
+            device: Device dict to check
+
+        Returns:
+            True if device already exists in agent's device list
+        """
+        existing_devices = json.loads(agent['devices']) if isinstance(agent['devices'], str) else (agent['devices'] or [])
+
+        device_id = device['device_id']
+        return any(d['device_id'] == device_id for d in existing_devices)
+
+    def _get_pending_device_updates(self, agent_id: str) -> List[Dict]:
+        """Get pending device configuration updates for agent.
+
+        This is a placeholder for future implementation. Currently, device
+        config changes are applied immediately when API is called, so there
+        are no "pending" updates. In the future, this could implement a
+        queue of config changes to be pushed to the runner.
+
+        Args:
+            agent_id: Agent ID
+
+        Returns:
+            List of device update dicts with device_id and enabled fields
+        """
+        # Future: Could check a config_updates table or in-memory queue
+        return []
 
     def register_socketio_handlers(self):
         """Register WebSocket event handlers."""
