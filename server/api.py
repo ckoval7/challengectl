@@ -3096,9 +3096,31 @@ class ChallengeCtlAPI:
             # Get runners from agents table (with backward compatibility)
             runners = self.db.get_all_agents(agent_type='runner')
 
-            # Add runner_id field for backward compatibility
+            # Add runner_id field for backward compatibility and merge device status
             for runner in runners:
                 runner['runner_id'] = runner.get('agent_id', runner.get('runner_id'))
+
+                # Parse devices JSON
+                if runner.get('devices'):
+                    try:
+                        runner['devices'] = json.loads(runner['devices'])
+                    except (json.JSONDecodeError, TypeError):
+                        runner['devices'] = []
+
+                # Merge device status from memory
+                agent_id = runner['runner_id']
+                if runner.get('devices'):
+                    with self.device_status_lock:
+                        for device in runner['devices']:
+                            device_id = device.get('device_id')
+                            if device_id is not None:
+                                key = (agent_id, device_id)
+                                if key in self.device_status:
+                                    # Use status from memory
+                                    device['status'] = self.device_status[key]['status']
+                                else:
+                                    # Device not in memory yet, initialize with unknown
+                                    device['status'] = 'unknown'
 
             # Get recent transmissions from in-memory buffer
             with self.transmission_lock:
@@ -3111,9 +3133,6 @@ class ChallengeCtlAPI:
                     stats['success_rate'] = (successful / len(recent_transmissions)) * 100
                 else:
                     stats['success_rate'] = 0
-
-            # Parse runner devices JSON
-            runners = [self._parse_runner_devices(r) for r in runners]
 
             return jsonify({
                 'stats': stats,
