@@ -1268,7 +1268,7 @@ class ChallengeCtlRunner:
             self.mark_device_available(device_id)
 
             # Remove from active tasks
-            with self.device_lock:
+            with self.device_manager.device_lock:
                 self.active_tasks.pop(challenge_id, None)
 
     def task_loop(self):
@@ -1282,12 +1282,12 @@ class ChallengeCtlRunner:
             try:
                 # Periodically warn about offline devices (every 60 seconds)
                 now = time.time()
-                with self.device_lock:
-                    offline_count = len(self.offline_devices)
+                with self.device_manager.device_lock:
+                    offline_count = len(self.device_manager.offline_devices)
 
                 if offline_count > 0 and (now - last_offline_warning) > 60:
-                    with self.device_lock:
-                        offline_ids = list(self.offline_devices)
+                    with self.device_manager.device_lock:
+                        offline_ids = list(self.device_manager.offline_devices)
                     logger.warning(f"{offline_count} device(s) offline: {offline_ids}")
                     logger.warning("Reconnect devices or restart runner to bring them back online")
                     last_offline_warning = now
@@ -1318,7 +1318,7 @@ class ChallengeCtlRunner:
                         )
 
                         # Track the active task
-                        with self.device_lock:
+                        with self.device_manager.device_lock:
                             self.active_tasks[challenge_id] = (thread, device['device_id'])
 
                         thread.start()
@@ -1328,10 +1328,10 @@ class ChallengeCtlRunner:
                         time.sleep(0.5)
 
                 # Clean up finished threads
-                with self.device_lock:
+                with self.device_manager.device_lock:
                     finished = [cid for cid, (thread, _) in self.active_tasks.items() if not thread.is_alive()]
                 for cid in finished:
-                    with self.device_lock:
+                    with self.device_manager.device_lock:
                         self.active_tasks.pop(cid, None)
 
                 # Wait before next poll
@@ -1447,7 +1447,7 @@ class ChallengeCtlRunner:
         # Wait for active tasks to complete (up to 30 seconds)
         max_wait = 30
         waited = 0
-        with self.device_lock:
+        with self.device_manager.device_lock:
             active_count = len(self.active_tasks)
 
         if active_count > 0:
@@ -1455,7 +1455,7 @@ class ChallengeCtlRunner:
             logger.info(f"Waiting for {active_count} active task(s) to complete...")
 
             while waited < max_wait:
-                with self.device_lock:
+                with self.device_manager.device_lock:
                     current_count = len(self.active_tasks)
                     if current_count == 0:
                         break
@@ -1467,7 +1467,7 @@ class ChallengeCtlRunner:
                 time.sleep(1)
                 waited += 1
 
-            with self.device_lock:
+            with self.device_manager.device_lock:
                 remaining = len(self.active_tasks)
 
             if remaining > 0:
