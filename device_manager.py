@@ -9,6 +9,9 @@ for both runners (TX) and listeners (RX).
 import logging
 import time
 import threading
+import os
+import sys
+import subprocess
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable
 
@@ -256,7 +259,6 @@ class DeviceManager:
             List of serial numbers in enumeration order (index 0, 1, 2, etc.)
             Empty list if enumeration fails or model not supported
         """
-        import subprocess
 
         serials = []
 
@@ -308,26 +310,19 @@ class DeviceManager:
                                         break
 
             elif model == 'rtl-sdr' or model == 'rtlsdr':
-                # Use osmosdr for enumeration - it doesn't claim devices like rtl_test does
-                # This prevents "usb_claim_interface error -6" when device is in use
-                try:
-                    import osmosdr
-                    devices = osmosdr.device.find()
-                    for dev in devices:
-                        dev_str = dev.to_string()
-                        # Check if this is an RTL-SDR device
-                        if 'rtlsdr' in dev_str.lower() or 'driver=rtl' in dev_str.lower():
-                            # Extract serial from osmosdr device string
-                            for attr in dev_str.split(','):
-                                if attr.strip().startswith('serial='):
-                                    serial = attr.split('=')[1].strip()
-                                    if serial and serial not in serials:
-                                        serials.append(serial)
-                                    break
-                except (ImportError, Exception) as e:
-                    # osmosdr not available or failed - this is acceptable
-                    # Device matching will fall back to serial-based matching
-                    logger.debug(f"RTL-SDR enumeration via osmosdr failed: {e}")
+                # IMPORTANT: Skip active enumeration for RTL-SDR to avoid claiming devices
+                # Problem: osmosdr.device.find() tries to open/claim RTL-SDR devices during probing,
+                # which fails with "usb_claim_interface error -6" if device is in use (e.g., by listener)
+                # and can block the device from being used by other processes.
+                #
+                # Solution: Return empty list and rely on:
+                # 1. Config with serial numbers (e.g., rtlsdr=1090) - handled by early return in resolve_device_serial()
+                # 2. Auto-detection during idle periods - handled by auto_detect_devices()
+                # 3. Fallback to serial-based matching - handled in resolve_device_serial() fallback logic
+                #
+                # This allows RTL-SDR devices to work without interference while in use.
+                logger.debug("Skipping RTL-SDR enumeration to avoid claiming busy devices")
+                # Return empty list - fallback logic will handle device matching
 
             elif model == 'usrp' or model == 'uhd':
                 # Try uhd_find_devices command
@@ -398,15 +393,28 @@ class DeviceManager:
             else:
                 # If enumeration failed (empty list) but name looks like it could be a serial,
                 # treat it as a serial instead of failing
-                if model in ['rtl-sdr', 'rtlsdr'] and len(name) >= 4:
-                    if not quiet:
-                        logger.warning(
-                            f"Config references {model}={name}, enumeration found {len(serials)} "
-                            f"device(s), treating as serial number instead of index"
-                        )
-                    return name
+                if model in ['rtl-sdr', 'rtlsdr']:
+                    if len(name) >= 4:
+                        # Multi-digit number - treat as serial
+                        if not quiet:
+                            logger.warning(
+                                f"Config references {model}={name}, enumeration found {len(serials)} "
+                                f"device(s), treating as serial number instead of index"
+                            )
+                        return name
+                    else:
+                        # Single-digit index (0-9) but enumeration returned empty
+                        # For RTL-SDR, we intentionally skip enumeration to avoid claiming devices
+                        # Return None but don't error - device matching will rely on auto-detection
+                        if not quiet:
+                            logger.warning(
+                                f"Config references {model}={name} by index. "
+                                f"For RTL-SDR, serial-based naming (e.g., {model}=1090) is recommended "
+                                f"to avoid device claiming issues. Device matching will rely on auto-detection."
+                            )
+                        return None
 
-                # Log error only if not in quiet mode (avoids spam during probing)
+                # For non-RTL-SDR devices, log error only if not in quiet mode
                 if not quiet:
                     logger.error(
                         f"Config references {model}={name} but only {len(serials)} "
@@ -432,8 +440,21 @@ class DeviceManager:
         newly_detected = []
 
         try:
-            # Find all SDR devices
-            devices = osmosdr.device.find()
+            # Suppress stderr during device enumeration to hide library warnings
+            # (usb_claim_interface errors, ALSA warnings, libusb warnings, etc.)
+            stderr_fd = sys.stderr.fileno()
+            old_stderr = os.dup(stderr_fd)
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, stderr_fd)
+
+            try:
+                # Find all SDR devices
+                devices = osmosdr.device.find()
+            finally:
+                # Restore stderr
+                os.dup2(old_stderr, stderr_fd)
+                os.close(old_stderr)
+                os.close(devnull)
 
             for device in devices:
                 devicestring = device.to_string()
