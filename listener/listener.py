@@ -18,17 +18,10 @@ import os
 import time
 import logging
 import argparse
-import yaml
-import socket
-import hashlib
-import requests
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import socketio
-import uuid
-import platform
-import urllib3
 import traceback
 from PIL import Image
 
@@ -39,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from spectrum_listener import SpectrumListener
 from waterfall_generator import generate_waterfall
 from device_manager import DeviceManager
+from common_agent import AgentBase, ServerLogHandler, get_mac_address, get_machine_id
 
 # Initial basic logging setup with default INFO level
 # This will be reconfigured in main() after parsing CLI args to use the --log-level parameter
@@ -50,95 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ServerLogHandler(logging.Handler):
-    """Custom logging handler that forwards logs to the server."""
-
-    def __init__(self, listener_instance):
-        super().__init__()
-        self.listener = listener_instance
-        self.setLevel(logging.DEBUG)  # Forward all log levels
-
-    def emit(self, record):
-        """Send log record to server."""
-        # Don't send logs if listener is shutting down
-        if not self.listener or not hasattr(self.listener, 'send_log') or not self.listener.running:
-            return
-
-        try:
-            msg = record.getMessage()
-
-            # Don't forward logs about log sending failures (avoid recursion)
-            if 'Failed to send log to server' in msg:
-                return
-
-            # Don't forward shutdown-related logs to avoid hanging during shutdown
-            if 'Received interrupt signal' in msg or 'shutting down' in msg.lower() or 'Signing out' in msg:
-                return
-
-            # Filter out noisy HTTP request logs from urllib3/requests
-            if record.name in ('urllib3.connectionpool', 'requests'):
-                return
-
-            # Filter out debug logs from our own HTTP operations
-            if 'Starting new HTTPS connection' in msg or \
-               'Starting new HTTP connection' in msg or \
-               'Resetting dropped connection' in msg:
-                return
-
-            self.listener.send_log(record.levelname, msg)
-        except Exception:
-            # Silently ignore errors to prevent recursion
-            pass
-
-
-def get_mac_address() -> Optional[str]:
-    """Get the MAC address of the primary network interface.
-
-    Returns:
-        MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
-    """
-    try:
-        mac = uuid.getnode()
-        # Format as colon-separated hex
-        mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
-        return mac_str
-    except Exception as e:
-        logger.warning(f"Could not retrieve MAC address: {e}")
-        return None
-
-
-def get_machine_id() -> Optional[str]:
-    """Get the machine ID from the system.
-
-    Tries to read from:
-    - Linux: /etc/machine-id or /var/lib/dbus/machine-id
-    - Other platforms: Use a UUID based on hardware characteristics
-
-    Returns:
-        Machine ID as a string, or None if unavailable
-    """
-    # Try Linux machine-id files
-    for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
-        try:
-            with open(path, 'r') as f:
-                machine_id = f.read().strip()
-                if machine_id:
-                    return machine_id
-        except (FileNotFoundError, PermissionError):
-            continue
-
-    # Fallback: use platform-specific identifier
-    try:
-        # Create a consistent ID from system information
-        system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
-        # Hash it to create a consistent ID
-        return hashlib.sha256(system_info.encode()).hexdigest()[:32]
-    except Exception as e:
-        logger.warning(f"Could not retrieve machine ID: {e}")
-        return None
-
-
-class ListenerAgent:
+class ListenerAgent(AgentBase):
     """Spectrum listener agent that receives WebSocket recording assignments."""
 
     def __init__(self, config_path: str, simulate: bool = False, log_level: int = logging.INFO):
@@ -149,21 +55,16 @@ class ListenerAgent:
             simulate: Force simulation mode (generate test data without SDR hardware)
             log_level: Logging level (e.g., logging.DEBUG, logging.INFO)
         """
-        self.config = self.load_config(config_path)
-        self.agent_id = self.config['agent']['agent_id']
-        self.server_url = self.config['agent']['server_url'].rstrip('/')
-        self.api_key = self.config['agent']['api_key']
-        self.heartbeat_interval = self.config['agent'].get('heartbeat_interval', 30)
+        # Initialize base agent class
+        super().__init__(config_path, agent_type='listener')
+
+        # Listener-specific configuration
         self.simulate = simulate
         self.log_level = log_level
 
         # Device probing and auto-detection configuration
         self.device_probe_interval = self.config['agent'].get('device_probe_interval', 30)
         self.enable_auto_detection = self.config['agent'].get('enable_auto_detection', True)
-
-        # TLS configuration
-        self.ca_cert = self.config['agent'].get('ca_cert')
-        self.verify_ssl = self.config['agent'].get('verify_ssl', True)
 
         if simulate:
             logger.info("Simulation mode enabled - will generate test data without SDR hardware")
@@ -179,39 +80,6 @@ class ListenerAgent:
             agent_type='listener',
             probe_callback=None  # Listeners don't have custom probe logic
         )
-
-        # HTTP session for connection pooling
-        self.session = requests.Session()
-
-        # Get host identifiers for authentication
-        mac_address = get_mac_address()
-        machine_id = get_machine_id()
-
-        # Set authentication headers including host identifiers
-        headers = {'Authorization': f'Bearer {self.api_key}'}
-        if mac_address:
-            headers['X-Agent-MAC'] = mac_address
-        if machine_id:
-            headers['X-Agent-Machine-ID'] = machine_id
-
-        self.session.headers.update(headers)
-        logger.debug(f"Session configured with host identifiers: MAC={mac_address}, Machine ID={machine_id}")
-
-        # Configure TLS verification
-        if self.ca_cert and os.path.exists(self.ca_cert):
-            # Use provided CA certificate
-            self.session.verify = self.ca_cert
-            logger.info(f"Using CA certificate: {self.ca_cert}")
-        elif not self.verify_ssl:
-            # Disable SSL verification (development only)
-            self.session.verify = False
-            logger.warning("SSL verification disabled - development mode only!")
-            # Disable SSL warnings if verification is disabled
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        else:
-            # Use default system CA certificates
-            self.session.verify = True
-            logger.info("Using system CA certificates")
 
         # WebSocket client
         # Note: reconnection=False because we handle reconnection manually with auth
@@ -229,7 +97,6 @@ class ListenerAgent:
 
         # Heartbeat thread
         self.heartbeat_thread = None
-        self.running = False
 
         # Reconnection state
         self.reconnecting = False
@@ -244,17 +111,6 @@ class ListenerAgent:
     def devices(self):
         """Get all devices (backward compatibility)."""
         return self.device_manager.get_all_devices()
-
-    def load_config(self, config_path: str) -> Dict:
-        """Load listener configuration from YAML file."""
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-                logger.info(f"Loaded configuration from {config_path}")
-                return config
-        except Exception as e:
-            logger.error(f"Failed to load config from {config_path}: {e}")
-            sys.exit(1)
 
     def detect_devices(self) -> list:
         """Detect available SDR devices from configuration.
@@ -751,76 +607,18 @@ class ListenerAgent:
         Uses the enrollment token from config to register with the server.
         After enrollment, the listener should be restarted without the enrollment_token in config.
         """
-        enrollment_token = self.config['agent'].get('enrollment_token')
+        # Prepare device info for server
+        devices_info = []
+        for dev in self.devices:
+            devices_info.append({
+                'name': dev.get('name'),
+                'model': dev.get('model'),
+                'gain': dev.get('gain'),
+                'frequency_limits': dev.get('frequency_limits', [])
+            })
 
-        if not enrollment_token:
-            logger.debug("No enrollment token found, skipping enrollment")
-            return False
-
-        try:
-            hostname = socket.gethostname()
-            mac_address = get_mac_address()
-            machine_id = get_machine_id()
-
-            logger.info(f"Enrolling with host identifiers: hostname={hostname}, MAC={mac_address}, machine_id={machine_id}")
-
-            # Prepare device info for server
-            devices_info = []
-            for dev in self.devices:
-                devices_info.append({
-                    'name': dev.get('name'),
-                    'model': dev.get('model'),
-                    'gain': dev.get('gain'),
-                    'frequency_limits': dev.get('frequency_limits', [])
-                })
-
-            # Create a session without authentication for enrollment
-            enrollment_session = requests.Session()
-
-            # Configure TLS verification same as main session
-            if self.ca_cert and os.path.exists(self.ca_cert):
-                enrollment_session.verify = self.ca_cert
-            elif not self.verify_ssl:
-                enrollment_session.verify = False
-            else:
-                enrollment_session.verify = True
-
-            response = enrollment_session.post(
-                f"{self.server_url}/api/enrollment/enroll",
-                json={
-                    'enrollment_token': enrollment_token,
-                    'api_key': self.api_key,
-                    'agent_id': self.agent_id,
-                    'agent_type': 'listener',
-                    'hostname': hostname,
-                    'mac_address': mac_address,
-                    'machine_id': machine_id,
-                    'devices': devices_info
-                },
-                timeout=10
-            )
-
-            if response.status_code == 201:
-                logger.info(f"Successfully enrolled as {self.agent_id}")
-                return True
-            elif response.status_code == 401:
-                logger.error("Enrollment failed: Invalid or expired enrollment token")
-                return False
-            elif response.status_code == 409:
-                logger.info("Listener already enrolled with this token")
-                return True  # Return true to continue with normal operation
-            else:
-                logger.error(f"Enrollment failed: HTTP {response.status_code}")
-                try:
-                    error_data = response.json()
-                    logger.error(f"Error: {error_data.get('error', 'Unknown error')}")
-                except Exception:
-                    pass
-                return False
-
-        except Exception as e:
-            logger.error(f"Error during enrollment: {e}")
-            return False
+        # Call parent class enroll method
+        return super().enroll(devices_info)
 
     def register_with_server(self) -> bool:
         """Register this listener agent with the server via HTTP.
@@ -828,43 +626,21 @@ class ListenerAgent:
         Note: This is now primarily for backwards compatibility.
         New listeners should use the enrollment process instead.
         """
-        try:
-            hostname = socket.gethostname()
+        # Prepare device info for server
+        devices_info = []
+        for dev in self.devices:
+            devices_info.append({
+                'name': dev.get('name'),
+                'model': dev.get('model'),
+                'gain': dev.get('gain'),
+                'frequency_limits': dev.get('frequency_limits', [])
+            })
 
-            # Prepare device info for server
-            devices_info = []
-            for dev in self.devices:
-                devices_info.append({
-                    'name': dev.get('name'),
-                    'model': dev.get('model'),
-                    'gain': dev.get('gain'),
-                    'frequency_limits': dev.get('frequency_limits', [])
-                })
+        # Get device status from device manager (already probed during startup)
+        device_status = self.device_manager.get_device_status_dict()
 
-            # Get device status from device manager (already probed during startup)
-            device_status = self.device_manager.get_device_status_dict()
-
-            response = self.session.post(
-                f"{self.server_url}/api/agents/register",
-                json={
-                    'agent_type': 'listener',
-                    'hostname': hostname,
-                    'devices': devices_info,
-                    'device_status': device_status  # Include device status to avoid "unknown" state
-                },
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                logger.info(f"Successfully registered with server as listener {self.agent_id}")
-                return True
-            else:
-                logger.error(f"Failed to register: {response.status_code} - {response.text}")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error registering with server: {e}")
-            return False
+        # Call parent class register method (which adds agent_type for listeners)
+        return super().register(devices_info, device_status)
 
     def connect_websocket(self) -> bool:
         """Connect to server WebSocket for real-time assignments."""
@@ -949,48 +725,32 @@ class ListenerAgent:
 
     def send_heartbeat_http(self):
         """Send heartbeat to server via HTTP."""
-        try:
-            # Get device status from device manager
-            device_status = self.device_manager.get_device_status_dict()
+        # Get device status from device manager
+        device_status = self.device_manager.get_device_status_dict()
 
-            # Get auto-detected devices
-            with self.device_manager.auto_detected_lock:
-                auto_detected_payload = [
-                    {
-                        'device_id': d['device_id'],
-                        'model': d['model'],
-                        'name': d['name'],
-                        'device_string': d.get('device_string', f"{d['model']}={d['name']}"),
-                        'source': 'auto_detected',
-                        'enabled': d.get('enabled', False),
-                        'auto_detected_at': d.get('auto_detected_at')
-                    }
-                    for d in self.device_manager.auto_detected_devices
-                ]
+        # Get auto-detected devices
+        with self.device_manager.auto_detected_lock:
+            auto_detected_payload = [
+                {
+                    'device_id': d['device_id'],
+                    'model': d['model'],
+                    'name': d['name'],
+                    'device_string': d.get('device_string', f"{d['model']}={d['name']}"),
+                    'source': 'auto_detected',
+                    'enabled': d.get('enabled', False),
+                    'auto_detected_at': d.get('auto_detected_at')
+                }
+                for d in self.device_manager.auto_detected_devices
+            ]
 
-            # Send heartbeat with device status and auto-detected devices
-            response = self.session.post(
-                f"{self.server_url}/api/agents/{self.agent_id}/heartbeat",
-                json={
-                    'device_status': device_status,
-                    'auto_detected_devices': auto_detected_payload
-                },
-                timeout=5
-            )
+        # Call parent class send_heartbeat method
+        response_data = super().send_heartbeat(device_status, auto_detected_payload)
 
-            if response.status_code == 200:
-                logger.debug("Heartbeat sent successfully")
-
-                # Apply config updates from server response
-                data = response.json()
-                device_updates = data.get('device_config_updates', [])
-                if device_updates:
-                    self.device_manager.apply_device_config_updates(device_updates)
-            else:
-                logger.warning(f"Heartbeat failed: {response.status_code}")
-
-        except Exception as e:
-            logger.error(f"Error sending heartbeat: {e}")
+        # Apply config updates from server response
+        if response_data:
+            device_updates = response_data.get('device_config_updates', [])
+            if device_updates:
+                self.device_manager.apply_device_config_updates(device_updates)
 
     def heartbeat_loop(self):
         """Background thread for sending periodic heartbeats."""
@@ -998,27 +758,7 @@ class ListenerAgent:
             self.send_heartbeat_http()
             time.sleep(self.heartbeat_interval)
 
-    def send_log(self, level: str, message: str):
-        """Send log entry to server."""
-        # Don't try to send logs if shutting down
-        if not self.running:
-            return
-
-        try:
-            self.session.post(
-                f"{self.server_url}/api/agents/{self.agent_id}/log",
-                json={
-                    'log': {
-                        'level': level,
-                        'message': message,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                },
-                timeout=2  # Shorter timeout to avoid hanging during shutdown
-            )
-        except Exception as e:
-            # Log at debug level to avoid recursion
-            logger.debug(f"Failed to send log to server: {e}")
+    # send_log is inherited from AgentBase
 
     def run(self):
         """Main run loop for the listener agent."""

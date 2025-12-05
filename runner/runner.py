@@ -9,27 +9,20 @@ import logging
 import sys
 import os
 import time
-import socket
 import hashlib
 import yaml
-import requests
 import subprocess
-import random
-import string
-import tempfile
 import signal
 from typing import Optional, Dict, List
 import threading
 from datetime import datetime
-import uuid
-import platform
-import urllib3
 from multiprocessing import Process
 
 # Import challenge modules from parent directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from challenges import ask_tx as ask, cw_tx as cw, nbfm, ssb_tx, fhss_tx, freedv_tx, spectrum_paint, pocsagtx_osmocom, lrs_tx
 from device_manager import DeviceManager
+from common_agent import AgentBase, ServerLogHandler, get_mac_address, get_machine_id
 
 # Initial basic logging setup (will be reconfigured in main() after parsing args)
 logging.basicConfig(
@@ -41,107 +34,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_mac_address() -> Optional[str]:
-    """Get the MAC address of the primary network interface.
-
-    Returns:
-        MAC address as a string (e.g., "aa:bb:cc:dd:ee:ff"), or None if unavailable
-    """
-    try:
-        mac = uuid.getnode()
-        # Format as colon-separated hex
-        mac_str = ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
-        return mac_str
-    except Exception as e:
-        logger.warning(f"Could not retrieve MAC address: {e}")
-        return None
-
-
-def get_machine_id() -> Optional[str]:
-    """Get the machine ID from the system.
-
-    Tries to read from:
-    - Linux: /etc/machine-id or /var/lib/dbus/machine-id
-    - Other platforms: Use a UUID based on hardware characteristics
-
-    Returns:
-        Machine ID as a string, or None if unavailable
-    """
-    # Try Linux machine-id files
-    for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
-        try:
-            with open(path, 'r') as f:
-                machine_id = f.read().strip()
-                if machine_id:
-                    return machine_id
-        except (FileNotFoundError, PermissionError):
-            continue
-
-    # Fallback: use platform-specific identifier
-    try:
-        # Create a consistent ID from system information
-        system_info = f"{platform.system()}-{platform.node()}-{platform.machine()}"
-        # Hash it to create a consistent ID
-        return hashlib.sha256(system_info.encode()).hexdigest()[:32]
-    except Exception as e:
-        logger.warning(f"Could not retrieve machine ID: {e}")
-        return None
-
-
-class ServerLogHandler(logging.Handler):
-    """Custom logging handler that forwards logs to the server."""
-
-    def __init__(self, runner_instance):
-        super().__init__()
-        self.runner = runner_instance
-        self.setLevel(logging.DEBUG)  # Forward all log levels
-
-    def emit(self, record):
-        """Send log record to server."""
-        if self.runner and hasattr(self.runner, 'send_log'):
-            try:
-                msg = record.getMessage()
-
-                # Don't forward logs about log sending failures (avoid recursion)
-                if 'Failed to send log to server' in msg:
-                    return
-
-                # Filter out noisy HTTP request logs from urllib3/requests
-                if record.name in ('urllib3.connectionpool', 'requests'):
-                    return
-
-                # Filter out debug logs from our own HTTP operations
-                if 'Starting new HTTPS connection' in msg or \
-                   'Starting new HTTP connection' in msg or \
-                   'Resetting dropped connection' in msg:
-                    return
-
-                self.runner.send_log(record.levelname, msg)
-            except Exception:
-                # Silently ignore errors to prevent recursion
-                pass
-
-
-class ChallengeCtlRunner:
+class ChallengeCtlRunner(AgentBase):
     """Runner client for executing challenges on SDR devices."""
 
     def __init__(self, config_path: str):
-        self.config = self.load_config(config_path)
-        self.runner_id = self.config['runner']['runner_id']
-        self.server_url = self.config['runner']['server_url'].rstrip('/')
-        self.api_key = self.config['runner']['api_key']
+        # Initialize base agent class
+        super().__init__(config_path, agent_type='runner')
+
+        # Runner-specific configuration
+        self.runner_id = self.agent_id  # Alias for backward compatibility
         self.cache_dir = self.config['runner'].get('cache_dir', 'cache')
-        self.heartbeat_interval = self.config['runner'].get('heartbeat_interval', 30)
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
         self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', True)
 
         # Device probing and auto-detection configuration
         self.device_probe_interval = self.config['runner'].get('device_probe_interval', 30)
         self.enable_auto_detection = self.config['runner'].get('enable_auto_detection', True)
-
-        # TLS configuration
-        self.ca_cert = self.config['runner'].get('ca_cert')
-        self.verify_ssl = self.config['runner'].get('verify_ssl', True)
 
         # Load devices from configuration
         configured_devices = self.load_devices()
@@ -158,46 +66,12 @@ class ChallengeCtlRunner:
         # Cache directory setup
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # Running state
-        self.running = False
+        # Runner-specific state
         self.current_task = None
         self._shutdown_initiated = False
 
         # Active task tracking
         self.active_tasks = {}  # Map of challenge_id -> (thread, device_id)
-
-        # HTTP session for connection pooling
-        self.session = requests.Session()
-
-        # Get host identifiers for authentication
-        mac_address = get_mac_address()
-        machine_id = get_machine_id()
-
-        # Set authentication headers including host identifiers
-        headers = {'Authorization': f'Bearer {self.api_key}'}
-        if mac_address:
-            headers['X-Runner-MAC'] = mac_address
-        if machine_id:
-            headers['X-Runner-Machine-ID'] = machine_id
-
-        self.session.headers.update(headers)
-        logger.debug(f"Session configured with host identifiers: MAC={mac_address}, Machine ID={machine_id}")
-
-        # Configure TLS verification
-        if self.ca_cert and os.path.exists(self.ca_cert):
-            # Use provided CA certificate
-            self.session.verify = self.ca_cert
-            logger.info(f"Using CA certificate: {self.ca_cert}")
-        elif not self.verify_ssl:
-            # Disable SSL verification (development only)
-            self.session.verify = False
-            logger.warning("SSL verification disabled - development mode only!")
-            # Disable SSL warnings if verification is disabled
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        else:
-            # Use default system CA certificates
-            self.session.verify = True
-            logger.info("Using system CA certificates")
 
         logger.info(f"Runner initialized: {self.runner_id}")
 
@@ -205,17 +79,6 @@ class ChallengeCtlRunner:
     def devices(self):
         """Get all devices (backward compatibility)."""
         return self.device_manager.get_all_devices()
-
-    def load_config(self, config_path: str) -> Dict:
-        """Load runner configuration from YAML."""
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-                logger.info(f"Loaded configuration from {config_path}")
-                return config
-        except Exception as e:
-            logger.error(f"Error loading config: {e}")
-            sys.exit(1)
 
     def load_devices(self) -> List[Dict]:
         """Load and enumerate SDR devices from configuration."""
@@ -369,75 +232,18 @@ class ChallengeCtlRunner:
         This is used for initial enrollment with database-stored API keys.
         After enrollment, the runner should be restarted without the enrollment_token in config.
         """
-        enrollment_token = self.config['runner'].get('enrollment_token')
+        # Prepare device info for server
+        devices_info = []
+        for dev in self.devices:
+            devices_info.append({
+                'device_id': dev['device_id'],
+                'model': dev['model'],
+                'name': dev['name'],
+                'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
+            })
 
-        if not enrollment_token:
-            logger.debug("No enrollment token found, skipping enrollment")
-            return False
-
-        try:
-            hostname = socket.gethostname()
-            mac_address = get_mac_address()
-            machine_id = get_machine_id()
-
-            logger.info(f"Enrolling with host identifiers: hostname={hostname}, MAC={mac_address}, machine_id={machine_id}")
-
-            # Prepare device info for server
-            devices_info = []
-            for dev in self.devices:
-                devices_info.append({
-                    'device_id': dev['device_id'],
-                    'model': dev['model'],
-                    'name': dev['name'],
-                    'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
-                })
-
-            # Create a session without authentication for enrollment
-            enrollment_session = requests.Session()
-
-            # Configure TLS verification same as main session
-            if self.ca_cert and os.path.exists(self.ca_cert):
-                enrollment_session.verify = self.ca_cert
-            elif not self.verify_ssl:
-                enrollment_session.verify = False
-            else:
-                enrollment_session.verify = True
-
-            response = enrollment_session.post(
-                f"{self.server_url}/api/enrollment/enroll",
-                json={
-                    'enrollment_token': enrollment_token,
-                    'api_key': self.api_key,
-                    'runner_id': self.runner_id,
-                    'hostname': hostname,
-                    'mac_address': mac_address,
-                    'machine_id': machine_id,
-                    'devices': devices_info
-                },
-                timeout=10
-            )
-
-            if response.status_code == 201:
-                logger.info(f"Successfully enrolled as {self.runner_id}")
-                return True
-            elif response.status_code == 401:
-                logger.error("Enrollment failed: Invalid or expired enrollment token")
-                return False
-            elif response.status_code == 409:
-                logger.info("Runner already enrolled with this token")
-                return True  # Return true to continue with normal operation
-            else:
-                logger.error(f"Enrollment failed: HTTP {response.status_code}")
-                try:
-                    error_data = response.json()
-                    logger.error(f"Error: {error_data.get('error', 'Unknown error')}")
-                except Exception:
-                    pass
-                return False
-
-        except Exception as e:
-            logger.error(f"Error during enrollment: {e}")
-            return False
+        # Call parent class enroll method
+        return super().enroll(devices_info)
 
     def register(self) -> bool:
         """Register this runner with the server.
@@ -445,118 +251,59 @@ class ChallengeCtlRunner:
         Note: This is now primarily for backwards compatibility.
         New runners should use the enrollment process instead.
         """
-        try:
-            hostname = socket.gethostname()
+        # Prepare device info for server
+        devices_info = []
+        for dev in self.devices:
+            devices_info.append({
+                'device_id': dev['device_id'],
+                'model': dev['model'],
+                'name': dev['name'],
+                'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
+            })
 
-            # Prepare device info for server
-            devices_info = []
-            for dev in self.devices:
-                devices_info.append({
-                    'device_id': dev['device_id'],
-                    'model': dev['model'],
-                    'name': dev['name'],
-                    'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
-                })
+        # Get device status from device manager (already probed during startup)
+        device_status = self.device_manager.get_device_status_dict()
 
-            # Get device status from device manager (already probed during startup)
-            device_status = self.device_manager.get_device_status_dict()
-
-            response = self.session.post(
-                f"{self.server_url}/api/agents/register",
-                json={
-                    'hostname': hostname,
-                    'devices': devices_info,
-                    'device_status': device_status  # Include device status to avoid "unknown" state
-                },
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                logger.info(f"Registered as {self.runner_id}")
-                return True
-            else:
-                logger.error(f"Registration failed: HTTP {response.status_code}")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error during registration: {e}")
-            return False
+        # Call parent class register method
+        return super().register(devices_info, device_status)
 
     def send_heartbeat(self):
         """Send periodic heartbeat to server with device status and auto-detected devices."""
-        try:
-            # Get device status from device manager
-            device_status = self.device_manager.get_device_status_dict()
+        # Get device status from device manager
+        device_status = self.device_manager.get_device_status_dict()
 
-            # Include auto-detected devices in payload
-            with self.device_manager.auto_detected_lock:
-                auto_detected_payload = [
-                    {
-                        'device_id': d['device_id'],
-                        'model': d['model'],
-                        'name': d['name'],
-                        'device_string': d['device_string'],
-                        'antennas_config': d['antennas_config'],
-                        'rf_gain': d.get('rf_gain'),
-                        'if_gain': d.get('if_gain'),
-                        'bias_t': d.get('bias_t'),
-                        'source': d['source'],
-                        'enabled': d['enabled'],
-                        'auto_detected_at': d['auto_detected_at']
-                    }
-                    for d in self.device_manager.auto_detected_devices
-                ]
+        # Include auto-detected devices in payload
+        with self.device_manager.auto_detected_lock:
+            auto_detected_payload = [
+                {
+                    'device_id': d['device_id'],
+                    'model': d['model'],
+                    'name': d['name'],
+                    'device_string': d['device_string'],
+                    'antennas_config': d['antennas_config'],
+                    'rf_gain': d.get('rf_gain'),
+                    'if_gain': d.get('if_gain'),
+                    'bias_t': d.get('bias_t'),
+                    'source': d['source'],
+                    'enabled': d['enabled'],
+                    'auto_detected_at': d['auto_detected_at']
+                }
+                for d in self.device_manager.auto_detected_devices
+            ]
 
-            payload = {
-                'device_status': device_status
-            }
+        # Call parent class send_heartbeat method
+        response_data = super().send_heartbeat(device_status, auto_detected_payload)
 
-            if auto_detected_payload:
-                payload['auto_detected_devices'] = auto_detected_payload
-
-            response = self.session.post(
-                f"{self.server_url}/api/agents/{self.runner_id}/heartbeat",
-                json=payload,
-                timeout=5
-            )
-
-            if response.status_code == 200:
-                logger.debug("Heartbeat sent")
-
-                # Check for device config updates from server
-                response_data = response.json()
-                device_updates = response_data.get('device_config_updates', [])
-
-                if device_updates:
-                    self.device_manager.apply_device_config_updates(device_updates)
-            else:
-                logger.warning(f"Heartbeat failed: {response.status_code}")
-
-        except Exception as e:
-            logger.error(f"Error sending heartbeat: {e}")
+        # Check for device config updates from server
+        if response_data:
+            device_updates = response_data.get('device_config_updates', [])
+            if device_updates:
+                self.device_manager.apply_device_config_updates(device_updates)
 
     def signout(self):
         """Sign out from server (graceful shutdown)."""
-        try:
-            logger.info(f"Signing out from server...")
-            response = self.session.post(
-                f"{self.server_url}/api/agents/{self.runner_id}/signout",
-                timeout=5
-            )
-
-            if response.status_code == 200:
-                print("Signed out successfully", flush=True)
-                logger.info("Signed out successfully")
-                return True
-            else:
-                print(f"Signout failed: {response.status_code}", flush=True)
-                logger.warning(f"Signout failed: {response.status_code}")
-                return False
-
-        except Exception as e:
-            print(f"Error during signout: {e}", flush=True)
-            logger.error(f"Error during signout: {e}")
-            return False
+        # Call parent class signout method
+        return super().signout()
 
     def heartbeat_loop(self):
         """Background thread for sending heartbeats."""
@@ -1177,23 +924,7 @@ class ChallengeCtlRunner:
         except Exception as e:
             logger.error(f"Error reporting completion: {e}")
 
-    def send_log(self, level: str, message: str):
-        """Send log entry to server."""
-        try:
-            self.session.post(
-                f"{self.server_url}/api/agents/{self.runner_id}/log",
-                json={
-                    'log': {
-                        'level': level,
-                        'message': message,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                },
-                timeout=5
-            )
-        except Exception as e:
-            # Log at debug level to avoid recursion
-            logger.debug(f"Failed to send log to server: {e}")
+    # send_log is inherited from AgentBase
 
     def execute_task_thread(self, task: Dict, device: Dict):
         """Execute a task in a thread and handle completion.
