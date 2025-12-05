@@ -248,7 +248,6 @@
               </el-dropdown>
             </template>
           </el-table-column>
-          
         </el-table>
 
         <!-- Add Runner Dialog -->
@@ -3000,8 +2999,7 @@ logging:
         if (response.ok) {
           ElMessage.success(`Device ${deviceId} ${action}d successfully`)
           // Refresh agents list
-          loadRunners()
-          loadListeners()
+          loadAgents()
         } else {
           const data = await response.json()
           ElMessage.error(`Failed to ${action} device: ${data.error || 'Unknown error'}`)
@@ -3145,8 +3143,7 @@ logging:
         })
 
         // Refresh agents to show new device
-        loadRunners()
-        loadListeners()
+        loadAgents()
       })
 
       // Handle device config update event
