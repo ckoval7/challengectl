@@ -87,8 +87,8 @@ class DeviceManager:
             name = device.get('name')
 
             if model and name is not None:
-                # Resolve serial for this device
-                serial = self.resolve_device_serial(model, str(name))
+                # Resolve serial for this device (quiet=False for startup - we want to see issues once)
+                serial = self.resolve_device_serial(model, str(name), quiet=False)
 
                 # Add serial to device dict
                 enriched_device['serial'] = serial
@@ -308,25 +308,26 @@ class DeviceManager:
                                         break
 
             elif model == 'rtl-sdr' or model == 'rtlsdr':
-                # Run rtl_test to enumerate devices
-                # Note: rtl_test can hang, so we use a longer timeout to avoid false negatives
-                result = subprocess.run(
-                    ['rtl_test'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5  # Increased from 2s to 5s to reduce timeouts
-                )
-
-                # rtl_test exits with error but still shows device info
-                # Parse "Serial number:" or similar from output
-                for line in result.stdout.split('\n') + result.stderr.split('\n'):
-                    if 'SN:' in line or 'Serial' in line:
-                        # Try to extract serial
-                        parts = line.split()
-                        for part in parts:
-                            if len(part) >= 8 and (part.isdigit() or all(c in '0123456789abcdefABCDEF' for c in part)):
-                                serials.append(part)
-                                break
+                # Use osmosdr for enumeration - it doesn't claim devices like rtl_test does
+                # This prevents "usb_claim_interface error -6" when device is in use
+                try:
+                    import osmosdr
+                    devices = osmosdr.device.find()
+                    for dev in devices:
+                        dev_str = dev.to_string()
+                        # Check if this is an RTL-SDR device
+                        if 'rtlsdr' in dev_str.lower() or 'driver=rtl' in dev_str.lower():
+                            # Extract serial from osmosdr device string
+                            for attr in dev_str.split(','):
+                                if attr.strip().startswith('serial='):
+                                    serial = attr.split('=')[1].strip()
+                                    if serial and serial not in serials:
+                                        serials.append(serial)
+                                    break
+                except (ImportError, Exception) as e:
+                    # osmosdr not available or failed - this is acceptable
+                    # Device matching will fall back to serial-based matching
+                    logger.debug(f"RTL-SDR enumeration via osmosdr failed: {e}")
 
             elif model == 'usrp' or model == 'uhd':
                 # Try uhd_find_devices command
@@ -358,7 +359,7 @@ class DeviceManager:
 
         return serials
 
-    def resolve_device_serial(self, model: str, name: str) -> Optional[str]:
+    def resolve_device_serial(self, model: str, name: str, quiet: bool = False) -> Optional[str]:
         """Resolve config device name to hardware serial number.
 
         For index-based names (e.g., "0", "1"), queries hardware to map
@@ -367,6 +368,7 @@ class DeviceManager:
         Args:
             model: Device model (hackrf, bladerf, rtl-sdr, usrp)
             name: Config name (could be index "0" or serial "abc123")
+            quiet: If True, suppress error logging (for probing/retries)
 
         Returns:
             Serial number if found, None if device not available,
@@ -397,16 +399,19 @@ class DeviceManager:
                 # If enumeration failed (empty list) but name looks like it could be a serial,
                 # treat it as a serial instead of failing
                 if model in ['rtl-sdr', 'rtlsdr'] and len(name) >= 4:
-                    logger.warning(
-                        f"Config references {model}={name}, enumeration found {len(serials)} "
-                        f"device(s), treating as serial number instead of index"
-                    )
+                    if not quiet:
+                        logger.warning(
+                            f"Config references {model}={name}, enumeration found {len(serials)} "
+                            f"device(s), treating as serial number instead of index"
+                        )
                     return name
 
-                logger.error(
-                    f"Config references {model}={name} but only {len(serials)} "
-                    f"device(s) found. Device may be disconnected."
-                )
+                # Log error only if not in quiet mode (avoids spam during probing)
+                if not quiet:
+                    logger.error(
+                        f"Config references {model}={name} but only {len(serials)} "
+                        f"device(s) found. Device may be disconnected."
+                    )
                 return None
 
         # Name is short but not numeric - could be short serial, return as-is
@@ -711,8 +716,8 @@ class DeviceManager:
             if dev_model != discovered_model:
                 continue
 
-            # Resolve config device name to serial
-            dev_serial = self.resolve_device_serial(dev_model, str(dev_name))
+            # Resolve config device name to serial (quiet mode - this runs during probing)
+            dev_serial = self.resolve_device_serial(dev_model, str(dev_name), quiet=True)
 
             if dev_serial == discovered_serial:
                 logger.debug(

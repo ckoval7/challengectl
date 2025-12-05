@@ -6,8 +6,12 @@ Tests the new serial-based device matching logic in DeviceManager.
 """
 
 import pytest
+import sys
 from unittest.mock import Mock, patch, MagicMock
 from device_manager import DeviceManager
+
+# Mock osmosdr to prevent it from hanging during tests
+sys.modules['osmosdr'] = MagicMock()
 
 
 class TestDeviceSerialResolution:
