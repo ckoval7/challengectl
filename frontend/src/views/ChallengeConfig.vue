@@ -1382,7 +1382,7 @@ function handleRecordingComplete(event) {
 
 function handleRecordingImageUploaded(event) {
   console.log('Recording image uploaded:', event)
-  const { challenge_id, recording_id, width, height, image_url, started_at, timestamp } = event
+  const { challenge_id, recording_id, width, height, image_url, frequency, sample_rate, started_at, timestamp } = event
 
   if (!challenge_id || !recording_id) {
     console.warn('Missing required fields in recording_image_uploaded event:', event)
@@ -1402,6 +1402,8 @@ function handleRecordingImageUploaded(event) {
     image_path: image_url,  // The server sends image_url
     image_width: width,
     image_height: height,
+    frequency: frequency,
+    sample_rate: sample_rate,
     started_at: started_at,
     completed_at: timestamp
   }
