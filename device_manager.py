@@ -42,11 +42,13 @@ class DeviceManager:
             agent_type: 'runner' or 'listener' (determines device filtering)
             probe_callback: Optional callback(device) -> bool for custom probing
         """
-        self.configured_devices = configured_devices
         self.device_probe_interval = device_probe_interval
         self.enable_auto_detection = enable_auto_detection
         self.agent_type = agent_type
         self.probe_callback = probe_callback
+
+        # Resolve serials for configured devices and enrich with serial info
+        self.configured_devices = self._enrich_configured_devices(configured_devices)
 
         # Auto-detected devices
         self.auto_detected_devices = []
@@ -62,6 +64,53 @@ class DeviceManager:
         # Probe thread
         self.probe_thread = None
         self.running = False
+
+    def _enrich_configured_devices(self, configured_devices: List[Dict]) -> List[Dict]:
+        """Enrich configured devices with resolved serial numbers.
+
+        For devices with index-based names (e.g., name="0"), this resolves
+        the index to an actual serial number by querying hardware.
+
+        Args:
+            configured_devices: List of device dicts from config
+
+        Returns:
+            Enriched list of device dicts with 'serial' field added
+        """
+        enriched = []
+
+        for device in configured_devices:
+            # Make a copy to avoid modifying the original
+            enriched_device = device.copy()
+
+            model = device.get('model')
+            name = device.get('name')
+
+            if model and name is not None:
+                # Resolve serial for this device
+                serial = self.resolve_device_serial(model, str(name))
+
+                # Add serial to device dict
+                enriched_device['serial'] = serial
+
+                if serial:
+                    if serial != str(name):
+                        # Index was resolved to serial
+                        logger.info(
+                            f"Config device {model}={name} resolved to serial {serial}"
+                        )
+                    else:
+                        # Name is already a serial
+                        logger.debug(f"Config device {model}={name} using serial-based naming")
+                else:
+                    logger.warning(
+                        f"Config device {model}={name} could not be resolved to serial "
+                        f"(device may be offline or not connected)"
+                    )
+
+            enriched.append(enriched_device)
+
+        return enriched
 
     def get_all_devices(self) -> List[Dict]:
         """Get combined list of configured + auto-detected devices.
@@ -193,6 +242,154 @@ class DeviceManager:
 
             return failure_count
 
+    def enumerate_device_serials(self, model: str) -> List[str]:
+        """Get ordered list of serial numbers for device type from hardware.
+
+        Queries actual hardware to get device serials in enumeration order.
+        This is used to map index-based config entries (e.g., name="0") to
+        actual serial numbers.
+
+        Args:
+            model: Device model (hackrf, bladerf, rtl-sdr, usrp)
+
+        Returns:
+            List of serial numbers in enumeration order (index 0, 1, 2, etc.)
+            Empty list if enumeration fails or model not supported
+        """
+        import subprocess
+
+        serials = []
+
+        try:
+            if model == 'hackrf':
+                # Run hackrf_info to enumerate devices
+                result = subprocess.run(
+                    ['hackrf_info'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    # Parse "Serial number:" lines in order
+                    for line in result.stdout.split('\n'):
+                        if 'Serial number:' in line:
+                            serial = line.split(':', 1)[1].strip()
+                            # Remove 0x prefix if present
+                            if serial.startswith('0x'):
+                                serial = serial[2:]
+                            # Normalize (remove leading zeros like osmosdr does)
+                            serial = serial.lstrip('0') or '0'
+                            serials.append(serial)
+
+            elif model == 'bladerf':
+                # Run bladeRF-cli -p to enumerate devices
+                result = subprocess.run(
+                    ['bladeRF-cli', '-p'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    # Parse serial numbers from output
+                    # bladeRF-cli -p shows one device per line with serial
+                    for line in result.stdout.split('\n'):
+                        line = line.strip()
+                        if line and not line.startswith('Backend:'):
+                            # Serial numbers are typically the main content
+                            # Example line: "  Serial:  a4c20e3f12345678"
+                            if 'Serial:' in line or 'serial' in line.lower():
+                                parts = line.split()
+                                for part in parts:
+                                    # Look for hex string
+                                    if len(part) >= 8 and all(c in '0123456789abcdefABCDEF' for c in part):
+                                        serials.append(part.lower())
+                                        break
+
+            elif model == 'rtl-sdr' or model == 'rtlsdr':
+                # Run rtl_test to enumerate devices
+                result = subprocess.run(
+                    ['rtl_test'],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+
+                # rtl_test exits with error but still shows device info
+                # Parse "Serial number:" or similar from output
+                for line in result.stdout.split('\n') + result.stderr.split('\n'):
+                    if 'SN:' in line or 'Serial' in line:
+                        # Try to extract serial
+                        parts = line.split()
+                        for part in parts:
+                            if len(part) >= 8 and (part.isdigit() or all(c in '0123456789abcdefABCDEF' for c in part)):
+                                serials.append(part)
+                                break
+
+            elif model == 'usrp' or model == 'uhd':
+                # Try uhd_find_devices command
+                result = subprocess.run(
+                    ['uhd_find_devices'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+                if result.returncode == 0:
+                    # Parse "Serial:" from output
+                    for line in result.stdout.split('\n'):
+                        if 'serial:' in line.lower():
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                serial = parts[1].strip()
+                                if serial:
+                                    serials.append(serial)
+
+        except FileNotFoundError:
+            logger.debug(f"Tool for {model} not found, cannot enumerate serials")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Timeout while enumerating {model} devices")
+        except Exception as e:
+            logger.error(f"Error enumerating {model} serials: {e}", exc_info=True)
+
+        return serials
+
+    def resolve_device_serial(self, model: str, name: str) -> Optional[str]:
+        """Resolve config device name to hardware serial number.
+
+        For index-based names (e.g., "0", "1"), queries hardware to map
+        index to serial. For serial-based names, returns the name as-is.
+
+        Args:
+            model: Device model (hackrf, bladerf, rtl-sdr, usrp)
+            name: Config name (could be index "0" or serial "abc123")
+
+        Returns:
+            Serial number if found, None if device not available,
+            or the name itself if it's already a serial
+        """
+        # If name looks like a serial (long hex/alphanumeric string), return as-is
+        if not name.isdigit() and len(name) > 8:
+            return name
+
+        # If name is numeric index, map to serial
+        if name.isdigit():
+            serials = self.enumerate_device_serials(model)
+            index = int(name)
+
+            if index < len(serials):
+                return serials[index]
+            else:
+                logger.error(
+                    f"Config references {model}={name} but only {len(serials)} "
+                    f"device(s) found. Device may be disconnected."
+                )
+                return None
+
+        # Name is short but not numeric - could be short serial, return as-is
+        return name
+
     def auto_detect_devices(self) -> List[Dict]:
         """Auto-detect new SDR devices using osmosdr.
 
@@ -314,6 +511,7 @@ class DeviceManager:
         return {
             'model': 'hackrf',
             'name': str(hackrf_count),  # Index-based
+            'serial': serial,  # Explicit serial for matching
             'device_string': f'hackrf={hackrf_count}',
             'antennas_config': {},  # No frequency limits = accepts all
             'rf_gain': 14,
@@ -336,6 +534,7 @@ class DeviceManager:
         return {
             'model': 'bladerf',
             'name': serial,
+            'serial': serial,  # Explicit serial for matching
             'device_string': f'bladerf={serial}',
             'antennas_config': {},
             'rf_gain': 43,
@@ -361,6 +560,7 @@ class DeviceManager:
         return {
             'model': 'usrp',
             'name': f'type={device_type}',
+            'serial': serial,  # Explicit serial for matching
             'device_string': f'uhd,type={device_type},serial={serial}',
             'antennas_config': {},
             'rf_gain': 20,
@@ -402,6 +602,7 @@ class DeviceManager:
         return {
             'model': 'rtlsdr',
             'name': name,  # Serial or label-based (never index)
+            'serial': serial,  # Explicit serial for matching
             'gain': 40,
             'frequency_limits': [],
             'in_use': False
@@ -437,6 +638,7 @@ class DeviceManager:
         return {
             'model': 'airspy',
             'name': name,  # Serial or label-based (never index)
+            'serial': serial,  # Explicit serial for matching
             'gain': 15,  # Default linearity gain
             'frequency_limits': [],
             'in_use': False
@@ -445,29 +647,57 @@ class DeviceManager:
     def _is_device_known(self, device_info: Dict) -> bool:
         """Check if device is already known (configured or detected).
 
+        Uses intelligent matching:
+        - Extracts serial from device_info
+        - Compares serials instead of device_string
+        - Handles both index-based and serial-based config entries
+
         Args:
             device_info: Device dict to check
 
         Returns:
             True if device already known, False otherwise
         """
-        # For runners: compare by device_string
-        # For listeners: compare by model and name
         all_devices = self.get_all_devices()
 
-        if 'device_string' in device_info:
-            # Runner-style comparison
-            device_string = device_info['device_string']
-            for dev in all_devices:
-                if dev.get('device_string') == device_string:
-                    return True
-        else:
-            # Listener-style comparison
-            model = device_info.get('model')
-            name = device_info.get('name')
-            for dev in all_devices:
-                if dev.get('model') == model and dev.get('name') == name:
-                    return True
+        # Extract serial from device_info (from auto-detection)
+        discovered_serial = device_info.get('serial')
+        discovered_model = device_info.get('model')
+
+        if not discovered_serial:
+            # Fall back to exact string match for devices without serials
+            # (or old-style comparison for listener devices)
+            if 'device_string' in device_info:
+                device_string = device_info['device_string']
+                for dev in all_devices:
+                    if dev.get('device_string') == device_string:
+                        return True
+            else:
+                # Listener-style comparison
+                model = device_info.get('model')
+                name = device_info.get('name')
+                for dev in all_devices:
+                    if dev.get('model') == model and dev.get('name') == name:
+                        return True
+            return False
+
+        # Compare by serial (smart matching)
+        for dev in all_devices:
+            dev_model = dev.get('model')
+            dev_name = dev.get('name')
+
+            if dev_model != discovered_model:
+                continue
+
+            # Resolve config device name to serial
+            dev_serial = self.resolve_device_serial(dev_model, str(dev_name))
+
+            if dev_serial == discovered_serial:
+                logger.debug(
+                    f"Matched discovered {discovered_model}={discovered_serial} "
+                    f"to config device {dev_model}={dev_name}"
+                )
+                return True
 
         return False
 

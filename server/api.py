@@ -2037,15 +2037,23 @@ class ChallengeCtlAPI:
                                             mac_address=mac_address, machine_id=machine_id)
 
             if success:
-                # Initialize device status in memory with 'unknown' status
+                # Initialize device status in memory
+                # Use provided device_status if available, otherwise default to 'unknown'
+                device_status_payload = data.get('device_status', {})
                 timestamp = datetime.now(timezone.utc).isoformat()
+
                 with self.device_status_lock:
                     for device in devices:
                         device_id = device.get('device_id')
                         if device_id is not None:
                             key = (agent_id, device_id)
+
+                            # Use actual status from agent if provided, otherwise 'unknown'
+                            # device_id might be int or str in payload, try both
+                            status = device_status_payload.get(device_id) or device_status_payload.get(str(device_id)) or 'unknown'
+
                             self.device_status[key] = {
-                                'status': 'unknown',
+                                'status': status,
                                 'model': device.get('model', 'unknown'),
                                 'name': device.get('name', ''),
                                 'last_update': timestamp

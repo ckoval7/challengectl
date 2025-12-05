@@ -2328,6 +2328,16 @@ class Database:
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Check if devices have actually changed
+            cursor.execute('SELECT devices FROM agents WHERE agent_id = ?', (agent_id,))
+            row = cursor.fetchone()
+            if row:
+                old_devices = json.loads(row[0]) if row[0] else []
+                devices_changed = old_devices != devices
+            else:
+                devices_changed = True  # Agent doesn't exist, so this is a change
+
             cursor.execute('''
                 UPDATE agents
                 SET devices = ?, updated_at = CURRENT_TIMESTAMP
@@ -2335,7 +2345,8 @@ class Database:
             ''', (json.dumps(devices), agent_id))
             conn.commit()
             if cursor.rowcount > 0:
-                logger.info(f"Updated devices for agent {agent_id}: {len(devices)} devices")
+                if devices_changed:
+                    logger.info(f"Updated devices for agent {agent_id}: {len(devices)} devices")
                 return True
             return False
 
