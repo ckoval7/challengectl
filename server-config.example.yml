@@ -129,6 +129,7 @@ frequency_ranges:
 #     wav_samplerate: 48000
 #     min_delay: 60
 #     max_delay: 90
+#     record_iq: true  # Enable IQ recording for signal analysis (optional, default: false)
 #     enabled: true
 #
 #   # NBFM Example with named frequency range (random frequency selected from range)

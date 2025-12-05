@@ -369,6 +369,15 @@ class Database:
                 logger.info("Adding 'thumbnail_path' column to recordings table")
                 cursor.execute('ALTER TABLE recordings ADD COLUMN thumbnail_path TEXT')
 
+            # Migration: Add IQ recording columns to recordings table if they don't exist
+            cursor.execute("PRAGMA table_info(recordings)")
+            recordings_columns = [row[1] for row in cursor.fetchall()]
+            if 'iq_file_path' not in recordings_columns:
+                logger.info("Adding IQ recording columns to recordings table")
+                cursor.execute('ALTER TABLE recordings ADD COLUMN iq_file_path TEXT')
+                cursor.execute('ALTER TABLE recordings ADD COLUMN iq_file_size INTEGER')
+                cursor.execute('ALTER TABLE recordings ADD COLUMN record_iq BOOLEAN DEFAULT 0')
+
             # Create indexes
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_challenges_status
@@ -2405,7 +2414,8 @@ class Database:
 
     # Recording management
     def create_recording(self, challenge_id: str, agent_id: str, transmission_id: int,
-                        frequency: int, sample_rate: int, expected_duration: float) -> int:
+                        frequency: int, sample_rate: int, expected_duration: float,
+                        record_iq: bool = False) -> int:
         """Create a new recording entry.
 
         Args:
@@ -2415,6 +2425,7 @@ class Database:
             frequency: Frequency in Hz
             sample_rate: Sample rate in Hz
             expected_duration: Expected duration in seconds
+            record_iq: Whether to record IQ data for this recording
 
         Returns:
             recording_id if successful, -1 otherwise
@@ -2425,10 +2436,10 @@ class Database:
                 cursor.execute('''
                     INSERT INTO recordings (
                         challenge_id, agent_id, transmission_id, frequency,
-                        started_at, status, sample_rate, duration_seconds
+                        started_at, status, sample_rate, duration_seconds, record_iq
                     )
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'recording', ?, ?)
-                ''', (challenge_id, agent_id, transmission_id, frequency, sample_rate, expected_duration))
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'recording', ?, ?, ?)
+                ''', (challenge_id, agent_id, transmission_id, frequency, sample_rate, expected_duration, record_iq))
                 conn.commit()
                 return cursor.lastrowid
             except Exception as e:
@@ -2437,7 +2448,8 @@ class Database:
 
     def update_recording_complete(self, recording_id: int, success: bool, image_path: Optional[str] = None,
                                   image_width: Optional[int] = None, image_height: Optional[int] = None,
-                                  duration: Optional[float] = None, error_message: Optional[str] = None) -> bool:
+                                  duration: Optional[float] = None, iq_file_size: Optional[int] = None,
+                                  error_message: Optional[str] = None) -> bool:
         """Mark recording as completed.
 
         Args:
@@ -2447,6 +2459,7 @@ class Database:
             image_width: Width of image in pixels
             image_height: Height of image in pixels
             duration: Actual duration in seconds
+            iq_file_size: Size of IQ file in bytes (if recorded)
             error_message: Error message if failed
 
         Returns:
@@ -2463,9 +2476,10 @@ class Database:
                     image_width = ?,
                     image_height = ?,
                     duration_seconds = ?,
+                    iq_file_size = ?,
                     error_message = ?
                 WHERE recording_id = ?
-            ''', (status, image_path, image_width, image_height, duration, error_message, recording_id))
+            ''', (status, image_path, image_width, image_height, duration, iq_file_size, error_message, recording_id))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -2505,6 +2519,32 @@ class Database:
                 ''', (image_path, image_width, image_height, recording_id))
             conn.commit()
             return cursor.rowcount > 0
+
+    def update_recording_iq_file(self, recording_id: int, iq_file_path: str, iq_file_size: int) -> bool:
+        """Update recording with IQ file path and size after upload.
+
+        Args:
+            recording_id: Recording ID
+            iq_file_path: Path to saved IQ file
+            iq_file_size: Size of IQ file in bytes
+
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    UPDATE recordings
+                    SET iq_file_path = ?,
+                        iq_file_size = ?
+                    WHERE recording_id = ?
+                ''', (iq_file_path, iq_file_size, recording_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                logger.error(f"Error updating recording IQ file: {e}")
+                return False
 
     def get_recording(self, recording_id: int) -> Optional[Dict]:
         """Get recording details."""

@@ -55,7 +55,8 @@ class SpectrumListener:
 
     def __init__(self, frequency: int, sample_rate: int = 2000000,
                  fft_size: int = 1024, gain: float = 40.0, device_id: str = "",
-                 simulate: bool = False):
+                 simulate: bool = False, record_iq: bool = False,
+                 iq_output_path: Optional[str] = None):
         """Initialize spectrum listener.
 
         Args:
@@ -65,6 +66,8 @@ class SpectrumListener:
             gain: RF gain in dB (default 40)
             device_id: Device identifier string (e.g., "rtlsdr=0", "hackrf=0")
             simulate: Force simulation mode (generate test data without SDR hardware)
+            record_iq: Enable IQ file recording (default False)
+            iq_output_path: Path for IQ file output (required if record_iq=True)
         """
         self.frequency = frequency
         self.sample_rate = sample_rate
@@ -72,6 +75,8 @@ class SpectrumListener:
         self.gain = gain
         self.device_id = device_id
         self.simulate = simulate
+        self.record_iq = record_iq
+        self.iq_output_path = iq_output_path
 
         # FFT data storage
         self.fft_frames = []
@@ -102,6 +107,12 @@ class SpectrumListener:
         self.source.set_bb_gain(20, 0)
         self.source.set_antenna('', 0)
         self.source.set_bandwidth(0, 0)
+
+        # Add IQ file sink if requested (parallel to FFT processing)
+        if self.record_iq and self.iq_output_path:
+            self.iq_file_sink = blocks.file_sink(gr.sizeof_gr_complex, self.iq_output_path)
+            self.tb.connect(self.source, self.iq_file_sink)
+            logger.info(f"IQ recording enabled: {self.iq_output_path}")
 
         # Stream to Vector for FFT processing
         self.s2v = blocks.stream_to_vector(gr.sizeof_gr_complex, self.fft_size)
@@ -148,6 +159,11 @@ class SpectrumListener:
                 logger.info("Using simulated spectrum data (simulation mode enabled)")
             else:
                 logger.warning("Using simulated spectrum data (GNU Radio/osmosdr not available)")
+
+            # Create simulated IQ file if requested
+            if self.record_iq and self.iq_output_path:
+                self._generate_simulated_iq_file(duration)
+
             return self._generate_simulated_spectrum(duration, frame_rate)
 
         self.fft_frames = []
@@ -279,6 +295,48 @@ class SpectrumListener:
             frames.append(power)
 
         return np.array(frames)
+
+    def _generate_simulated_iq_file(self, duration: float):
+        """Generate simulated IQ file for testing when GNU Radio is unavailable.
+
+        Args:
+            duration: Duration in seconds
+        """
+        try:
+            # Calculate number of samples
+            num_samples = int(duration * self.sample_rate)
+
+            # Generate simulated complex IQ data
+            # Base noise + simulated signals
+            t = np.arange(num_samples) / self.sample_rate
+
+            # Noise floor
+            i_noise = np.random.randn(num_samples) * 0.1
+            q_noise = np.random.randn(num_samples) * 0.1
+
+            # Signal 1: Carrier at 1/4 of bandwidth
+            signal_freq1 = self.sample_rate / 4
+            signal1 = 0.3 * np.exp(1j * 2 * np.pi * signal_freq1 * t)
+
+            # Signal 2: Modulated signal at center
+            signal_freq2 = 0
+            modulation = np.sin(2 * np.pi * 1000 * t)  # 1 kHz modulation
+            signal2 = 0.5 * modulation * np.exp(1j * 2 * np.pi * signal_freq2 * t)
+
+            # Combine signals
+            iq_data = (i_noise + 1j * q_noise) + signal1 + signal2
+
+            # Write to file as complex float32 (GNU Radio format)
+            iq_data_complex64 = iq_data.astype(np.complex64)
+
+            with open(self.iq_output_path, 'wb') as f:
+                iq_data_complex64.tofile(f)
+
+            file_size = num_samples * 8  # 8 bytes per complex64 sample
+            logger.info(f"Generated simulated IQ file: {self.iq_output_path} ({file_size} bytes, {num_samples} samples)")
+
+        except Exception as e:
+            logger.error(f"Error generating simulated IQ file: {e}")
 
     def stop(self):
         """Stop recording early."""

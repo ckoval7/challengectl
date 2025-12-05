@@ -2484,6 +2484,7 @@ class ChallengeCtlAPI:
                                     'expected_start': expected_start.isoformat(),
                                     'expected_duration': expected_duration,
                                     'runner_id': agent_id,
+                                    'record_iq': config.get('record_iq', False),
                                     'timestamp': datetime.now(timezone.utc).isoformat()
                                 }
 
@@ -2674,6 +2675,7 @@ class ChallengeCtlAPI:
             frequency = data.get('frequency')
             sample_rate = data.get('sample_rate', 2000000)
             expected_duration = data.get('expected_duration', 30.0)
+            record_iq = data.get('record_iq', False)
 
             if not all([challenge_id, transmission_id, frequency]):
                 return jsonify({'error': 'Missing required fields'}), 400
@@ -2685,7 +2687,8 @@ class ChallengeCtlAPI:
                 transmission_id=transmission_id,
                 frequency=int(frequency),
                 sample_rate=int(sample_rate),
-                expected_duration=float(expected_duration)
+                expected_duration=float(expected_duration),
+                record_iq=record_iq
             )
 
             if recording_id > 0:
@@ -2724,6 +2727,7 @@ class ChallengeCtlAPI:
             duration = data.get('duration')
             image_width = data.get('image_width')
             image_height = data.get('image_height')
+            iq_file_size = data.get('iq_file_size')
 
             # Note: image_path will be set after upload
             recording = self.db.get_recording(recording_id)
@@ -2741,6 +2745,7 @@ class ChallengeCtlAPI:
                 image_width=image_width,
                 image_height=image_height,
                 duration=duration,
+                iq_file_size=iq_file_size,
                 error_message=error_message
             )
 
@@ -2865,6 +2870,78 @@ class ChallengeCtlAPI:
                 logger.error(f"Error saving recording image: {e}")
                 return jsonify({'error': 'Failed to save image'}), 500
 
+        @self.app.route('/api/agents/<agent_id>/recording/<int:recording_id>/upload/iq', methods=['POST'])
+        @self.require_api_key
+        @self.limiter.limit("20 per minute")  # Lower limit for large IQ file uploads
+        def recording_upload_iq(agent_id, recording_id):
+            """Upload IQ recording file for a recording."""
+            if request.runner_id != agent_id:
+                return jsonify({'error': 'Unauthorized'}), 403
+
+            # Verify recording exists and belongs to this agent
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            if recording['agent_id'] != agent_id:
+                return jsonify({'error': 'Unauthorized - recording belongs to different agent'}), 403
+
+            # Check if file was uploaded
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file provided'}), 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+
+            # Validate file type (.c32 IQ files only)
+            if not file.filename.lower().endswith('.c32'):
+                return jsonify({'error': 'Only .c32 IQ recording files are allowed'}), 400
+
+            # Create recordings directory if it doesn't exist
+            recordings_dir = os.path.join(os.path.dirname(__file__), '..', 'recordings')
+            os.makedirs(recordings_dir, exist_ok=True)
+
+            # Save file with recording ID and .c32 extension
+            filename = f"recording_{recording_id}_iq.c32"
+            file_path = os.path.join(recordings_dir, filename)
+
+            try:
+                file.save(file_path)
+                file_size = os.path.getsize(file_path)
+
+                # Update recording with IQ file path and size
+                updated = self.db.update_recording_iq_file(
+                    recording_id=recording_id,
+                    iq_file_path=file_path,
+                    iq_file_size=file_size
+                )
+
+                if not updated:
+                    logger.error(f"Failed to update recording {recording_id} with IQ file")
+                    return jsonify({'error': 'Failed to update recording'}), 500
+
+                logger.info(f"Uploaded IQ file for recording {recording_id}: {file_size} bytes at {file_path}")
+
+                # Broadcast IQ uploaded event
+                self.broadcast_event('recording_iq_uploaded', {
+                    'recording_id': recording_id,
+                    'agent_id': agent_id,
+                    'challenge_id': recording.get('challenge_id'),
+                    'file_size': file_size,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                return jsonify({
+                    'status': 'uploaded',
+                    'filename': filename,
+                    'file_size': file_size
+                }), 200
+
+            except Exception as e:
+                logger.error(f"Error saving IQ file: {e}")
+                return jsonify({'error': 'Failed to save IQ file'}), 500
+
         # Recording query endpoints (admin)
         @self.app.route('/api/recordings', methods=['GET'])
         @self.require_admin_auth
@@ -2919,6 +2996,31 @@ class ChallengeCtlAPI:
                 return response
             else:
                 return jsonify({'error': 'Image file not found'}), 404
+
+        @self.app.route('/api/recordings/<int:recording_id>/iq', methods=['GET'])
+        @self.require_admin_auth
+        @self.limiter.limit("100 per minute")
+        def get_recording_iq(recording_id):
+            """Download IQ recording file for a recording."""
+            recording = self.db.get_recording(recording_id)
+            if not recording:
+                return jsonify({'error': 'Recording not found'}), 404
+
+            iq_file_path = recording.get('iq_file_path')
+            if not iq_file_path or not os.path.exists(iq_file_path):
+                return jsonify({'error': 'IQ file not available for this recording'}), 404
+
+            try:
+                filename = os.path.basename(iq_file_path)
+                return send_file(
+                    iq_file_path,
+                    mimetype='application/octet-stream',
+                    as_attachment=True,
+                    download_name=filename
+                )
+            except Exception as e:
+                logger.error(f"Error serving IQ file: {e}")
+                return jsonify({'error': 'Failed to serve IQ file'}), 500
 
         @self.app.route('/api/challenges/<challenge_id>/recordings', methods=['GET'])
         @self.require_admin_auth

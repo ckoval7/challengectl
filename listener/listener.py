@@ -227,14 +227,15 @@ class ListenerAgent(AgentBase):
                 frequency = data.get('frequency')
                 expected_start = data.get('expected_start')
                 expected_duration = data.get('expected_duration')
+                record_iq = data.get('record_iq', False)
 
-                logger.debug(f"Recording assignment details: challenge={challenge_name}, freq={frequency} Hz ({frequency/1e6:.6f} MHz)")
+                logger.debug(f"Recording assignment details: challenge={challenge_name}, freq={frequency} Hz ({frequency/1e6:.6f} MHz), record_iq={record_iq}")
                 logger.info(f"Starting recording thread for {challenge_name}")
                 # Schedule recording
                 threading.Thread(
                     target=self.handle_recording_assignment,
                     args=(assignment_id, challenge_id, challenge_name, transmission_id,
-                          frequency, expected_start, expected_duration),
+                          frequency, expected_start, expected_duration, record_iq),
                     daemon=True
                 ).start()
                 logger.debug(f"Recording thread started")
@@ -281,7 +282,7 @@ class ListenerAgent(AgentBase):
     def handle_recording_assignment(self, assignment_id: int, challenge_id: str,
                                    challenge_name: str, transmission_id: int,
                                    frequency: int, expected_start: str,
-                                   expected_duration: float):
+                                   expected_duration: float, record_iq: bool = False):
         """Handle a recording assignment by capturing RF and generating waterfall.
 
         Args:
@@ -292,8 +293,9 @@ class ListenerAgent(AgentBase):
             frequency: Center frequency in Hz
             expected_start: ISO format timestamp of expected transmission start
             expected_duration: Expected duration in seconds
+            record_iq: Whether to record IQ data for this recording
         """
-        logger.debug(f"handle_recording_assignment started for {challenge_name}")
+        logger.debug(f"handle_recording_assignment started for {challenge_name}, record_iq={record_iq}")
 
         with self.recording_lock:
             if self.current_recording:
@@ -307,7 +309,8 @@ class ListenerAgent(AgentBase):
                 'transmission_id': transmission_id,
                 'frequency': frequency,
                 'expected_start': expected_start,
-                'expected_duration': expected_duration
+                'expected_duration': expected_duration,
+                'record_iq': record_iq
             }
 
         logger.debug(f"Current recording set, proceeding")
@@ -346,7 +349,8 @@ class ListenerAgent(AgentBase):
                 transmission_id=transmission_id,
                 frequency=frequency,
                 sample_rate=sample_rate,
-                expected_duration=expected_duration
+                expected_duration=expected_duration,
+                record_iq=record_iq
             )
 
             logger.debug(f"Recording ID from server: {recording_id}")
@@ -357,15 +361,16 @@ class ListenerAgent(AgentBase):
 
             # Perform the actual recording
             recording_actual_start = datetime.now(timezone.utc)
-            logger.info(f"Starting recording for {challenge_name} at {frequency} Hz")
+            logger.info(f"Starting recording for {challenge_name} at {frequency} Hz (IQ recording: {record_iq})")
             logger.info(f"Recording timeline: pre-roll={pre_roll}s, transmission={expected_duration}s, "
                        f"post-roll={recording_config.get('post_roll_seconds', 5)}s, "
                        f"total={pre_roll + expected_duration + recording_config.get('post_roll_seconds', 5)}s")
 
-            success, image_path, duration, error_message = self.record_transmission(
+            success, image_path, duration, error_message, iq_file_path = self.record_transmission(
                 frequency=frequency,
                 duration=expected_duration,
-                challenge_name=challenge_name
+                challenge_name=challenge_name,
+                record_iq=record_iq
             )
 
             recording_actual_end = datetime.now(timezone.utc)
@@ -378,11 +383,17 @@ class ListenerAgent(AgentBase):
                     recording_id=recording_id,
                     success=True,
                     image_path=image_path,
-                    duration=duration
+                    duration=duration,
+                    iq_file_path=iq_file_path
                 )
 
                 # Upload waterfall image
                 self.upload_waterfall_image(recording_id, image_path)
+
+                # Upload IQ file if recorded
+                if iq_file_path and os.path.exists(iq_file_path):
+                    logger.info(f"Uploading IQ file: {iq_file_path}")
+                    self.upload_iq_file(recording_id, iq_file_path)
 
                 logger.info(f"Successfully recorded and uploaded waterfall for {challenge_name}")
             else:
@@ -400,16 +411,17 @@ class ListenerAgent(AgentBase):
                 self.current_recording = None
 
     def record_transmission(self, frequency: int, duration: float,
-                          challenge_name: str) -> tuple:
+                          challenge_name: str, record_iq: bool = False) -> tuple:
         """Capture RF transmission and generate waterfall image.
 
         Args:
             frequency: Center frequency in Hz
             duration: Recording duration in seconds
             challenge_name: Challenge name for filename
+            record_iq: Whether to record IQ data
 
         Returns:
-            Tuple of (success, image_path, actual_duration, error_message)
+            Tuple of (success, image_path, actual_duration, error_message, iq_file_path)
         """
         selected_device = None
         try:
@@ -449,6 +461,17 @@ class ListenerAgent(AgentBase):
             # Build device identifier string for osmosdr
             device_id = f"{selected_device['model']}={selected_device['name']}"
 
+            # Generate IQ filename if recording enabled
+            iq_file_path = None
+            if record_iq:
+                # Get modulation from current_recording if available
+                modulation = self.current_recording.get('modulation', 'unknown') if self.current_recording else 'unknown'
+                sample_rate_khz = sample_rate / 1000
+                timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+                iq_filename = f"{challenge_name}_{modulation}_{sample_rate_khz:.0f}kHz_{timestamp}.c32"
+                iq_file_path = os.path.join(output_dir, iq_filename)
+                logger.info(f"IQ recording will be saved to: {iq_file_path}")
+
             # Create spectrum listener with device-specific parameters
             listener = SpectrumListener(
                 frequency=frequency,
@@ -456,7 +479,9 @@ class ListenerAgent(AgentBase):
                 fft_size=fft_size,
                 gain=selected_device['gain'],
                 device_id=device_id,
-                simulate=self.simulate
+                simulate=self.simulate,
+                record_iq=record_iq,
+                iq_output_path=iq_file_path
             )
 
             logger.info(f"Tuning SDR to {frequency} Hz ({frequency/1e6:.6f} MHz) with sample rate {sample_rate} Hz ({sample_rate/1e6:.3f} MHz)")
@@ -498,12 +523,12 @@ class ListenerAgent(AgentBase):
                 vmax_dbm=waterfall_max_dbm
             )
 
-            return (True, image_path, actual_duration, None)
+            return (True, image_path, actual_duration, None, iq_file_path)
 
         except Exception as e:
             error_msg = f"Recording failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return (False, None, 0, error_msg)
+            return (False, None, 0, error_msg, None)
         finally:
             # Release device for next recording (skip for simulated devices)
             if selected_device and not self.simulate:
@@ -512,7 +537,7 @@ class ListenerAgent(AgentBase):
 
     def notify_recording_started(self, challenge_id: str, transmission_id: int,
                                 frequency: int, sample_rate: int,
-                                expected_duration: float) -> int:
+                                expected_duration: float, record_iq: bool = False) -> int:
         """Notify server that recording has started.
 
         Returns:
@@ -526,7 +551,8 @@ class ListenerAgent(AgentBase):
                     'transmission_id': transmission_id,
                     'frequency': frequency,
                     'sample_rate': sample_rate,
-                    'expected_duration': expected_duration
+                    'expected_duration': expected_duration,
+                    'record_iq': record_iq
                 },
                 timeout=10
             )
@@ -545,6 +571,7 @@ class ListenerAgent(AgentBase):
     def notify_recording_complete(self, recording_id: int, success: bool,
                                  image_path: Optional[str] = None,
                                  duration: Optional[float] = None,
+                                 iq_file_path: Optional[str] = None,
                                  error_message: Optional[str] = None):
         """Notify server that recording has completed."""
         try:
@@ -554,6 +581,11 @@ class ListenerAgent(AgentBase):
                 with Image.open(image_path) as img:
                     image_width, image_height = img.size
 
+            # Get IQ file size if available
+            iq_file_size = None
+            if iq_file_path and os.path.exists(iq_file_path):
+                iq_file_size = os.path.getsize(iq_file_path)
+
             response = self.session.post(
                 f"{self.server_url}/api/agents/{self.agent_id}/recording/{recording_id}/complete",
                 json={
@@ -561,6 +593,7 @@ class ListenerAgent(AgentBase):
                     'duration': duration,
                     'image_width': image_width,
                     'image_height': image_height,
+                    'iq_file_size': iq_file_size,
                     'error_message': error_message
                 },
                 timeout=10
@@ -600,6 +633,46 @@ class ListenerAgent(AgentBase):
         except Exception as e:
             logger.error(f"Error uploading waterfall image for recording {recording_id}: {e}")
             logger.error(traceback.format_exc())
+
+    def upload_iq_file(self, recording_id: int, iq_file_path: str) -> bool:
+        """Upload IQ recording file to server.
+
+        Args:
+            recording_id: Recording ID
+            iq_file_path: Path to IQ file
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Verify file exists
+            if not os.path.exists(iq_file_path):
+                logger.error(f"IQ file not found: {iq_file_path}")
+                return False
+
+            file_size = os.path.getsize(iq_file_path)
+            logger.info(f"Uploading IQ file for recording {recording_id}: {iq_file_path} ({file_size} bytes)")
+
+            with open(iq_file_path, 'rb') as f:
+                files = {'file': (os.path.basename(iq_file_path), f, 'application/octet-stream')}
+                response = self.session.post(
+                    f"{self.server_url}/api/agents/{self.agent_id}/recording/{recording_id}/upload/iq",
+                    files=files,
+                    timeout=300  # 5 minute timeout for large IQ files
+                )
+
+                if response.status_code == 200:
+                    logger.info(f"Successfully uploaded IQ file for recording {recording_id}")
+                    return True
+                else:
+                    logger.error(f"Failed to upload IQ file for recording {recording_id}: HTTP {response.status_code}")
+                    logger.error(f"Response: {response.text}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error uploading IQ file for recording {recording_id}: {e}")
+            logger.error(traceback.format_exc())
+            return False
 
     def enroll(self) -> bool:
         """Enroll this listener with the server using enrollment token.

@@ -131,6 +131,31 @@
           <p v-if="selectedRecording.completed_at">
             <strong>Completed:</strong> {{ formatTimestamp(selectedRecording.completed_at) }}
           </p>
+
+          <!-- IQ Recording Section -->
+          <div class="iq-section">
+            <h4>IQ Recording</h4>
+            <div v-if="selectedRecording.iq_file_path">
+              <p><strong>Format:</strong> GNU Radio Complex Float32 (.c32)</p>
+              <p><strong>File Size:</strong> {{ formatFileSize(selectedRecording.iq_file_size) }}</p>
+              <p><strong>Sample Rate:</strong> {{ formatSampleRate(selectedRecording.sample_rate) }}</p>
+              <el-button
+                type="primary"
+                @click="downloadIQ"
+              >
+                Download IQ Recording
+              </el-button>
+            </div>
+            <div v-else>
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+              >
+                IQ recording not available for this recording
+              </el-alert>
+            </div>
+          </div>
         </div>
         <div class="modal-image">
           <img
@@ -214,6 +239,53 @@ export default {
       selectedRecording.value = null
     }
 
+    const downloadIQ = async () => {
+      if (!selectedRecording.value?.recording_id) return
+
+      try {
+        const response = await fetch(
+          `/api/recordings/${selectedRecording.value.recording_id}/iq`,
+          {
+            method: 'GET',
+            credentials: 'include'
+          }
+        )
+
+        if (response.ok) {
+          const blob = await response.blob()
+          const url = window.URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `recording_${selectedRecording.value.recording_id}_iq.c32`
+          document.body.appendChild(link)
+          link.click()
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(link)
+        } else {
+          ElMessage.error('Failed to download IQ file')
+        }
+      } catch (error) {
+        ElMessage.error(`Error: ${error.message}`)
+      }
+    }
+
+    const formatFileSize = (bytes) => {
+      if (!bytes) return 'Unknown'
+      const units = ['B', 'KB', 'MB', 'GB']
+      let size = bytes
+      let unitIndex = 0
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024
+        unitIndex++
+      }
+      return `${size.toFixed(2)} ${units[unitIndex]}`
+    }
+
+    const formatSampleRate = (sampleRate) => {
+      if (!sampleRate) return 'Unknown'
+      return `${(sampleRate / 1e6).toFixed(1)} MHz`
+    }
+
     onMounted(async () => {
       loading.value = true
       await Promise.all([loadChallenge(), loadRecordings()])
@@ -230,6 +302,9 @@ export default {
       formatTimestamp: formatDateTime,
       showImageModal,
       closeImageModal,
+      downloadIQ,
+      formatFileSize,
+      formatSampleRate,
     }
   }
 }
@@ -416,5 +491,27 @@ h1 {
   max-height: 80vh;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.iq-section {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  padding-top: 15px;
+  border-top: 1px solid var(--el-border-color);
+}
+
+.iq-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.iq-section p {
+  margin: 5px 0;
+}
+
+.iq-section .el-button {
+  margin-top: 10px;
 }
 </style>
