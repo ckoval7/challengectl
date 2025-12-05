@@ -501,9 +501,13 @@ class ChallengeCtlRunner(AgentBase):
 
     def record_device_success(self, device_id: int):
         """Record a successful device operation, resetting failure count."""
+        # Check if device was offline before recording success
+        was_offline = device_id in self.device_manager.offline_devices
         self.device_manager.record_device_success(device_id)
+
         # If device was offline, bring it back online
-        if device_id not in self.device_manager.offline_devices:
+        if was_offline:
+            self.mark_device_online(device_id)
             logger.info(f"Device {device_id} brought back ONLINE after successful operation")
 
     def check_device_available(self, device: Dict) -> bool:
