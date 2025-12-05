@@ -310,19 +310,47 @@ class DeviceManager:
                                         break
 
             elif model == 'rtl-sdr' or model == 'rtlsdr':
-                # IMPORTANT: Skip active enumeration for RTL-SDR to avoid claiming devices
-                # Problem: osmosdr.device.find() tries to open/claim RTL-SDR devices during probing,
-                # which fails with "usb_claim_interface error -6" if device is in use (e.g., by listener)
-                # and can block the device from being used by other processes.
-                #
-                # Solution: Return empty list and rely on:
-                # 1. Config with serial numbers (e.g., rtlsdr=1090) - handled by early return in resolve_device_serial()
-                # 2. Auto-detection during idle periods - handled by auto_detect_devices()
-                # 3. Fallback to serial-based matching - handled in resolve_device_serial() fallback logic
-                #
-                # This allows RTL-SDR devices to work without interference while in use.
-                logger.debug("Skipping RTL-SDR enumeration to avoid claiming busy devices")
-                # Return empty list - fallback logic will handle device matching
+                # Use osmosdr to enumerate RTL-SDR devices
+                # osmosdr.device.find() provides serial numbers without permanently claiming devices
+                try:
+                    import osmosdr
+
+                    # Suppress stderr during device enumeration to hide library warnings
+                    stderr_fd = sys.stderr.fileno()
+                    old_stderr = os.dup(stderr_fd)
+                    devnull = os.open(os.devnull, os.O_WRONLY)
+                    os.dup2(devnull, stderr_fd)
+
+                    try:
+                        # Find all SDR devices
+                        devices = osmosdr.device.find()
+                    finally:
+                        # Restore stderr
+                        os.dup2(old_stderr, stderr_fd)
+                        os.close(old_stderr)
+                        os.close(devnull)
+
+                    # Extract RTL-SDR serials in order
+                    for device in devices:
+                        devicestring = device.to_string()
+                        attributes = devicestring.split(',')
+
+                        # Check if this is an RTL-SDR device
+                        driver = None
+                        serial = None
+                        for attr in attributes:
+                            if attr.startswith('driver='):
+                                driver = attr.split('=')[1]
+                            elif attr.startswith('serial='):
+                                serial = attr.split('=')[1]
+
+                        if driver == 'rtlsdr' and serial:
+                            serials.append(serial)
+
+                except ImportError:
+                    logger.debug("osmosdr not available, cannot enumerate RTL-SDR devices")
+                except Exception as e:
+                    logger.debug(f"Error enumerating RTL-SDR devices via osmosdr: {e}")
 
             elif model == 'usrp' or model == 'uhd':
                 # Try uhd_find_devices command

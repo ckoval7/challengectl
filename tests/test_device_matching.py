@@ -136,6 +136,34 @@ Backend:        libusb
             serial = dm.resolve_device_serial('rtlsdr', '00000001')
             assert serial == '00000001'  # Should fall back to treating as serial
 
+    def test_enumerate_rtlsdr_serials_via_osmosdr(self):
+        """Test RTL-SDR serial enumeration using osmosdr."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Mock osmosdr to simulate RTL-SDR devices
+        mock_osmosdr = MagicMock()
+
+        # Create mock device objects with to_string() method
+        mock_dev1 = MagicMock()
+        mock_dev1.to_string.return_value = 'driver=rtlsdr,serial=00000001,label=Generic RTL2832U'
+
+        mock_dev2 = MagicMock()
+        mock_dev2.to_string.return_value = 'driver=rtlsdr,serial=1090,label=RTL-SDR Blog V3'
+
+        mock_dev3 = MagicMock()
+        mock_dev3.to_string.return_value = 'driver=hackrf,serial=abc123'  # Non-RTL device
+
+        mock_osmosdr.device.find.return_value = [mock_dev1, mock_dev2, mock_dev3]
+
+        # Patch osmosdr module
+        with patch.dict('sys.modules', {'osmosdr': mock_osmosdr}):
+            serials = dm.enumerate_device_serials('rtlsdr')
+
+            # Should find 2 RTL-SDR devices (skip the HackRF)
+            assert len(serials) == 2
+            assert serials[0] == '00000001'
+            assert serials[1] == '1090'
+
 
 class TestDeviceMatching:
     """Test intelligent device matching based on serials."""
