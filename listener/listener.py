@@ -841,12 +841,16 @@ class ListenerAgent:
                     'frequency_limits': dev.get('frequency_limits', [])
                 })
 
+            # Get device status from device manager (already probed during startup)
+            device_status = self.device_manager.get_device_status_dict()
+
             response = self.session.post(
                 f"{self.server_url}/api/agents/register",
                 json={
                     'agent_type': 'listener',
                     'hostname': hostname,
-                    'devices': devices_info
+                    'devices': devices_info,
+                    'device_status': device_status  # Include device status to avoid "unknown" state
                 },
                 timeout=10
             )
@@ -1048,12 +1052,18 @@ class ListenerAgent:
                 print("NOTE: You can leave 'enrollment_token' in your listener-config.yml.")
                 print("It will be ignored on subsequent runs once enrolled.")
                 print("")
+                # Send immediate heartbeat after enrollment
+                logger.debug("Sending initial heartbeat to update device status")
+                self.send_heartbeat_http()
             else:
                 print("Failed to register with server and no enrollment token found. Exiting.", flush=True)
                 logger.error("Failed to register with server and no enrollment token found")
                 return 1
         else:
             print("Registration successful")
+            # Send immediate heartbeat to ensure device status is current
+            logger.debug("Sending initial heartbeat to update device status")
+            self.send_heartbeat_http()
 
         # Add server log handler to forward logs
         server_handler = ServerLogHandler(self)
