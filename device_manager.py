@@ -12,6 +12,7 @@ import threading
 import os
 import sys
 import subprocess
+import gc  # For explicit USB handle cleanup after osmosdr enumeration
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable
 
@@ -347,6 +348,15 @@ class DeviceManager:
                         if driver == 'rtlsdr' and serial:
                             serials.append(serial)
 
+                    # CRITICAL FIX: Explicitly release osmosdr device handles
+                    # osmosdr.device.find() creates C/C++ objects with USB handles that persist
+                    # until Python GC runs. Without explicit cleanup, handles accumulate across
+                    # probe cycles (every 30s) and eventually exhaust USB resources, causing
+                    # "usb_claim_interface error -6" and preventing listeners from recording.
+                    del devices  # Delete reference to device list
+                    gc.collect()  # Force immediate garbage collection to release USB handles
+                    logger.debug("Released osmosdr device handles after RTL-SDR enumeration")
+
                 except ImportError:
                     logger.debug("osmosdr not available, cannot enumerate RTL-SDR devices")
                 except Exception as e:
@@ -466,6 +476,7 @@ class DeviceManager:
             return []
 
         newly_detected = []
+        devices = None  # Initialize for exception safety in finally block
 
         try:
             # Suppress stderr during device enumeration to hide library warnings
@@ -528,6 +539,20 @@ class DeviceManager:
         except Exception as e:
             logger.error(f"Error during auto-detection: {e}", exc_info=True)
             return []
+
+        finally:
+            # CRITICAL FIX: Always release osmosdr device handles before returning
+            # This prevents USB handle leaks that cause RTL-SDR lockups over time.
+            # Without this, repeated probe cycles (every 30s) accumulate USB handles
+            # until resources are exhausted, preventing recording with "error -6".
+            if devices is not None:
+                try:
+                    del devices  # Delete device list reference
+                    gc.collect()  # Force immediate garbage collection
+                    logger.debug("Released osmosdr device handles after auto-detection")
+                except Exception as cleanup_error:
+                    # Log but don't raise - cleanup failure shouldn't break auto-detection
+                    logger.warning(f"Error during osmosdr cleanup: {cleanup_error}")
 
     def _should_detect_device(self, driver: str) -> bool:
         """Determine if device should be detected based on agent type.

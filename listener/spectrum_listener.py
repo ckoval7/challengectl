@@ -9,6 +9,7 @@ This is a Python-based GNU Radio flowgraph that doesn't require the GUI.
 import numpy as np
 import time
 import logging
+import gc  # For explicit USB device handle cleanup after recording
 from typing import List, Optional
 
 # Try to import GNU Radio components
@@ -204,6 +205,12 @@ class SpectrumListener:
             self.tb.stop()
             self.tb.wait()
 
+            # Force cleanup of GNU Radio flowgraph to release USB device handles
+            # GNU Radio's C++ layer may hold USB handles after wait() completes.
+            # Forcing GC ensures handles are released before next recording attempt.
+            gc.collect()
+            logger.debug("Released GNU Radio flowgraph USB resources after recording")
+
             # Convert to 2D array
             fft_data = np.array(self.fft_frames)
             actual_duration = time.time() - start_time
@@ -218,6 +225,9 @@ class SpectrumListener:
             if self.tb:
                 self.tb.stop()
                 self.tb.wait()
+                # Also cleanup on error path to prevent handle leak
+                gc.collect()
+                logger.debug("Released GNU Radio flowgraph USB resources after error")
             raise
 
         finally:

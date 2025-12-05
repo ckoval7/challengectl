@@ -278,5 +278,62 @@ class TestConfigDeviceEnrichment:
             assert enriched[0]['serial'] is None
 
 
+class TestUSBHandleCleanup:
+    """Test USB device handle cleanup to prevent RTL-SDR lockups."""
+
+    def test_enumerate_rtlsdr_serials_cleanup(self):
+        """Test that osmosdr device handles are cleaned up after enumeration."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Create mock device object
+        mock_device = Mock()
+        mock_device.to_string.return_value = "driver=rtlsdr,serial=00000001"
+
+        with patch('gc.collect') as mock_gc:
+            with patch('osmosdr.device.find', return_value=[mock_device]):
+                serials = dm.enumerate_device_serials('rtlsdr')
+
+                # Verify gc.collect() was called to release USB handles
+                mock_gc.assert_called()
+                assert '00000001' in serials
+
+    def test_auto_detect_devices_cleanup(self):
+        """Test that osmosdr device handles are cleaned up after auto-detection."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Create mock device object
+        mock_device = Mock()
+        mock_device.to_string.return_value = "driver=rtlsdr,serial=00000001"
+
+        with patch('gc.collect') as mock_gc:
+            with patch('osmosdr.device.find', return_value=[mock_device]):
+                devices = dm.auto_detect_devices()
+
+                # Verify gc.collect() was called in finally block
+                mock_gc.assert_called()
+
+    def test_auto_detect_devices_cleanup_on_exception(self):
+        """Test that cleanup is attempted even when osmosdr.find() throws exception."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Create mock device object that will be assigned before exception
+        mock_device = Mock()
+        mock_device.to_string.return_value = "driver=rtlsdr,serial=00000001"
+
+        with patch('gc.collect') as mock_gc:
+            # Mock osmosdr.find() to return a device, then we'll simulate error in processing
+            # This tests that cleanup happens even if an exception occurs after devices are found
+            with patch('osmosdr.device.find', return_value=[mock_device]):
+                # Mock _parse_detected_device to raise exception during processing
+                with patch.object(dm, '_parse_detected_device', side_effect=RuntimeError("Parse error")):
+                    result = dm.auto_detect_devices()
+
+                    # Should return empty list on error
+                    assert result == []
+
+                    # Cleanup should still happen in finally block because devices was assigned
+                    mock_gc.assert_called()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
