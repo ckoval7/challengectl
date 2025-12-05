@@ -309,11 +309,12 @@ class DeviceManager:
 
             elif model == 'rtl-sdr' or model == 'rtlsdr':
                 # Run rtl_test to enumerate devices
+                # Note: rtl_test can hang, so we use a longer timeout to avoid false negatives
                 result = subprocess.run(
                     ['rtl_test'],
                     capture_output=True,
                     text=True,
-                    timeout=2
+                    timeout=5  # Increased from 2s to 5s to reduce timeouts
                 )
 
                 # rtl_test exits with error but still shows device info
@@ -349,7 +350,9 @@ class DeviceManager:
         except FileNotFoundError:
             logger.debug(f"Tool for {model} not found, cannot enumerate serials")
         except subprocess.TimeoutExpired:
-            logger.warning(f"Timeout while enumerating {model} devices")
+            # Timeout during enumeration - log at debug level since this is common
+            # for RTL-SDR devices and we have fallback logic
+            logger.debug(f"Timeout while enumerating {model} devices (fallback to serial-based matching)")
         except Exception as e:
             logger.error(f"Error enumerating {model} serials: {e}", exc_info=True)
 
@@ -374,13 +377,32 @@ class DeviceManager:
             return name
 
         # If name is numeric index, map to serial
+        # BUT: For rtlsdr, only treat 0-9 as indices (serials can be numeric like "1090")
         if name.isdigit():
-            serials = self.enumerate_device_serials(model)
             index = int(name)
+
+            # For RTL-SDR: only single-digit numbers (0-9) are treated as indices
+            # Multi-digit numbers like "1090", "00000001" are serials
+            if model in ['rtl-sdr', 'rtlsdr']:
+                if index > 9:
+                    # Treat as serial number, not index
+                    logger.debug(f"Treating {model}={name} as serial (not index)")
+                    return name
+
+            serials = self.enumerate_device_serials(model)
 
             if index < len(serials):
                 return serials[index]
             else:
+                # If enumeration failed (empty list) but name looks like it could be a serial,
+                # treat it as a serial instead of failing
+                if model in ['rtl-sdr', 'rtlsdr'] and len(name) >= 4:
+                    logger.warning(
+                        f"Config references {model}={name}, enumeration found {len(serials)} "
+                        f"device(s), treating as serial number instead of index"
+                    )
+                    return name
+
                 logger.error(
                     f"Config references {model}={name} but only {len(serials)} "
                     f"device(s) found. Device may be disconnected."

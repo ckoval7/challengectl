@@ -95,6 +95,43 @@ Backend:        libusb
             assert 'a4c20e3f12345678' in serials
             assert 'b5d30f4023456789' in serials
 
+    def test_rtlsdr_numeric_serial_not_treated_as_index(self):
+        """Test that RTL-SDR numeric serials (like '1090') are not treated as indices."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Common RTL-SDR serials: "1090", "00000001", etc.
+        # These should be treated as serials, not device indices
+        serial_1090 = dm.resolve_device_serial('rtlsdr', '1090')
+        assert serial_1090 == '1090'  # Should return as-is, not try to enumerate
+
+        serial_00000001 = dm.resolve_device_serial('rtlsdr', '00000001')
+        assert serial_00000001 == '00000001'  # Should return as-is
+
+    def test_rtlsdr_single_digit_treated_as_index(self):
+        """Test that RTL-SDR single-digit numbers (0-9) are still treated as indices."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Mock enumerate_device_serials to return test serials
+        with patch.object(dm, 'enumerate_device_serials', return_value=['1090', '00000001']):
+            serial_0 = dm.resolve_device_serial('rtlsdr', '0')
+            assert serial_0 == '1090'  # Should map index 0 → serial '1090'
+
+            serial_1 = dm.resolve_device_serial('rtlsdr', '1')
+            assert serial_1 == '00000001'  # Should map index 1 → serial '00000001'
+
+    def test_rtlsdr_enumeration_failure_fallback(self):
+        """Test that RTL-SDR falls back to serial matching when enumeration fails."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Mock enumerate_device_serials to return empty list (timeout/failure)
+        with patch.object(dm, 'enumerate_device_serials', return_value=[]):
+            # For multi-digit numbers (≥4 digits), should treat as serial instead of failing
+            serial = dm.resolve_device_serial('rtlsdr', '1090')
+            assert serial == '1090'  # Should fall back to treating as serial
+
+            serial = dm.resolve_device_serial('rtlsdr', '00000001')
+            assert serial == '00000001'  # Should fall back to treating as serial
+
 
 class TestDeviceMatching:
     """Test intelligent device matching based on serials."""
