@@ -49,6 +49,7 @@
                   :recordings="getRecordings(props.row.challenge_id)"
                   :placeholders="getPlaceholders(props.row.challenge_id)"
                   :max-recordings="6"
+                  :challenge-name="props.row.name"
                 />
                 <div
                   v-if="shouldShowViewAllLink(props.row.challenge_id)"
@@ -508,6 +509,13 @@
 
           <el-form-item label="Enabled">
             <el-switch v-model="challengeForm.enabled" />
+          </el-form-item>
+
+          <el-form-item label="Record IQ">
+            <el-switch v-model="challengeForm.record_iq" />
+            <div class="hint-text">
+              Enable IQ recording for signal analysis (raw I/Q samples will be saved)
+            </div>
           </el-form-item>
 
           <h3>Challenge Content</h3>
@@ -1159,6 +1167,7 @@ const challengeForm = ref({
   manual_min_mhz: null,
   manual_max_mhz: null,
   enabled: true,
+  record_iq: false,
   flag: '',
   min_delay: 60,
   max_delay: 90,
@@ -1637,6 +1646,7 @@ function resetForm() {
     manual_min_mhz: null,
     manual_max_mhz: null,
     enabled: true,
+    record_iq: false,
     flag: '',
     min_delay: 60,
     max_delay: 90,
@@ -1723,6 +1733,7 @@ async function createChallenge() {
       name: challengeForm.value.name,
       modulation: challengeForm.value.modulation,
       enabled: challengeForm.value.enabled,
+      record_iq: challengeForm.value.record_iq,
       min_delay: challengeForm.value.min_delay,
       max_delay: challengeForm.value.max_delay,
       priority: challengeForm.value.priority,

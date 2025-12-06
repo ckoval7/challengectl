@@ -180,6 +180,26 @@
               {{ selectedPreviewRecording.image_width }} x {{ selectedPreviewRecording.image_height }}px
             </el-descriptions-item>
           </el-descriptions>
+
+          <!-- IQ Recording Section -->
+          <div
+            v-if="selectedPreviewRecording.iq_file_path"
+            class="iq-section"
+          >
+            <h4>IQ Recording</h4>
+            <div class="iq-info">
+              <p><strong>Format:</strong> GNU Radio Complex Float32 (.c32)</p>
+              <p><strong>File Size:</strong> {{ formatFileSize(selectedPreviewRecording.iq_file_size) }}</p>
+              <p><strong>Sample Rate:</strong> {{ formatSampleRate(selectedPreviewRecording.sample_rate) }}</p>
+              <el-button
+                type="primary"
+                @click="downloadIQ"
+              >
+                Download IQ Recording
+              </el-button>
+            </div>
+          </div>
+
           <div
             v-if="selectedPreviewRecording.error_message"
             class="error-message"
@@ -204,6 +224,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Loading, Picture } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { formatDateTime } from '../utils/time.js'
 
 const props = defineProps({
@@ -218,6 +239,10 @@ const props = defineProps({
   maxRecordings: {
     type: Number,
     default: 6
+  },
+  challengeName: {
+    type: String,
+    default: ''
   }
 })
 
@@ -268,6 +293,59 @@ function formatTimestamp(timestamp) {
 function previewRecording(recording) {
   selectedPreviewRecording.value = recording
   previewDialogVisible.value = true
+}
+
+async function downloadIQ() {
+  if (!selectedPreviewRecording.value?.recording_id) return
+
+  try {
+    const response = await fetch(
+      `/api/recordings/${selectedPreviewRecording.value.recording_id}/iq`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    )
+
+    if (response.ok) {
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+
+      // Create informative filename with challenge name, frequency, and timestamp
+      const challengeName = props.challengeName?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown'
+      const freqMHz = selectedPreviewRecording.value.frequency ?
+        (selectedPreviewRecording.value.frequency / 1e6).toFixed(3) : 'unknown'
+      const timestamp = selectedPreviewRecording.value.started_at ?
+        new Date(selectedPreviewRecording.value.started_at).toISOString().replace(/[:.]/g, '-').slice(0, 19) :
+        'unknown'
+      const sampleRateMsps = selectedPreviewRecording.value.sample_rate ?
+        (selectedPreviewRecording.value.sample_rate / 1e6).toFixed(1) : '2.0'
+
+      link.download = `${challengeName}_${freqMHz}MHz_${sampleRateMsps}Msps_${timestamp}.c32`
+      document.body.appendChild(link)
+      link.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+    } else {
+      ElMessage.error('Failed to download IQ file')
+    }
+  } catch (error) {
+    ElMessage.error(`Error: ${error.message}`)
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return 'Unknown'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex++
+  }
+  return `${size.toFixed(2)} ${units[unitIndex]}`
 }
 </script>
 
@@ -449,6 +527,34 @@ function previewRecording(recording) {
 }
 
 .error-message {
+  margin-top: 12px;
+}
+
+.iq-section {
+  margin-top: 16px;
+  padding: 16px;
+  background-color: var(--el-fill-color-light);
+  border-radius: 4px;
+}
+
+.iq-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.iq-info p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+}
+
+.iq-info strong {
+  color: var(--el-text-color-primary);
+}
+
+.iq-info .el-button {
   margin-top: 12px;
 }
 

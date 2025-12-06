@@ -256,7 +256,18 @@ export default {
           const url = window.URL.createObjectURL(blob)
           const link = document.createElement('a')
           link.href = url
-          link.download = `recording_${selectedRecording.value.recording_id}_iq.c32`
+
+          // Create informative filename with challenge name, frequency, and timestamp
+          const challengeName = challenge.value?.name?.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown'
+          const freqMHz = selectedRecording.value.frequency ?
+            (selectedRecording.value.frequency / 1e6).toFixed(3) : 'unknown'
+          const timestamp = selectedRecording.value.started_at ?
+            new Date(selectedRecording.value.started_at).toISOString().replace(/[:.]/g, '-').slice(0, 19) :
+            'unknown'
+          const sampleRateMsps = selectedRecording.value.sample_rate ?
+            (selectedRecording.value.sample_rate / 1e6).toFixed(1) : '2.0'
+
+          link.download = `${challengeName}_${freqMHz}MHz_${sampleRateMsps}Msps_${timestamp}.c32`
           document.body.appendChild(link)
           link.click()
           window.URL.revokeObjectURL(url)

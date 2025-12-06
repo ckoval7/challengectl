@@ -148,6 +148,7 @@
             :recordings="recordings"
             :placeholders="placeholders"
             :max-recordings="6"
+            :challenge-name="challenge.name"
           />
           <div
             v-if="challenge.recording_count > 6"
