@@ -163,12 +163,21 @@ class ChallengeCtlAPI:
         # SECURITY: Default limits protect against DoS and API abuse
         # Runner endpoints get higher limits (overridden per-endpoint)
         # Authentication endpoints get stricter limits (brute force protection)
+        def should_exempt_from_rate_limit():
+            """Exempt socket.io requests from rate limiting.
+
+            Socket.io uses long-polling and WebSocket upgrades that don't work
+            well with WSGI rate limiting middleware (causes 'write() before start_response').
+            """
+            return request.path.startswith('/socket.io')
+
         self.limiter = Limiter(
             app=self.app,
             key_func=get_remote_address,
             default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
             storage_uri="memory://",
-            strategy="fixed-window"
+            strategy="fixed-window",
+            request_filter=should_exempt_from_rate_limit  # Exempt socket.io from rate limiting
         )
 
         # Use provided database instance
