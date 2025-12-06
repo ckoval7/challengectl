@@ -72,13 +72,8 @@ class ChallengeCtlServer:
                             if cancelled_count > 0:
                                 logger.info(f"Cleanup: cancelled {cancelled_count} assignment(s) for offline listener {agent_id}")
 
-                        self.api.broadcast_event('runner_status', {
-                            'runner_id': agent_id,
-                            'agent_id': agent_id,
-                            'agent_type': agent_type,
-                            'status': 'offline',
-                            'timestamp': datetime.now(timezone.utc).isoformat()
-                        })
+                        # Broadcast agent offline status
+                        self.api.broadcast_agent_status(agent_id, agent_type, 'offline')
             except Exception as e:
                 logger.error(f"Error in cleanup_stale_agents: {e}")
 

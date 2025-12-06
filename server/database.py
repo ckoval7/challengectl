@@ -277,6 +277,32 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires)
             ''')
 
+            # Webhooks table (for Discord webhook integrations)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS webhooks (
+                    webhook_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    enabled BOOLEAN DEFAULT 1,
+                    subscribed_events TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_triggered_at TIMESTAMP,
+                    total_deliveries INTEGER DEFAULT 0,
+                    failed_deliveries INTEGER DEFAULT 0,
+                    consecutive_failures INTEGER DEFAULT 0,
+                    last_error TEXT,
+                    last_error_at TIMESTAMP,
+                    FOREIGN KEY (created_by) REFERENCES users(username) ON DELETE CASCADE
+                )
+            ''')
+
+            # Create index on enabled for faster webhook lookups
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_webhooks_enabled ON webhooks(enabled)
+            ''')
+
             # Create default admin user if no users exist
             cursor.execute('SELECT COUNT(*) as count FROM users')
             user_count = cursor.fetchone()['count']
@@ -2832,3 +2858,180 @@ class Database:
             ''', (agent_id,))
             row = cursor.fetchone()
             return row['count'] if row else 0
+
+    # ============================================================================
+    # Webhook Management Methods
+    # ============================================================================
+
+    def create_webhook(self, name: str, url: str, subscribed_events: List[str],
+                      created_by: str, enabled: bool = True) -> int:
+        """Create a new webhook.
+
+        Args:
+            name: Webhook name
+            url: Discord webhook URL
+            subscribed_events: List of event category names to subscribe to
+            created_by: Username of creator
+            enabled: Whether webhook is enabled
+
+        Returns:
+            webhook_id of created webhook
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO webhooks (name, url, subscribed_events, created_by, enabled)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (name, url, json.dumps(subscribed_events), created_by, enabled))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_all_webhooks(self) -> List[Dict[str, Any]]:
+        """Get all webhooks with parsed JSON subscribed_events.
+
+        Returns:
+            List of webhook dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM webhooks ORDER BY created_at DESC')
+            rows = cursor.fetchall()
+
+            webhooks = []
+            for row in rows:
+                webhook = dict(row)
+                webhook['subscribed_events'] = json.loads(webhook['subscribed_events'])
+                webhooks.append(webhook)
+
+            return webhooks
+
+    def get_webhook(self, webhook_id: int) -> Optional[Dict[str, Any]]:
+        """Get webhook by ID.
+
+        Args:
+            webhook_id: Webhook ID
+
+        Returns:
+            Webhook dictionary or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM webhooks WHERE webhook_id = ?', (webhook_id,))
+            row = cursor.fetchone()
+
+            if row:
+                webhook = dict(row)
+                webhook['subscribed_events'] = json.loads(webhook['subscribed_events'])
+                return webhook
+            return None
+
+    def update_webhook(self, webhook_id: int, name: str, url: str,
+                      subscribed_events: List[str], enabled: bool):
+        """Update webhook.
+
+        Args:
+            webhook_id: Webhook ID
+            name: Webhook name
+            url: Discord webhook URL
+            subscribed_events: List of event category names
+            enabled: Whether webhook is enabled
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE webhooks
+                SET name = ?, url = ?, subscribed_events = ?, enabled = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE webhook_id = ?
+            ''', (name, url, json.dumps(subscribed_events), enabled, webhook_id))
+            conn.commit()
+
+    def delete_webhook(self, webhook_id: int):
+        """Delete webhook.
+
+        Args:
+            webhook_id: Webhook ID
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM webhooks WHERE webhook_id = ?', (webhook_id,))
+            conn.commit()
+
+    def get_webhooks_for_category(self, category: str) -> List[Dict[str, Any]]:
+        """Get all enabled webhooks subscribed to a specific event category.
+
+        Args:
+            category: Event category name (e.g., 'error_logs', 'agent_status')
+
+        Returns:
+            List of webhook dictionaries subscribed to this category
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM webhooks WHERE enabled = 1')
+            rows = cursor.fetchall()
+
+            webhooks = []
+            for row in rows:
+                webhook = dict(row)
+                subscribed_events = json.loads(webhook['subscribed_events'])
+
+                if category in subscribed_events:
+                    webhook['subscribed_events'] = subscribed_events
+                    webhooks.append(webhook)
+
+            return webhooks
+
+    def record_webhook_success(self, webhook_id: int):
+        """Record successful webhook delivery.
+
+        Args:
+            webhook_id: Webhook ID
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE webhooks
+                SET total_deliveries = total_deliveries + 1,
+                    consecutive_failures = 0,
+                    last_triggered_at = CURRENT_TIMESTAMP
+                WHERE webhook_id = ?
+            ''', (webhook_id,))
+            conn.commit()
+
+    def record_webhook_failure(self, webhook_id: int, error_message: str):
+        """Record failed webhook delivery. Auto-disable after 10 consecutive failures.
+
+        Args:
+            webhook_id: Webhook ID
+            error_message: Error message to store
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Increment failures
+            cursor.execute('''
+                UPDATE webhooks
+                SET total_deliveries = total_deliveries + 1,
+                    failed_deliveries = failed_deliveries + 1,
+                    consecutive_failures = consecutive_failures + 1,
+                    last_error = ?,
+                    last_error_at = CURRENT_TIMESTAMP
+                WHERE webhook_id = ?
+            ''', (error_message[:500], webhook_id))
+
+            # Check if we need to auto-disable (10 consecutive failures)
+            cursor.execute('''
+                SELECT consecutive_failures FROM webhooks WHERE webhook_id = ?
+            ''', (webhook_id,))
+            row = cursor.fetchone()
+
+            if row and row['consecutive_failures'] >= 10:
+                cursor.execute('''
+                    UPDATE webhooks
+                    SET enabled = 0
+                    WHERE webhook_id = ?
+                ''', (webhook_id,))
+                logger.warning(f"Webhook {webhook_id} auto-disabled after 10 consecutive failures")
+
+            conn.commit()

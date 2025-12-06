@@ -9,6 +9,7 @@ const ChallengeConfig = () => import('./views/ChallengeConfig.vue')
 const RecordingHistory = () => import('./views/RecordingHistory.vue')
 const Logs = () => import('./views/Logs.vue')
 const Users = () => import('./views/Users.vue')
+const Webhooks = () => import('./views/Webhooks.vue')
 const PublicDashboard = () => import('./views/PublicDashboard.vue')
 const Login = () => import('./views/Login.vue')
 const ChangePassword = () => import('./views/ChangePassword.vue')
@@ -88,6 +89,12 @@ const routes = [
     name: 'Users',
     component: Users,
     meta: { requiresAuth: true, requiresPermission: 'create_users' }
+  },
+  {
+    path: '/webhooks',
+    name: 'Webhooks',
+    component: Webhooks,
+    meta: { requiresAuth: true, requiresPermission: 'manage_webhooks' }
   },
   {
     path: '/:pathMatch(.*)*',

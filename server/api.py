@@ -48,6 +48,11 @@ PERMISSION_DEFINITIONS = [
         'name': 'create_provisioning_key',
         'description': 'Can create provisioning keys for runners',
         'category': 'provisioning'
+    },
+    {
+        'name': 'manage_webhooks',
+        'description': 'Can create, edit, and delete webhooks',
+        'category': 'integrations'
     }
 ]
 
@@ -219,6 +224,11 @@ class ChallengeCtlAPI:
 
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
+
+        # Initialize webhook dispatcher
+        from server.webhook_dispatcher import WebhookDispatcher
+        self.webhook_dispatcher = WebhookDispatcher(self.db)
+        logger.info("Webhook dispatcher initialized")
 
         # Register routes
         self.register_routes()
@@ -1599,6 +1609,13 @@ class ChallengeCtlAPI:
                     f"(must complete setup within 24 hours)"
                 )
 
+                # Broadcast user created event
+                self.broadcast_event('user_created', {
+                    'username': username,
+                    'created_by': creator_username,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
                 return jsonify({
                     'status': 'created',
                     'username': username,
@@ -1642,6 +1659,13 @@ class ChallengeCtlAPI:
 
             logger.info(f"User {username} {'enabled' if enabled else 'disabled'} by {request.admin_username}")
 
+            # Broadcast user enabled/disabled event
+            self.broadcast_event('user_enabled' if enabled else 'user_disabled', {
+                'username': username,
+                'changed_by': request.admin_username,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
             return jsonify({'status': 'updated'}), 200
 
         @self.app.route('/api/users/<username>', methods=['DELETE'])
@@ -1663,6 +1687,13 @@ class ChallengeCtlAPI:
                 return jsonify({'error': 'Failed to delete user'}), 500
 
             logger.info(f"User {username} deleted by {request.admin_username}")
+
+            # Broadcast user deleted event
+            self.broadcast_event('user_deleted', {
+                'username': username,
+                'deleted_by': request.admin_username,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
 
             return jsonify({'status': 'deleted'}), 200
 
@@ -1800,6 +1831,14 @@ class ChallengeCtlAPI:
 
             logger.info(f"Permission '{permission_name}' granted to user {username} by {request.admin_username}")
 
+            # Broadcast permission granted event
+            self.broadcast_event('permission_granted', {
+                'username': username,
+                'permission': permission_name,
+                'granted_by': request.admin_username,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
             return jsonify({'status': 'permission_granted', 'permission': permission_name}), 200
 
         @self.app.route('/api/users/<username>/permissions/<permission_name>', methods=['DELETE'])
@@ -1823,6 +1862,14 @@ class ChallengeCtlAPI:
 
             logger.info(f"Permission '{permission_name}' revoked from user {username} by {request.admin_username}")
 
+            # Broadcast permission revoked event
+            self.broadcast_event('permission_revoked', {
+                'username': username,
+                'permission': permission_name,
+                'revoked_by': request.admin_username,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
             return jsonify({'status': 'permission_revoked', 'permission': permission_name}), 200
 
         @self.app.route('/api/permissions/metadata', methods=['GET'])
@@ -1839,6 +1886,281 @@ class ChallengeCtlAPI:
             return jsonify({
                 'permissions': PERMISSION_DEFINITIONS
             }), 200
+
+        # ========================================================================
+        # Webhook Management Endpoints
+        # ========================================================================
+
+        @self.app.route('/api/webhooks', methods=['GET'])
+        @self.require_admin_auth
+        @self.require_permission('manage_webhooks')
+        def get_webhooks():
+            """Get all webhooks.
+
+            Returns:
+                200: List of webhooks
+            """
+            webhooks = self.db.get_all_webhooks()
+            return jsonify({'webhooks': webhooks}), 200
+
+        @self.app.route('/api/webhooks', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('manage_webhooks')
+        def create_webhook():
+            """Create a new webhook.
+
+            Request JSON:
+                name: Webhook name (required, max 100 chars)
+                url: Discord webhook URL (required, must match Discord pattern)
+                enabled: Whether webhook is enabled (default: true)
+                subscribed_events: List of event category names (required)
+
+            Returns:
+                201: Webhook created successfully
+                400: Invalid request data
+            """
+            data = request.get_json()
+
+            # Validate required fields
+            if not data.get('name'):
+                return jsonify({'error': 'Webhook name is required'}), 400
+            if not data.get('url'):
+                return jsonify({'error': 'Webhook URL is required'}), 400
+            if not data.get('subscribed_events') or not isinstance(data.get('subscribed_events'), list):
+                return jsonify({'error': 'subscribed_events must be a non-empty array'}), 400
+
+            # Validate name length
+            if len(data['name']) > 100:
+                return jsonify({'error': 'Webhook name must be 100 characters or less'}), 400
+
+            # Validate Discord webhook URL pattern
+            import re
+            discord_pattern = r'^https://discord\.com/api/webhooks/\d+/[\w-]+$'
+            if not re.match(discord_pattern, data['url']):
+                return jsonify({'error': 'Invalid Discord webhook URL format'}), 400
+
+            # Validate event categories
+            valid_categories = [
+                'error_logs', 'server_lifecycle', 'agent_status', 'device_changes',
+                'challenge_failures', 'recording_complete', 'security_events',
+                'user_management', 'system_control', 'daily_schedule'
+            ]
+            for category in data['subscribed_events']:
+                if category not in valid_categories:
+                    return jsonify({'error': f'Invalid event category: {category}'}), 400
+
+            # Create webhook
+            try:
+                webhook_id = self.db.create_webhook(
+                    name=data['name'],
+                    url=data['url'],
+                    subscribed_events=data['subscribed_events'],
+                    created_by=request.admin_username,
+                    enabled=data.get('enabled', True)
+                )
+
+                logger.info(f"Webhook '{data['name']}' created by {request.admin_username}")
+
+                # Get created webhook
+                webhook = self.db.get_webhook(webhook_id)
+                return jsonify({'webhook': webhook}), 201
+            except Exception as e:
+                logger.error(f"Failed to create webhook: {e}")
+                return jsonify({'error': 'Failed to create webhook'}), 500
+
+        @self.app.route('/api/webhooks/<int:webhook_id>', methods=['PUT'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('manage_webhooks')
+        def update_webhook(webhook_id):
+            """Update a webhook.
+
+            Args:
+                webhook_id: Webhook ID
+
+            Request JSON:
+                name: Webhook name (required, max 100 chars)
+                url: Discord webhook URL (required, must match Discord pattern)
+                enabled: Whether webhook is enabled
+                subscribed_events: List of event category names (required)
+
+            Returns:
+                200: Webhook updated successfully
+                400: Invalid request data
+                404: Webhook not found
+            """
+            # Check webhook exists
+            webhook = self.db.get_webhook(webhook_id)
+            if not webhook:
+                return jsonify({'error': 'Webhook not found'}), 404
+
+            data = request.get_json()
+
+            # Validate required fields
+            if not data.get('name'):
+                return jsonify({'error': 'Webhook name is required'}), 400
+            if not data.get('url'):
+                return jsonify({'error': 'Webhook URL is required'}), 400
+            if not data.get('subscribed_events') or not isinstance(data.get('subscribed_events'), list):
+                return jsonify({'error': 'subscribed_events must be a non-empty array'}), 400
+
+            # Validate name length
+            if len(data['name']) > 100:
+                return jsonify({'error': 'Webhook name must be 100 characters or less'}), 400
+
+            # Validate Discord webhook URL pattern
+            import re
+            discord_pattern = r'^https://discord\.com/api/webhooks/\d+/[\w-]+$'
+            if not re.match(discord_pattern, data['url']):
+                return jsonify({'error': 'Invalid Discord webhook URL format'}), 400
+
+            # Validate event categories
+            valid_categories = [
+                'error_logs', 'server_lifecycle', 'agent_status', 'device_changes',
+                'challenge_failures', 'recording_complete', 'security_events',
+                'user_management', 'system_control', 'daily_schedule'
+            ]
+            for category in data['subscribed_events']:
+                if category not in valid_categories:
+                    return jsonify({'error': f'Invalid event category: {category}'}), 400
+
+            # Update webhook
+            try:
+                self.db.update_webhook(
+                    webhook_id=webhook_id,
+                    name=data['name'],
+                    url=data['url'],
+                    subscribed_events=data['subscribed_events'],
+                    enabled=data.get('enabled', True)
+                )
+
+                logger.info(f"Webhook {webhook_id} updated by {request.admin_username}")
+
+                # Get updated webhook
+                webhook = self.db.get_webhook(webhook_id)
+                return jsonify({'webhook': webhook}), 200
+            except Exception as e:
+                logger.error(f"Failed to update webhook: {e}")
+                return jsonify({'error': 'Failed to update webhook'}), 500
+
+        @self.app.route('/api/webhooks/<int:webhook_id>', methods=['DELETE'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('manage_webhooks')
+        def delete_webhook(webhook_id):
+            """Delete a webhook.
+
+            Args:
+                webhook_id: Webhook ID
+
+            Returns:
+                200: Webhook deleted successfully
+                404: Webhook not found
+            """
+            # Check webhook exists
+            webhook = self.db.get_webhook(webhook_id)
+            if not webhook:
+                return jsonify({'error': 'Webhook not found'}), 404
+
+            # Delete webhook
+            try:
+                self.db.delete_webhook(webhook_id)
+                logger.info(f"Webhook {webhook_id} deleted by {request.admin_username}")
+                return jsonify({'status': 'webhook_deleted'}), 200
+            except Exception as e:
+                logger.error(f"Failed to delete webhook: {e}")
+                return jsonify({'error': 'Failed to delete webhook'}), 500
+
+        @self.app.route('/api/webhooks/<int:webhook_id>/test', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        @self.require_permission('manage_webhooks')
+        def test_webhook(webhook_id):
+            """Send a test message to a webhook.
+
+            Args:
+                webhook_id: Webhook ID
+
+            Returns:
+                200: Test result with status and details
+                404: Webhook not found
+            """
+            # Check webhook exists
+            webhook = self.db.get_webhook(webhook_id)
+            if not webhook:
+                return jsonify({'error': 'Webhook not found'}), 404
+
+            # Test webhook
+            result = self.webhook_dispatcher.test_webhook(webhook['url'])
+
+            logger.info(f"Webhook {webhook_id} test by {request.admin_username}: {result['status']}")
+
+            return jsonify(result), 200
+
+        @self.app.route('/api/webhooks/event-categories', methods=['GET'])
+        @self.require_admin_auth
+        @self.require_permission('manage_webhooks')
+        def get_webhook_event_categories():
+            """Get available webhook event categories.
+
+            Returns:
+                200: List of event categories with descriptions
+            """
+            categories = [
+                {
+                    'name': 'error_logs',
+                    'description': 'Error and warning level log messages',
+                    'example_events': ['log']
+                },
+                {
+                    'name': 'server_lifecycle',
+                    'description': 'Server startup and shutdown events',
+                    'example_events': ['system_control']
+                },
+                {
+                    'name': 'agent_status',
+                    'description': 'Agent online/offline status changes',
+                    'example_events': ['agent_status', 'runner_status', 'listener_status']
+                },
+                {
+                    'name': 'device_changes',
+                    'description': 'Device detection and configuration updates',
+                    'example_events': ['device_detected', 'device_status', 'device_config_updated']
+                },
+                {
+                    'name': 'challenge_failures',
+                    'description': 'Failed challenge transmissions',
+                    'example_events': ['transmission_complete']
+                },
+                {
+                    'name': 'recording_complete',
+                    'description': 'New waterfall recordings available',
+                    'example_events': ['recording_complete']
+                },
+                {
+                    'name': 'security_events',
+                    'description': 'Authentication failures and permission denials',
+                    'example_events': ['log']
+                },
+                {
+                    'name': 'user_management',
+                    'description': 'User account and permission changes',
+                    'example_events': ['user_created', 'user_deleted', 'permission_granted']
+                },
+                {
+                    'name': 'system_control',
+                    'description': 'Manual system pause and resume',
+                    'example_events': ['system_control']
+                },
+                {
+                    'name': 'daily_schedule',
+                    'description': 'Automatic daily schedule pause/resume',
+                    'example_events': ['system_control']
+                }
+            ]
+
+            return jsonify({'categories': categories}), 200
 
         # Public dashboard endpoint (no auth required)
         @self.app.route('/api/public/challenges', methods=['GET'])
@@ -2063,14 +2385,7 @@ class ChallengeCtlAPI:
                             }
 
                 # Broadcast agent online event
-                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
-                self.broadcast_event(event_name, {
-                    'agent_id': agent_id,
-                    'runner_id': agent_id if agent_type == 'runner' else None,  # Backward compat
-                    'listener_id': agent_id if agent_type == 'listener' else None,
-                    'status': 'online',
-                    'timestamp': timestamp
-                })
+                self.broadcast_agent_status(agent_id, agent_type, 'online')
 
                 return jsonify({
                     'status': 'registered',
@@ -2162,16 +2477,8 @@ class ChallengeCtlAPI:
                                             'timestamp': heartbeat_time
                                         })
 
-                    # Broadcast agent status with appropriate event name for backward compatibility
-                    event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
-                    self.broadcast_event(event_name, {
-                        'agent_id': agent_id,
-                        'runner_id': agent_id if agent_type == 'runner' else None,
-                        'listener_id': agent_id if agent_type == 'listener' else None,
-                        'status': 'online',
-                        'last_heartbeat': heartbeat_time,
-                        'timestamp': heartbeat_time
-                    })
+                    # Broadcast agent status
+                    self.broadcast_agent_status(agent_id, agent_type, 'online', last_heartbeat=heartbeat_time)
 
                 # Prepare response with device config updates
                 response_data = {'status': 'ok'}
@@ -2206,14 +2513,7 @@ class ChallengeCtlAPI:
 
             if success:
                 # Broadcast offline status
-                event_name = 'runner_status' if agent_type == 'runner' else 'listener_status'
-                self.broadcast_event(event_name, {
-                    'agent_id': agent_id,
-                    'runner_id': agent_id if agent_type == 'runner' else None,
-                    'listener_id': agent_id if agent_type == 'listener' else None,
-                    'status': 'offline',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
+                self.broadcast_agent_status(agent_id, agent_type, 'offline')
                 logger.info(f"{agent_type.capitalize()} {agent_id} signed out gracefully")
                 return jsonify({'status': 'signed_out'}), 200
             else:
@@ -4883,13 +5183,7 @@ radios:
             logger.info(f"Listener agent WebSocket connected: {agent_id} (sid: {request.sid})")
 
             # Broadcast listener online status to admin UI
-            self.broadcast_event('listener_status', {
-                'agent_id': agent_id,
-                'listener_id': agent_id,
-                'status': 'online',
-                'websocket_connected': True,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
+            self.broadcast_agent_status(agent_id, 'listener', 'online', websocket_connected=True)
 
             # Send welcome message with connection confirmation
             emit('connected', {
@@ -4912,13 +5206,15 @@ radios:
 
                 logger.info(f"Agent WebSocket disconnected: {agent_id} (sid: {sid})")
 
-                # Broadcast listener websocket disconnect to admin UI
-                self.broadcast_event('listener_status', {
-                    'agent_id': agent_id,
-                    'listener_id': agent_id,
-                    'websocket_connected': False,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
+                # Get agent to determine current status
+                agent = self.db.get_agent(agent_id)
+                if agent:
+                    # Broadcast websocket disconnect (keep current status, just update websocket flag)
+                    self.broadcast_agent_status(
+                        agent_id, 'listener',
+                        agent.get('status', 'offline'),
+                        websocket_connected=False
+                    )
             else:
                 logger.warning(f"Agent WebSocket disconnected but no agent_id found for sid: {sid}")
 
@@ -4941,7 +5237,7 @@ radios:
                 }, namespace='/agents')
 
     def broadcast_event(self, event_type: str, data: Dict[str, Any]):
-        """Broadcast an event to all connected WebSocket clients."""
+        """Broadcast an event to all connected WebSocket clients and dispatch to webhooks."""
         try:
             event_data = {
                 'type': event_type,
@@ -4950,8 +5246,98 @@ radios:
             logger.debug(f"Broadcasting event '{event_type}' to all clients: {event_data}")
             self.socketio.emit('event', event_data, namespace='/')
             logger.debug(f"Event '{event_type}' broadcast complete")
+
+            # Dispatch to webhooks (async, non-blocking)
+            category = self._map_event_to_category(event_type, data)
+            if category:
+                self.webhook_dispatcher.dispatch_event(event_type, data, category)
+
         except Exception as e:
             logger.error(f"Error broadcasting event: {e}")
+
+    def broadcast_agent_status(self, agent_id: str, agent_type: str, status: str, **kwargs):
+        """Broadcast agent status change with both unified and legacy event names.
+
+        Args:
+            agent_id: The agent ID
+            agent_type: 'runner' or 'listener'
+            status: Agent status ('online', 'offline', etc.)
+            **kwargs: Additional event data (e.g., websocket_connected, last_heartbeat)
+        """
+        # Prepare event data
+        event_data = {
+            'agent_id': agent_id,
+            'agent_type': agent_type,
+            'status': status,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            **kwargs
+        }
+
+        # Include legacy runner_id/listener_id for backward compatibility
+        if agent_type == 'listener':
+            event_data['listener_id'] = agent_id
+        else:
+            event_data['runner_id'] = agent_id
+
+        # Broadcast unified agent_status event
+        self.broadcast_event('agent_status', event_data)
+
+        # Also broadcast legacy event names for backward compatibility
+        legacy_event_name = 'listener_status' if agent_type == 'listener' else 'runner_status'
+        self.broadcast_event(legacy_event_name, event_data)
+
+    def _map_event_to_category(self, event_type: str, data: Dict[str, Any]) -> Optional[str]:
+        """Map system event to webhook category for subscription filtering.
+
+        Args:
+            event_type: System event type (e.g., 'transmission_complete', 'log')
+            data: Event payload
+
+        Returns:
+            Event category name or None if event should not trigger webhooks
+        """
+        # Error logs
+        if event_type == 'log' and data.get('level') in ['ERROR', 'WARNING', 'CRITICAL']:
+            # Don't send security events to error_logs (they go to security_events)
+            if 'SECURITY:' not in data.get('message', ''):
+                return 'error_logs'
+
+        # Security events
+        if event_type == 'log' and 'SECURITY:' in data.get('message', ''):
+            return 'security_events'
+
+        # Server lifecycle (handled manually in server.py for startup/shutdown)
+        if event_type == 'system_control':
+            action = data.get('action', '')
+            if action in ['startup', 'shutdown']:
+                return 'server_lifecycle'
+            elif action in ['pause', 'resume']:
+                return 'system_control'
+            elif action in ['auto_pause', 'auto_resume']:
+                return 'daily_schedule'
+
+        # Agent status (unified and legacy event names)
+        if event_type in ['agent_status', 'runner_status', 'listener_status']:
+            return 'agent_status'
+
+        # Device changes
+        if event_type in ['device_detected', 'device_status', 'device_config_updated']:
+            return 'device_changes'
+
+        # Challenge failures
+        if event_type == 'transmission_complete' and data.get('status') == 'failed':
+            return 'challenge_failures'
+
+        # Recording complete
+        if event_type == 'recording_complete':
+            return 'recording_complete'
+
+        # User management events
+        if event_type in ['user_created', 'user_deleted', 'user_enabled', 'user_disabled',
+                         'permission_granted', 'permission_revoked']:
+            return 'user_management'
+
+        return None
 
     def get_public_challenges_data(self):
         """Build public challenges data with configurable visibility."""
