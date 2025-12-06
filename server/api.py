@@ -177,6 +177,9 @@ class ChallengeCtlAPI:
 
         # In-memory log buffer for recent logs (last 500)
         self.log_buffer = deque(maxlen=500)
+
+        # Track WebSocket session ID to agent ID mapping for listeners
+        self.agent_sessions = {}  # sid -> agent_id
         self.buffer_lock = threading.Lock()
 
         # In-memory transmission buffer for recent transmissions (last 50)
@@ -4871,6 +4874,9 @@ radios:
             # Authentication successful - join agent-specific room
             join_room(f'agent_{agent_id}', namespace='/agents')
 
+            # Store session mapping for disconnect handling
+            self.agent_sessions[request.sid] = agent_id
+
             # Update WebSocket connection status in database
             self.db.update_listener_websocket_status(agent_id, connected=True)
 
@@ -4897,14 +4903,24 @@ radios:
         @self.socketio.on('disconnect', namespace='/agents')
         def handle_agent_disconnect():
             """Handle listener agent WebSocket disconnection."""
-            # Note: We don't have easy access to agent_id here, so we'll rely on
-            # heartbeat timeout to mark agents as offline. We just update the
-            # websocket_connected flag based on connection state.
-            logger.info(f"Agent WebSocket disconnected: {request.sid}")
+            sid = request.sid
+            agent_id = self.agent_sessions.pop(sid, None)
 
-            # The agent will be marked as having no WebSocket connection
-            # We can't easily determine which agent this was without storing
-            # a mapping, so the cleanup will happen via heartbeat timeout
+            if agent_id:
+                # Update WebSocket connection status in database
+                self.db.update_listener_websocket_status(agent_id, connected=False)
+
+                logger.info(f"Agent WebSocket disconnected: {agent_id} (sid: {sid})")
+
+                # Broadcast listener websocket disconnect to admin UI
+                self.broadcast_event('listener_status', {
+                    'agent_id': agent_id,
+                    'listener_id': agent_id,
+                    'websocket_connected': False,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+            else:
+                logger.warning(f"Agent WebSocket disconnected but no agent_id found for sid: {sid}")
 
         @self.socketio.on('heartbeat', namespace='/agents')
         def handle_agent_heartbeat(data):

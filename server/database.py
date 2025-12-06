@@ -2399,7 +2399,7 @@ class Database:
         Returns:
             list: List of agent IDs that were marked offline
         """
-        threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+        threshold = (datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)).isoformat()
         with self.get_connection() as conn:
             cursor = conn.cursor()
             # Get the IDs of agents that will be marked offline
