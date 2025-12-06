@@ -3058,11 +3058,11 @@ class ChallengeCtlAPI:
                 # Get challenge details for webhook
                 challenge = self.db.get_challenge(recording['challenge_id'])
                 challenge_name = 'unknown'
-                frequency = 0
                 if challenge:
                     challenge_name = challenge.get('name', 'unknown')
-                    config = challenge.get('config', {})
-                    frequency = config.get('frequency', 0)
+
+                # Use frequency from recording record (stored when recording was created)
+                frequency = recording.get('frequency', 0)
 
                 # Broadcast recording completed event
                 self.broadcast_event('recording_complete', {
