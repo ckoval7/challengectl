@@ -93,15 +93,14 @@ class USBEventMonitor:
         self.observer.stop()
         logger.info("USB event monitoring stopped")
 
-    def _on_usb_event(self, device):
+    def _on_usb_event(self, action, device):
         """Handle USB device add/remove events.
 
         Args:
+            action: Event action ('add', 'remove', etc.) - pyudev passes this
             device: pyudev.Device object
         """
         try:
-            action = device.action
-
             # Only care about add/remove events
             if action not in ('add', 'remove'):
                 return

@@ -354,7 +354,6 @@ class TestUSBEventMonitoring:
 
         # Mock HID device (keyboard)
         mock_device = Mock()
-        mock_device.action = 'add'
         mock_device.get = Mock(side_effect=lambda key, default='': {
             'ID_VENDOR_ID': '046d',  # Logitech
             'ID_MODEL_ID': 'c52b',
@@ -363,7 +362,7 @@ class TestUSBEventMonitoring:
         }.get(key, default))
 
         # Should not trigger probe (HID device blocked)
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 0
 
     def test_usb_monitor_allows_sdr_vendor_ids(self):
@@ -382,7 +381,6 @@ class TestUSBEventMonitoring:
 
         # Mock HackRF device (vendor ID 1d50)
         mock_device = Mock()
-        mock_device.action = 'add'
         mock_device.get = Mock(side_effect=lambda key, default='': {
             'ID_VENDOR_ID': '1d50',  # Great Scott Gadgets (HackRF)
             'ID_MODEL_ID': '6089',
@@ -391,7 +389,7 @@ class TestUSBEventMonitoring:
         }.get(key, default))
 
         # Should trigger probe (known SDR vendor)
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 1
 
     def test_usb_monitor_allows_vendor_specific_class(self):
@@ -410,7 +408,6 @@ class TestUSBEventMonitoring:
 
         # Mock device with vendor-specific class (unknown vendor ID)
         mock_device = Mock()
-        mock_device.action = 'add'
         mock_device.get = Mock(side_effect=lambda key, default='': {
             'ID_VENDOR_ID': '9999',  # Unknown vendor
             'ID_MODEL_ID': '0001',
@@ -419,7 +416,7 @@ class TestUSBEventMonitoring:
         }.get(key, default))
 
         # Should trigger probe (vendor-specific class allowed)
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 1
 
     def test_usb_monitor_debouncing(self):
@@ -439,7 +436,6 @@ class TestUSBEventMonitoring:
 
         # Mock SDR device
         mock_device = Mock()
-        mock_device.action = 'add'
         mock_device.get = Mock(side_effect=lambda key, default='': {
             'ID_VENDOR_ID': '1d50',
             'ID_MODEL_ID': '6089',
@@ -448,18 +444,18 @@ class TestUSBEventMonitoring:
         }.get(key, default))
 
         # First event should trigger probe
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 1
 
         # Immediate second event should be debounced
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 1  # Still only 1
 
         # Wait for debounce interval to expire
         time.sleep(0.6)
 
         # Third event should trigger probe
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('add', mock_device)
         assert len(probe_called) == 2
 
     def test_usb_monitor_ignores_non_add_remove_events(self):
@@ -478,7 +474,6 @@ class TestUSBEventMonitoring:
 
         # Mock device with 'change' action
         mock_device = Mock()
-        mock_device.action = 'change'
         mock_device.get = Mock(side_effect=lambda key, default='': {
             'ID_VENDOR_ID': '1d50',
             'ID_MODEL_ID': '6089',
@@ -487,7 +482,7 @@ class TestUSBEventMonitoring:
         }.get(key, default))
 
         # Should not trigger probe (not add/remove)
-        monitor._on_usb_event(mock_device)
+        monitor._on_usb_event('change', mock_device)
         assert len(probe_called) == 0
 
     def test_device_manager_integrates_usb_monitor(self):
