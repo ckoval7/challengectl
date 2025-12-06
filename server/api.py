@@ -4973,6 +4973,7 @@ radios:
         # This must be the LAST route to catch all non-API requests
         @self.app.route('/')
         @self.app.route('/<path:path>')
+        @self.limiter.exempt  # Exempt from rate limiting - streaming files conflicts with WSGI
         def serve_frontend(path=''):
             """Serve the Vue.js frontend SPA.
 
