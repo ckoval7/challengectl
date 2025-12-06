@@ -164,12 +164,22 @@ class ChallengeCtlAPI:
         # Runner endpoints get higher limits (overridden per-endpoint)
         # Authentication endpoints get stricter limits (brute force protection)
         def should_exempt_from_rate_limit():
-            """Exempt socket.io requests from rate limiting.
+            """Exempt socket.io and static file requests from rate limiting.
 
             Socket.io uses long-polling and WebSocket upgrades that don't work
             well with WSGI rate limiting middleware (causes 'write() before start_response').
+            Static files are also exempt as they use send_from_directory which streams.
             """
-            return request.path.startswith('/socket.io')
+            # Exempt socket.io (WebSocket/long-polling)
+            if request.path.startswith('/socket.io'):
+                return True
+
+            # Exempt static files (but not API routes)
+            # API routes should still be rate limited
+            if not request.path.startswith('/api/'):
+                return True
+
+            return False
 
         self.limiter = Limiter(
             app=self.app,
@@ -177,7 +187,7 @@ class ChallengeCtlAPI:
             default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
             storage_uri="memory://",
             strategy="fixed-window",
-            default_limits_exempt_when=should_exempt_from_rate_limit  # Exempt socket.io from rate limiting
+            default_limits_exempt_when=should_exempt_from_rate_limit  # Exempt socket.io and static files
         )
 
         # Use provided database instance
