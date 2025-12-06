@@ -4770,20 +4770,20 @@ radios:
             # Record pause start time to freeze challenge timing
             pause_start = datetime.now(timezone.utc).isoformat()
             self.db.set_system_state('pause_start_time', pause_start)
-            logger.info(f"Pause start time recorded: {pause_start}")
+            logger.debug(f"Pause start time recorded: {pause_start}")
 
             self.db.set_system_state('paused', 'true')
             # Clear auto_paused flag when manually pausing (manual override)
             self.db.set_system_state('auto_paused', 'false')
 
-            logger.info("Broadcasting pause event to all WebSocket clients")
+            logger.debug("Broadcasting pause event to all WebSocket clients")
             self.broadcast_event('system_control', {
                 'action': 'pause',
                 'auto': False,
                 'username': request.admin_username,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
-            logger.info("Pause event broadcast complete")
+            logger.debug("Pause event broadcast complete")
 
             return jsonify({'status': 'paused'}), 200
 
@@ -4806,15 +4806,15 @@ radios:
                     pause_duration = (resume_time - pause_start).total_seconds()
 
                     if pause_duration > 0:
-                        logger.info(f"System was paused for {pause_duration:.1f}s, shifting challenge timings forward")
+                        logger.debug(f"System was paused for {pause_duration:.1f}s, shifting challenge timings forward")
                         shifted = self.db.shift_challenge_timings(pause_duration)
-                        logger.info(f"Shifted {shifted} challenge(s) to compensate for pause duration")
+                        logger.debug(f"Shifted {shifted} challenge(s) to compensate for pause duration")
 
                         # Accumulate total pause time for recording priority calculations
                         total_pause = float(self.db.get_system_state('total_pause_seconds', '0'))
                         total_pause += pause_duration
                         self.db.set_system_state('total_pause_seconds', str(total_pause))
-                        logger.info(f"Accumulated pause time: {total_pause:.1f}s total")
+                        logger.debug(f"Accumulated pause time: {total_pause:.1f}s total")
                     else:
                         logger.warning(f"Invalid pause duration: {pause_duration:.1f}s, not shifting timings")
 
