@@ -133,7 +133,7 @@
               v-if="userPermissions.includes('manage_webhooks')"
               index="/webhooks"
             >
-              <el-icon><Notification /></el-icon>
+              <el-icon><ChatLineSquare /></el-icon>
               <span>Webhooks</span>
             </el-menu-item>
             <el-menu-item index="/public">
@@ -205,7 +205,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon, Notification } from '@element-plus/icons-vue'
+import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon, ChatLineSquare } from '@element-plus/icons-vue'
 import { api } from './api'
 import { logout, checkAuth, currentUsername, userPermissions, isAuthenticated } from './auth'
 import { ElMessage } from 'element-plus'
@@ -222,6 +222,7 @@ export default {
     Notebook,
     User,
     Flag,
+    ChatLineSquare,
     ConferenceCountdown
   },
   setup() {
