@@ -177,7 +177,7 @@ class ChallengeCtlAPI:
             default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
             storage_uri="memory://",
             strategy="fixed-window",
-            request_filter=should_exempt_from_rate_limit  # Exempt socket.io from rate limiting
+            default_limits_exempt_when=should_exempt_from_rate_limit  # Exempt socket.io from rate limiting
         )
 
         # Use provided database instance
