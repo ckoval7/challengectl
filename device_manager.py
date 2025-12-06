@@ -1063,10 +1063,9 @@ class DeviceManager:
 
             # Update offline status based on probe result
             if is_available and currently_offline:
-                # Device probe passed but was offline
-                # Keep offline until successful operation (trust verification)
-                logger.info(f"Device {device_id} probe successful, but keeping offline "
-                          f"until successful operation")
+                # Device probe passed and was offline - bring it back online
+                self.mark_device_online(device_id)
+                logger.info(f"Device {device_id} probe successful, marking ONLINE (was offline)")
             elif not is_available and not currently_offline:
                 # Device probe failed and was online
                 failure_count = self.record_device_failure(device_id)
