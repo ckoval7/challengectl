@@ -3055,12 +3055,24 @@ class ChallengeCtlAPI:
             )
 
             if updated:
+                # Get challenge details for webhook
+                challenge = self.db.get_challenge(recording['challenge_id'])
+                challenge_name = 'unknown'
+                frequency = 0
+                if challenge:
+                    challenge_name = challenge.get('name', 'unknown')
+                    config = challenge.get('config', {})
+                    frequency = config.get('frequency', 0)
+
                 # Broadcast recording completed event
                 self.broadcast_event('recording_complete', {
                     'recording_id': recording_id,
                     'agent_id': agent_id,
                     'listener_id': agent_id,
                     'challenge_id': recording['challenge_id'],
+                    'challenge_name': challenge_name,
+                    'frequency': frequency,
+                    'duration': duration or 0,
                     'status': 'completed' if success else 'failed',
                     'error_message': error_message,
                     'timestamp': datetime.now(timezone.utc).isoformat()
@@ -5312,8 +5324,8 @@ radios:
         Returns:
             Event category name or None if event should not trigger webhooks
         """
-        # Error logs
-        if event_type == 'log' and data.get('level') in ['ERROR', 'WARNING', 'CRITICAL']:
+        # Error logs (ERROR and CRITICAL only, not WARNING)
+        if event_type == 'log' and data.get('level') in ['ERROR', 'CRITICAL']:
             # Don't send security events to error_logs (they go to security_events)
             if 'SECURITY:' not in data.get('message', ''):
                 return 'error_logs'
@@ -5332,13 +5344,38 @@ radios:
             elif action in ['auto_pause', 'auto_resume']:
                 return 'daily_schedule'
 
-        # Agent status (unified and legacy event names)
-        if event_type in ['agent_status', 'runner_status', 'listener_status']:
-            return 'agent_status'
+        # Agent status (unified event only - skip legacy runner_status/listener_status to avoid duplicates)
+        # Send webhooks for online/offline transitions
+        if event_type == 'agent_status':
+            status = data.get('status', '')
+            # Send webhook for online/offline status changes
+            if status in ['online', 'offline']:
+                return 'agent_status'
+            # Don't send webhook for other statuses
+            return None
+
+        # Skip ALL legacy event names to prevent duplicate webhooks
+        # These are broadcast for WebSocket backward compatibility but should not trigger webhooks
+        legacy_events = [
+            'runner_status', 'listener_status',           # Legacy status events
+            'runner_enabled', 'listener_enabled',         # Legacy enable/disable events
+            'runner_enrolled', 'listener_enrolled'        # Legacy enrollment events
+        ]
+        if event_type in legacy_events:
+            return None
 
         # Device changes
-        if event_type in ['device_detected', 'device_status', 'device_config_updated']:
+        if event_type in ['device_detected', 'device_config_updated']:
             return 'device_changes'
+
+        # Device status changes: only send webhooks for offline status
+        # Skip online/busy transitions (too frequent and noisy)
+        if event_type == 'device_status':
+            device_status = data.get('status', '')
+            if device_status == 'offline':
+                return 'device_changes'
+            # Skip online/busy status updates
+            return None
 
         # Challenge failures
         if event_type == 'transmission_complete' and data.get('status') == 'failed':
