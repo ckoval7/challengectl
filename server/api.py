@@ -5288,7 +5288,11 @@ radios:
                 **data
             }
             logger.debug(f"Broadcasting event '{event_type}' to all clients: {event_data}")
-            self.socketio.emit('event', event_data, namespace='/')
+
+            # CRITICAL: Use app context for SocketIO emit from background threads
+            # This prevents "write() before start_response" errors when emitting from APScheduler jobs
+            with self.app.app_context():
+                self.socketio.emit('event', event_data, namespace='/')
             logger.debug(f"Event '{event_type}' broadcast complete")
 
             # Dispatch to webhooks (async, non-blocking)
@@ -5541,10 +5545,14 @@ radios:
         """Broadcast updated public challenge data to all public WebSocket clients."""
         try:
             challenges = self.get_public_challenges_data()
-            self.socketio.emit('challenges_update', {
-                'challenges': challenges,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            }, namespace='/public')
+
+            # CRITICAL: Use app context for SocketIO emit from background threads
+            # This prevents "write() before start_response" errors when emitting from APScheduler jobs
+            with self.app.app_context():
+                self.socketio.emit('challenges_update', {
+                    'challenges': challenges,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }, namespace='/public')
         except Exception as e:
             logger.error(f"Error broadcasting public challenges: {e}")
 
