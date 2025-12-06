@@ -4780,6 +4780,7 @@ radios:
             self.broadcast_event('system_control', {
                 'action': 'pause',
                 'auto': False,
+                'username': request.admin_username,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
             logger.info("Pause event broadcast complete")
@@ -4832,6 +4833,7 @@ radios:
             self.broadcast_event('system_control', {
                 'action': 'resume',
                 'auto': False,
+                'username': request.admin_username,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
             logger.info("Resume event broadcast complete")
@@ -5357,12 +5359,14 @@ radios:
         if event_type == 'log' and 'SECURITY:' in data.get('message', ''):
             return 'security_events'
 
-        # Server lifecycle (handled manually in server.py for startup/shutdown)
+        # Server lifecycle events (startup/shutdown from server.py)
+        if event_type == 'server_lifecycle':
+            return 'server_lifecycle'
+
+        # System control events (pause/resume)
         if event_type == 'system_control':
             action = data.get('action', '')
-            if action in ['startup', 'shutdown']:
-                return 'server_lifecycle'
-            elif action in ['pause', 'resume']:
+            if action in ['pause', 'resume']:
                 return 'system_control'
             elif action in ['auto_pause', 'auto_resume']:
                 return 'daily_schedule'

@@ -515,28 +515,34 @@ class WebhookDispatcher:
     def _build_system_control_embed(self, data: Dict[str, Any], color: int, timestamp: str) -> Dict[str, Any]:
         """Build Discord embed for system pause/resume."""
         action = data.get('action', 'unknown')
-        changed_by = data.get('changed_by', 'system')
+        # Support both 'username' (from manual actions) and 'changed_by' (legacy)
+        changed_by = data.get('username') or data.get('changed_by', 'system')
+        is_auto = data.get('auto', False)
 
         if action == 'pause':
+            reason = "Automatic" if is_auto else "Manual"
             return {
                 "title": "⏸️ System Paused",
                 "description": "Challenge transmissions have been paused",
                 "color": color,
                 "fields": [
                     {"name": "Paused By", "value": changed_by, "inline": True},
-                    {"name": "Reason", "value": "Manual", "inline": True}
+                    {"name": "Reason", "value": reason, "inline": True}
                 ],
                 "timestamp": timestamp,
                 "footer": {"text": "ChallengeCtl v2"}
             }
         elif action == 'resume':
+            reason = "Automatic" if is_auto else "Manual"
+            fields = [
+                {"name": "Resumed By", "value": changed_by, "inline": True},
+                {"name": "Reason", "value": reason, "inline": True}
+            ]
             return {
                 "title": "▶️ System Resumed",
                 "description": "Challenge transmissions have been resumed",
                 "color": color,
-                "fields": [
-                    {"name": "Resumed By", "value": changed_by, "inline": True}
-                ],
+                "fields": fields,
                 "timestamp": timestamp,
                 "footer": {"text": "ChallengeCtl v2"}
             }
