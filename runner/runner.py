@@ -47,8 +47,7 @@ class ChallengeCtlRunner(AgentBase):
         self.poll_interval = self.config['runner'].get('poll_interval', 10)
         self.spectrum_paint_before_challenge = self.config['runner'].get('spectrum_paint_before_challenge', True)
 
-        # Device probing and auto-detection configuration
-        self.device_probe_interval = self.config['runner'].get('device_probe_interval', 30)
+        # Device auto-detection configuration
         self.enable_auto_detection = self.config['runner'].get('enable_auto_detection', True)
 
         # Load devices from configuration
@@ -57,7 +56,6 @@ class ChallengeCtlRunner(AgentBase):
         # Initialize device manager
         self.device_manager = DeviceManager(
             configured_devices=configured_devices,
-            device_probe_interval=self.device_probe_interval,
             enable_auto_detection=self.enable_auto_detection,
             agent_type='runner',
             probe_callback=self.check_device_available
@@ -1165,10 +1163,9 @@ class ChallengeCtlRunner(AgentBase):
         logger.info("Heartbeat thread started")
 
         # Start device probe loop thread
-        if self.device_probe_interval > 0:
-            self.device_manager.start_probe_loop()
-            print(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
-            logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+        self.device_manager.start_probe_loop()
+        print(f"Device probe loop started (event-driven, auto-detect: {self.enable_auto_detection})")
+        logger.info(f"Device probe loop started (event-driven, auto-detect: {self.enable_auto_detection})")
 
         # Start task loop (blocking)
         print("Starting task loop...")

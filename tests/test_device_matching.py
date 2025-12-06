@@ -19,7 +19,7 @@ class TestDeviceSerialResolution:
 
     def test_resolve_serial_returns_serial_for_long_string(self):
         """Test that long alphanumeric names are returned as-is (already serials)."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Long hex string should be returned as-is
         serial = dm.resolve_device_serial('bladerf', '1234567890abcdef')
@@ -27,7 +27,7 @@ class TestDeviceSerialResolution:
 
     def test_resolve_serial_maps_index_to_serial(self):
         """Test that numeric index is mapped to serial via hardware enumeration."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock enumerate_device_serials to return test serials
         with patch.object(dm, 'enumerate_device_serials', return_value=['abc123', 'def456']):
@@ -39,7 +39,7 @@ class TestDeviceSerialResolution:
 
     def test_resolve_serial_returns_none_for_out_of_range_index(self):
         """Test that out-of-range index returns None."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock enumerate_device_serials to return only one device
         with patch.object(dm, 'enumerate_device_serials', return_value=['abc123']):
@@ -48,7 +48,7 @@ class TestDeviceSerialResolution:
 
     def test_enumerate_hackrf_serials(self):
         """Test HackRF serial enumeration."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock subprocess output from hackrf_info
         mock_stdout = """Found HackRF
@@ -76,7 +76,7 @@ Serial number: 0x000000000000b07063dc2f5b3f60
 
     def test_enumerate_bladerf_serials(self):
         """Test BladeRF serial enumeration."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock subprocess output from bladeRF-cli -p
         mock_stdout = """Backend:        libusb
@@ -101,7 +101,7 @@ Backend:        libusb
 
     def test_rtlsdr_numeric_serial_not_treated_as_index(self):
         """Test that RTL-SDR numeric serials (like '1090') are not treated as indices."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Common RTL-SDR serials: "1090", "00000001", etc.
         # These should be treated as serials, not device indices
@@ -113,7 +113,7 @@ Backend:        libusb
 
     def test_rtlsdr_single_digit_treated_as_index(self):
         """Test that RTL-SDR single-digit numbers (0-9) are still treated as indices."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock enumerate_device_serials to return test serials
         with patch.object(dm, 'enumerate_device_serials', return_value=['1090', '00000001']):
@@ -125,7 +125,7 @@ Backend:        libusb
 
     def test_rtlsdr_enumeration_failure_fallback(self):
         """Test that RTL-SDR falls back to serial matching when enumeration fails."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock enumerate_device_serials to return empty list (timeout/failure)
         with patch.object(dm, 'enumerate_device_serials', return_value=[]):
@@ -138,7 +138,7 @@ Backend:        libusb
 
     def test_enumerate_rtlsdr_serials_via_osmosdr(self):
         """Test RTL-SDR serial enumeration using osmosdr."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Mock osmosdr to simulate RTL-SDR devices
         mock_osmosdr = MagicMock()
@@ -178,7 +178,7 @@ class TestDeviceMatching:
             'device_string': 'bladerf=0'
         }]
 
-        dm = DeviceManager(config_devices, device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager(config_devices, enable_auto_detection=False)
 
         # Mock serial resolution: index 0 -> serial abc123
         with patch.object(dm, 'resolve_device_serial', return_value='abc123'):
@@ -202,7 +202,7 @@ class TestDeviceMatching:
             'device_string': 'bladerf=0'
         }]
 
-        dm = DeviceManager(config_devices, device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager(config_devices, enable_auto_detection=False)
 
         # Mock serial resolution: index 0 -> serial abc123
         with patch.object(dm, 'resolve_device_serial', return_value='abc123'):
@@ -226,7 +226,7 @@ class TestDeviceMatching:
             'device_string': 'bladerf=abc123'
         }]
 
-        dm = DeviceManager(config_devices, device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager(config_devices, enable_auto_detection=False)
 
         # Mock serial resolution: serial -> same serial
         with patch.object(dm, 'resolve_device_serial', return_value='abc123'):
@@ -251,7 +251,7 @@ class TestConfigDeviceEnrichment:
             'device_id': 0
         }]
 
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         with patch.object(dm, 'resolve_device_serial', return_value='abc123'):
             enriched = dm._enrich_configured_devices(config_devices)
@@ -269,7 +269,7 @@ class TestConfigDeviceEnrichment:
             'device_id': 0
         }]
 
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         with patch.object(dm, 'resolve_device_serial', return_value=None):
             enriched = dm._enrich_configured_devices(config_devices)
@@ -283,7 +283,7 @@ class TestUSBHandleCleanup:
 
     def test_enumerate_rtlsdr_serials_cleanup(self):
         """Test that osmosdr device handles are cleaned up after enumeration."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Create mock device object
         mock_device = Mock()
@@ -299,7 +299,7 @@ class TestUSBHandleCleanup:
 
     def test_auto_detect_devices_cleanup(self):
         """Test that osmosdr device handles are cleaned up after auto-detection."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Create mock device object
         mock_device = Mock()
@@ -314,7 +314,7 @@ class TestUSBHandleCleanup:
 
     def test_auto_detect_devices_cleanup_on_exception(self):
         """Test that cleanup is attempted even when osmosdr.find() throws exception."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Create mock device object that will be assigned before exception
         mock_device = Mock()
@@ -492,7 +492,7 @@ class TestUSBEventMonitoring:
         if not PYUDEV_AVAILABLE:
             pytest.skip("pyudev not available")
 
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Should have usb_monitor initialized
         assert dm.usb_monitor is not None
@@ -502,7 +502,7 @@ class TestUSBEventMonitoring:
 
     def test_trigger_immediate_probe(self):
         """Test that _trigger_immediate_probe sets the probe event."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+        dm = DeviceManager([], enable_auto_detection=False)
 
         # Event should not be set initially
         assert not dm.probe_event.is_set()
@@ -518,7 +518,7 @@ class TestUSBEventMonitoring:
 
     def test_usb_handle_cleanup_in_event_driven_mode(self):
         """Test that USB handle cleanup happens in event-driven probe cycle."""
-        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=True)
+        dm = DeviceManager([], enable_auto_detection=True)
 
         # Mock osmosdr device
         mock_device = Mock()

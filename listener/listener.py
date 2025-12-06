@@ -62,8 +62,7 @@ class ListenerAgent(AgentBase):
         self.simulate = simulate
         self.log_level = log_level
 
-        # Device probing and auto-detection configuration
-        self.device_probe_interval = self.config['agent'].get('device_probe_interval', 30)
+        # Device auto-detection configuration
         self.enable_auto_detection = self.config['agent'].get('enable_auto_detection', True)
 
         if simulate:
@@ -75,7 +74,6 @@ class ListenerAgent(AgentBase):
         # Initialize device manager
         self.device_manager = DeviceManager(
             configured_devices=configured_devices,
-            device_probe_interval=self.device_probe_interval,
             enable_auto_detection=self.enable_auto_detection,
             agent_type='listener',
             probe_callback=None  # Listeners don't have custom probe logic
@@ -898,10 +896,9 @@ class ListenerAgent(AgentBase):
         self.heartbeat_thread.start()
 
         # Start device probe loop thread
-        if self.device_probe_interval > 0:
-            self.device_manager.start_probe_loop()
-            print(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
-            logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, auto-detect: {self.enable_auto_detection})")
+        self.device_manager.start_probe_loop()
+        print(f"Device probe loop started (event-driven, auto-detect: {self.enable_auto_detection})")
+        logger.info(f"Device probe loop started (event-driven, auto-detect: {self.enable_auto_detection})")
 
         print(f"Listener agent {self.agent_id} running, waiting for assignments...")
         print("Press Ctrl+C to stop")

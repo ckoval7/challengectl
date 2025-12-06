@@ -197,7 +197,6 @@ class DeviceManager:
     def __init__(
         self,
         configured_devices: List[Dict],
-        device_probe_interval: int = 30,
         enable_auto_detection: bool = True,
         agent_type: str = 'runner',
         probe_callback: Optional[Callable] = None
@@ -206,12 +205,10 @@ class DeviceManager:
 
         Args:
             configured_devices: List of devices from configuration
-            device_probe_interval: Seconds between probes (0 to disable)
             enable_auto_detection: Enable automatic device detection
             agent_type: 'runner' or 'listener' (determines device filtering)
             probe_callback: Optional callback(device) -> bool for custom probing
         """
-        self.device_probe_interval = device_probe_interval
         self.enable_auto_detection = enable_auto_detection
         self.agent_type = agent_type
         self.probe_callback = probe_callback
@@ -1005,12 +1002,12 @@ class DeviceManager:
         self.probe_event.set()
 
     def device_probe_loop(self):
-        """Background thread for event-driven device probing and auto-detection.
+        """Background thread for purely event-driven device probing.
 
-        Waits for USB events and triggers immediate probing when SDR devices change.
-        No time-based polling - purely event-driven.
+        Probes occur only on USB device add/remove events.
+        No periodic polling - devices are checked immediately when USB topology changes.
         """
-        logger.info("Device probe loop started (event-driven, no polling)")
+        logger.info("Device probe loop started (purely event-driven, no periodic probing)")
 
         # Perform initial probe at startup
         self._perform_probe_cycle()
@@ -1018,13 +1015,12 @@ class DeviceManager:
         while self.running:
             try:
                 # Wait for USB event (blocks until event is set)
-                # This is event-driven - no polling!
                 self.probe_event.wait()
 
                 # Clear the event flag
                 self.probe_event.clear()
 
-                # Perform probe cycle
+                logger.debug("Probe triggered by USB event")
                 self._perform_probe_cycle()
 
             except Exception as e:
@@ -1066,13 +1062,16 @@ class DeviceManager:
                 # Device probe passed and was offline - bring it back online
                 self.mark_device_online(device_id)
                 logger.info(f"Device {device_id} probe successful, marking ONLINE (was offline)")
+            elif is_available and not currently_offline:
+                # Device probe passed and is online - reset failure count
+                self.record_device_success(device_id)
             elif not is_available and not currently_offline:
-                # Device probe failed and was online
-                failure_count = self.record_device_failure(device_id)
-                logger.warning(f"Device {device_id} probe failed (failure {failure_count}/3)")
-
-                if failure_count >= 3:
-                    logger.error(f"Device {device_id} marked OFFLINE after 3 consecutive probe failures")
+                # Device probe failed and was online - mark offline immediately
+                self.mark_device_offline(device_id)
+                logger.error(f"Device {device_id} probe failed, marking OFFLINE")
+            elif not is_available and currently_offline:
+                # Device probe failed and is already offline - just log it
+                logger.debug(f"Device {device_id} still offline (probe failed)")
 
     def start_probe_loop(self):
         """Start the device probe loop and USB event monitoring."""
