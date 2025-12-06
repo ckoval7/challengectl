@@ -5550,6 +5550,16 @@ radios:
         except Exception as e:
             logger.error(f"Error broadcasting public challenges: {e}")
 
+    def stop(self):
+        """Stop the SocketIO server gracefully."""
+        logger.info("Stopping SocketIO server...")
+        try:
+            # Stop the SocketIO server
+            self.socketio.stop()
+            logger.info("SocketIO server stopped")
+        except Exception as e:
+            logger.error(f"Error stopping SocketIO server: {e}")
+
     def run(self, host='0.0.0.0', port=8443, debug=False):
         """Run the API server.
 
@@ -5559,7 +5569,7 @@ radios:
         logger.info(f"Starting ChallengeCtl API server on http://{host}:{port}")
         logger.info("For production with HTTPS, use nginx reverse proxy")
 
-        # Start server
+        # Start server (blocking call)
         self.socketio.run(
             self.app,
             host=host,
