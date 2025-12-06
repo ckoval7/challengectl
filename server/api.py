@@ -148,13 +148,15 @@ class ChallengeCtlAPI:
 
         # Initialize SocketIO for real-time updates
         # SECURITY: Use same CORS origins as REST API to prevent unauthorized WebSocket connections
+        # NOTE: Using eventlet async mode instead of threading to avoid WSGI conflicts
+        # Threading mode can cause "write() before start_response" errors with Werkzeug
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins=allowed_origins,
             cookie='session_token',  # Tie to session cookie for additional security
             ping_timeout=60,         # Allow 60 seconds for ping response (prevent aggressive disconnects)
             ping_interval=25,        # Send ping every 25 seconds for keepalive
-            async_mode='threading',  # Explicit async mode for consistency
+            async_mode='eventlet',   # Use eventlet for better WebSocket stability
             logger=False,            # Disable verbose SocketIO logging
             engineio_logger=False    # Disable verbose Engine.IO logging
         )
