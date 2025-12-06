@@ -159,35 +159,18 @@ class ChallengeCtlAPI:
             engineio_logger=False    # Disable verbose Engine.IO logging
         )
 
-        # Initialize rate limiter with default limits for security
-        # SECURITY: Default limits protect against DoS and API abuse
-        # Runner endpoints get higher limits (overridden per-endpoint)
-        # Authentication endpoints get stricter limits (brute force protection)
-        def should_exempt_from_rate_limit():
-            """Exempt socket.io and static file requests from rate limiting.
-
-            Socket.io uses long-polling and WebSocket upgrades that don't work
-            well with WSGI rate limiting middleware (causes 'write() before start_response').
-            Static files are also exempt as they use send_from_directory which streams.
-            """
-            # Exempt socket.io (WebSocket/long-polling)
-            if request.path.startswith('/socket.io'):
-                return True
-
-            # Exempt static files (but not API routes)
-            # API routes should still be rate limited
-            if not request.path.startswith('/api/'):
-                return True
-
-            return False
-
+        # Initialize rate limiter with NO default limits
+        # SECURITY: We apply limits explicitly per-endpoint to avoid conflicts with streaming responses
+        # Default limits were causing "write() before start_response" errors with:
+        # - Static file serving (send_from_directory)
+        # - Socket.io long-polling/WebSocket upgrades
+        # - Any other streaming responses
         self.limiter = Limiter(
             app=self.app,
             key_func=get_remote_address,
-            default_limits=["100 per minute", "1000 per hour"],  # Default for admin/web UI
+            default_limits=[],  # No default limits - apply explicitly per endpoint
             storage_uri="memory://",
-            strategy="fixed-window",
-            default_limits_exempt_when=should_exempt_from_rate_limit  # Exempt socket.io and static files
+            strategy="fixed-window"
         )
 
         # Use provided database instance
@@ -1042,6 +1025,7 @@ class ChallengeCtlAPI:
 
         # Health check (no auth required)
         @self.app.route('/api/health', methods=['GET'])
+        @self.limiter.limit("1000 per minute")
         def health_check():
             return jsonify({
                 'status': 'ok',
@@ -1263,6 +1247,7 @@ class ChallengeCtlAPI:
             }), 200
 
         @self.app.route('/api/auth/session', methods=['GET'])
+        @self.limiter.limit("1000 per minute")
         def check_session():
             """Check if current session is valid (for page refresh and router guards)."""
             # Get session token from httpOnly cookie
@@ -3374,6 +3359,7 @@ class ChallengeCtlAPI:
 
         # Unified agents query endpoint (admin)
         @self.app.route('/api/agents', methods=['GET'])
+        @self.limiter.limit("100 per minute")
         @self.require_admin_auth
         def get_agents():
             """Get all agents (runners and listeners)."""
@@ -3595,6 +3581,7 @@ class ChallengeCtlAPI:
             }), 200
 
         @self.app.route('/api/logs', methods=['GET'])
+        @self.limiter.limit("100 per minute")
         @self.require_admin_auth
         def get_logs():
             """Get recent log entries from in-memory buffer."""
@@ -4205,6 +4192,7 @@ radios:
             }), 201
 
         @self.app.route('/api/challenges', methods=['GET'])
+        @self.limiter.limit("100 per minute")
         @self.require_admin_auth
         def get_challenges():
             """Get all challenges with queue and recording priority info."""
