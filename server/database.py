@@ -602,6 +602,17 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def update_record_iq(self, challenge_id: str, record_iq: bool) -> bool:
+        """Update the record_iq field in a challenge's configuration."""
+        challenge = self.get_challenge(challenge_id)
+        if not challenge:
+            return False
+
+        config = challenge['config']
+        config['record_iq'] = record_iq
+
+        return self.update_challenge(challenge_id, config)
+
     def get_challenge(self, challenge_id: str) -> Optional[Dict]:
         """Get challenge by ID."""
         with self.get_connection() as conn:

@@ -1047,6 +1047,18 @@ print(response.json())</code></pre>
             </template>
           </el-table-column>
           <el-table-column
+            label="Record IQ"
+            width="100"
+            align="center"
+          >
+            <template #default="scope">
+              <el-switch
+                :model-value="scope.row.config?.record_iq || false"
+                @change="(val) => toggleRecordIQ(scope.row.challenge_id, val)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
             label="Actions"
             min-width="180"
           >
@@ -1566,6 +1578,38 @@ async function toggleEnabled(challengeId, enabled) {
     challenge.enabled = previousEnabled
     challengesMap.value.set(challengeId, challenge)
     recalculateQueuePositions()
+  }
+}
+
+async function toggleRecordIQ(challengeId, recordIQ) {
+  const challenge = challengesMap.value.get(challengeId)
+  if (!challenge) return
+
+  const previousRecordIQ = challenge.config?.record_iq || false
+
+  // Wait for switch component to complete its DOM update
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  // Update local state
+  if (!challenge.config) {
+    challenge.config = {}
+  }
+  challenge.config.record_iq = recordIQ
+  challengesMap.value.set(challengeId, challenge)
+
+  // Make API call in background
+  try {
+    await api.post(`/challenges/${challengeId}/record-iq`, { record_iq: recordIQ })
+    ElMessage.success(`IQ recording ${recordIQ ? 'enabled' : 'disabled'}`)
+  } catch (error) {
+    console.error('Error toggling IQ recording:', error)
+    ElMessage.error('Failed to update IQ recording setting')
+
+    // Rollback on error
+    await new Promise(resolve => setTimeout(resolve, 100))
+    challenge.config.record_iq = previousRecordIQ
+    challengesMap.value.set(challengeId, challenge)
   }
 }
 

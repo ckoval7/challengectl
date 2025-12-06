@@ -4150,6 +4150,38 @@ radios:
             else:
                 return jsonify({'error': 'Challenge not found'}), 404
 
+        @self.app.route('/api/challenges/<challenge_id>/record-iq', methods=['POST'])
+        @self.require_admin_auth
+        @self.require_csrf
+        def toggle_record_iq(challenge_id):
+            """Toggle IQ recording for a challenge."""
+            data = request.json
+            record_iq = data.get('record_iq', False)
+
+            logger.info(f"Setting challenge {challenge_id} record_iq={record_iq}")
+            success = self.db.update_record_iq(challenge_id, record_iq)
+
+            if success:
+                logger.info(f"Challenge {challenge_id} IQ recording {'enabled' if record_iq else 'disabled'} successfully")
+
+                # Get updated challenge for broadcast
+                challenge = self.db.get_challenge(challenge_id)
+
+                # Broadcast to admin clients
+                self.broadcast_event('challenge_updated', {
+                    'challenge': challenge,
+                    'challenge_id': challenge_id,
+                    'action': 'record_iq_updated',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                # Broadcast updated challenges to public dashboard
+                self.broadcast_public_challenges()
+
+                return jsonify({'status': 'updated'}), 200
+            else:
+                return jsonify({'error': 'Challenge not found'}), 404
+
         @self.app.route('/api/challenges/import', methods=['POST'])
         @self.require_admin_auth
         @self.require_csrf
