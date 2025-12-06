@@ -226,7 +226,7 @@ class ChallengeCtlAPI:
         os.makedirs(self.files_dir, exist_ok=True)
 
         # Initialize webhook dispatcher
-        from server.webhook_dispatcher import WebhookDispatcher
+        from webhook_dispatcher import WebhookDispatcher
         self.webhook_dispatcher = WebhookDispatcher(self.db)
         logger.info("Webhook dispatcher initialized")
 
