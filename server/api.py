@@ -63,17 +63,16 @@ VALID_PERMISSIONS = [p['name'] for p in PERMISSION_DEFINITIONS]
 class WebSocketHandler(logging.Handler):
     """Custom logging handler that broadcasts logs to WebUI via WebSocket."""
 
-    def __init__(self, socketio, log_buffer, buffer_lock):
+    def __init__(self, api_instance, log_buffer, buffer_lock):
         super().__init__()
-        self.socketio = socketio
+        self.api_instance = api_instance
         self.log_buffer = log_buffer
         self.buffer_lock = buffer_lock
 
     def emit(self, record):
-        """Emit a log record to WebSocket clients."""
+        """Emit a log record to WebSocket clients and webhooks."""
         try:
             log_entry = {
-                'type': 'log',
                 'source': 'server',
                 'level': record.levelname,
                 'message': record.getMessage(),
@@ -84,8 +83,9 @@ class WebSocketHandler(logging.Handler):
             with self.buffer_lock:
                 self.log_buffer.append(log_entry)
 
-            # Broadcast to WebUI
-            self.socketio.emit('event', log_entry, namespace='/')
+            # Broadcast to WebUI and webhooks via broadcast_event
+            # This will trigger webhook dispatch for ERROR/CRITICAL logs
+            self.api_instance.broadcast_event('log', log_entry)
         except Exception as e:
             # Try to log at debug level to avoid recursion
             # If this fails, silently ignore to prevent infinite loop
@@ -222,6 +222,12 @@ class ChallengeCtlAPI:
         self.manually_triggered_challenges = set()
         self.manually_triggered_lock = threading.Lock()
 
+        # Debounce agent status broadcasts to prevent duplicate notifications
+        # Format: {(agent_id, status): timestamp}
+        self.agent_status_debounce = {}
+        self.agent_status_debounce_lock = threading.Lock()
+        self.agent_status_debounce_seconds = 5  # Suppress duplicates within 5 seconds
+
         # Ensure files directory exists
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -241,7 +247,7 @@ class ChallengeCtlAPI:
 
     def setup_websocket_logging(self):
         """Add WebSocket handler to root logger to broadcast all logs."""
-        ws_handler = WebSocketHandler(self.socketio, self.log_buffer, self.buffer_lock)
+        ws_handler = WebSocketHandler(self, self.log_buffer, self.buffer_lock)
         ws_handler.setLevel(logging.DEBUG)  # Forward all log levels, filtering happens in UI
         # Don't format here - we send structured data
         logging.root.addHandler(ws_handler)
@@ -5292,12 +5298,29 @@ radios:
             status: Agent status ('online', 'offline', etc.)
             **kwargs: Additional event data (e.g., websocket_connected, last_heartbeat)
         """
+        # Debounce agent status broadcasts to prevent duplicate webhooks
+        # When a listener comes online, it can trigger both heartbeat and WebSocket connection events
+        debounce_key = (agent_id, status)
+        now = datetime.now(timezone.utc)
+
+        with self.agent_status_debounce_lock:
+            last_broadcast = self.agent_status_debounce.get(debounce_key)
+            if last_broadcast:
+                time_since_last = (now - last_broadcast).total_seconds()
+                if time_since_last < self.agent_status_debounce_seconds:
+                    logger.debug(f"Debouncing agent status broadcast for {agent_id} ({status}) - "
+                               f"last broadcast {time_since_last:.1f}s ago")
+                    return  # Skip duplicate broadcast
+
+            # Update debounce timestamp
+            self.agent_status_debounce[debounce_key] = now
+
         # Prepare event data
         event_data = {
             'agent_id': agent_id,
             'agent_type': agent_type,
             'status': status,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': now.isoformat(),
             **kwargs
         }
 

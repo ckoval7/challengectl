@@ -381,6 +381,12 @@ class ChallengeCtlServer:
         print("Background tasks started")
         logger.info("Background tasks started")
 
+        # Broadcast server startup event
+        self.api.broadcast_event('server_lifecycle', {
+            'action': 'startup',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
         # Check database for challenges
         # Only run this check in the main process (not in Flask reloader's subprocess)
         # Flask sets WERKZEUG_RUN_MAIN in the reloader's child process
@@ -417,6 +423,13 @@ class ChallengeCtlServer:
             return
 
         self._shutdown_initiated = True
+
+        # Broadcast server shutdown event
+        self.api.broadcast_event('server_lifecycle', {
+            'action': 'shutdown',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
         print("\n" + "="*60, flush=True)
         print("SHUTTING DOWN SERVER", flush=True)
         print("="*60, flush=True)
