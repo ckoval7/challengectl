@@ -61,7 +61,10 @@
       >
         <template #default="scope">
           <div class="delivery-stats">
-            <el-tag type="success" size="small">
+            <el-tag
+              type="success"
+              size="small"
+            >
               {{ scope.row.total_deliveries || 0 }} total
             </el-tag>
             <el-tag
@@ -86,29 +89,41 @@
       </el-table-column>
       <el-table-column
         label="Actions"
-        width="180"
+        width="120"
         align="center"
       >
         <template #default="scope">
-          <el-button
-            size="small"
-            @click="testWebhook(scope.row)"
+          <el-dropdown
+            @command="(command) => handleAction(command, scope.row)"
           >
-            Test
-          </el-button>
-          <el-button
-            size="small"
-            @click="editWebhook(scope.row)"
-          >
-            Edit
-          </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            @click="confirmDelete(scope.row)"
-          >
-            Delete
-          </el-button>
+            <el-button size="small">
+              Actions
+              <el-icon class="el-icon--right">
+                <arrow-down />
+              </el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="test">
+                  Test Webhook
+                </el-dropdown-item>
+                <el-dropdown-item command="edit">
+                  Edit
+                </el-dropdown-item>
+                <el-dropdown-item
+                  :command="scope.row.enabled ? 'disable' : 'enable'"
+                >
+                  {{ scope.row.enabled ? 'Disable' : 'Enable' }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  command="delete"
+                  divided
+                >
+                  <span style="color: var(--el-color-danger)">Delete</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -200,14 +215,15 @@
 
 <script>
 import { ref, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, ArrowDown } from '@element-plus/icons-vue'
 import { api } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 export default {
   name: 'Webhooks',
   components: {
-    Plus
+    Plus,
+    ArrowDown
   },
   setup() {
     const webhooks = ref([])
@@ -255,7 +271,7 @@ export default {
       try {
         const response = await api.get('/webhooks')
         webhooks.value = response.data.webhooks
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to load webhooks')
       } finally {
         loading.value = false
@@ -267,7 +283,7 @@ export default {
       try {
         const response = await api.get('/webhooks/event-categories')
         eventCategories.value = response.data.categories
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to load event categories')
       } finally {
         loadingCategories.value = false
@@ -292,7 +308,7 @@ export default {
         webhook_id: webhook.webhook_id,
         name: webhook.name,
         url: webhook.url,
-        enabled: webhook.enabled,
+        enabled: Boolean(webhook.enabled),
         subscribed_events: [...webhook.subscribed_events]
       }
       showDialog.value = true
@@ -366,8 +382,46 @@ export default {
         } else {
           ElMessage.error(`Test failed: ${response.data.error}`)
         }
-      } catch (error) {
+      } catch {
         ElMessage.error('Failed to send test message')
+      }
+    }
+
+    const toggleWebhook = async (webhook) => {
+      const action = webhook.enabled ? 'disable' : 'enable'
+      const newState = !webhook.enabled
+
+      try {
+        await api.put(`/webhooks/${webhook.webhook_id}`, {
+          name: webhook.name,
+          url: webhook.url,
+          enabled: newState,
+          subscribed_events: webhook.subscribed_events
+        })
+
+        ElMessage.success(`Webhook ${action}d successfully`)
+        loadWebhooks()
+      } catch (error) {
+        const errorMsg = error.response?.data?.error || `Failed to ${action} webhook`
+        ElMessage.error(errorMsg)
+      }
+    }
+
+    const handleAction = (command, webhook) => {
+      switch (command) {
+        case 'test':
+          testWebhook(webhook)
+          break
+        case 'edit':
+          editWebhook(webhook)
+          break
+        case 'enable':
+        case 'disable':
+          toggleWebhook(webhook)
+          break
+        case 'delete':
+          confirmDelete(webhook)
+          break
       }
     }
 
@@ -410,6 +464,8 @@ export default {
       saveWebhook,
       confirmDelete,
       testWebhook,
+      toggleWebhook,
+      handleAction,
       truncateUrl,
       formatCategoryName,
       formatEventList

@@ -181,7 +181,7 @@
               v-if="userPermissions.includes('manage_webhooks')"
               index="/webhooks"
             >
-              <el-icon><Notification /></el-icon>
+              <el-icon><ChatLineSquare /></el-icon>
               <span>Webhooks</span>
             </el-menu-item>
             <el-menu-item index="/public">

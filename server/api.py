@@ -2477,8 +2477,10 @@ class ChallengeCtlAPI:
                                             'timestamp': heartbeat_time
                                         })
 
-                    # Broadcast agent status
-                    self.broadcast_agent_status(agent_id, agent_type, 'online', last_heartbeat=heartbeat_time)
+                    # Only broadcast agent status if it changed (e.g., offline -> online)
+                    # This prevents spamming webhooks on every heartbeat
+                    if previous_status != 'online':
+                        self.broadcast_agent_status(agent_id, agent_type, 'online', last_heartbeat=heartbeat_time)
 
                 # Prepare response with device config updates
                 response_data = {'status': 'ok'}
@@ -5178,12 +5180,14 @@ radios:
             self.agent_sessions[request.sid] = agent_id
 
             # Update WebSocket connection status in database
-            self.db.update_listener_websocket_status(agent_id, connected=True)
+            success, previous_websocket_connected = self.db.update_listener_websocket_status(agent_id, connected=True)
 
             logger.info(f"Listener agent WebSocket connected: {agent_id} (sid: {request.sid})")
 
-            # Broadcast listener online status to admin UI
-            self.broadcast_agent_status(agent_id, 'listener', 'online', websocket_connected=True)
+            # Only broadcast if WebSocket connection state changed
+            # This prevents spamming webhooks on reconnections
+            if success and not previous_websocket_connected:
+                self.broadcast_agent_status(agent_id, 'listener', 'online', websocket_connected=True)
 
             # Send welcome message with connection confirmation
             emit('connected', {
@@ -5202,19 +5206,22 @@ radios:
 
             if agent_id:
                 # Update WebSocket connection status in database
-                self.db.update_listener_websocket_status(agent_id, connected=False)
+                success, previous_websocket_connected = self.db.update_listener_websocket_status(agent_id, connected=False)
 
                 logger.info(f"Agent WebSocket disconnected: {agent_id} (sid: {sid})")
 
-                # Get agent to determine current status
-                agent = self.db.get_agent(agent_id)
-                if agent:
-                    # Broadcast websocket disconnect (keep current status, just update websocket flag)
-                    self.broadcast_agent_status(
-                        agent_id, 'listener',
-                        agent.get('status', 'offline'),
-                        websocket_connected=False
-                    )
+                # Only broadcast if WebSocket connection state changed
+                # This prevents spamming webhooks on disconnections
+                if success and previous_websocket_connected:
+                    # Get agent to determine current status
+                    agent = self.db.get_agent(agent_id)
+                    if agent:
+                        # Broadcast websocket disconnect (keep current status, just update websocket flag)
+                        self.broadcast_agent_status(
+                            agent_id, 'listener',
+                            agent.get('status', 'offline'),
+                            websocket_connected=False
+                        )
             else:
                 logger.warning(f"Agent WebSocket disconnected but no agent_id found for sid: {sid}")
 
@@ -5229,7 +5236,16 @@ radios:
             device_status = data.get('device_status')  # Optional device status
             if agent_id:
                 # Update heartbeat timestamp and device status
-                self.db.update_agent_heartbeat(agent_id, device_status)
+                success, previous_status = self.db.update_agent_heartbeat(agent_id, device_status)
+
+                # Only broadcast agent status if it changed (e.g., offline -> online)
+                # This prevents spamming webhooks on every heartbeat
+                if success and previous_status != 'online':
+                    agent = self.db.get_agent(agent_id)
+                    if agent:
+                        agent_type = agent['agent_type']
+                        self.broadcast_agent_status(agent_id, agent_type, 'online',
+                                                   last_heartbeat=datetime.now(timezone.utc).isoformat())
 
                 # Confirm heartbeat
                 emit('heartbeat_ack', {

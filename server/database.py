@@ -2396,7 +2396,7 @@ class Database:
                 return True
             return False
 
-    def update_listener_websocket_status(self, agent_id: str, connected: bool) -> bool:
+    def update_listener_websocket_status(self, agent_id: str, connected: bool) -> tuple[bool, bool]:
         """Update WebSocket connection status for a listener agent.
 
         Args:
@@ -2404,10 +2404,17 @@ class Database:
             connected: True if connected, False if disconnected
 
         Returns:
-            True if successful, False otherwise
+            tuple: (success: bool, previous_websocket_connected: bool)
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get previous WebSocket connection status
+            cursor.execute('SELECT websocket_connected FROM agents WHERE agent_id = ? AND agent_type = ?',
+                          (agent_id, 'listener'))
+            row = cursor.fetchone()
+            previous_websocket_connected = bool(row['websocket_connected']) if row else False
+
             timestamp = datetime.now(timezone.utc).isoformat() if connected else None
             cursor.execute('''
                 UPDATE agents
@@ -2417,7 +2424,7 @@ class Database:
                 WHERE agent_id = ? AND agent_type = 'listener'
             ''', (1 if connected else 0, timestamp, agent_id))
             conn.commit()
-            return cursor.rowcount > 0
+            return (cursor.rowcount > 0, previous_websocket_connected)
 
     def cleanup_stale_agents(self, timeout_seconds: int = 90) -> list[str]:
         """Mark agents as offline if they haven't sent heartbeat within timeout.
