@@ -37,7 +37,7 @@ class TestPermissionConstants:
     def test_permission_definitions_structure(self):
         """Test that PERMISSION_DEFINITIONS has correct structure."""
         assert isinstance(PERMISSION_DEFINITIONS, list)
-        assert len(PERMISSION_DEFINITIONS) == 2
+        assert len(PERMISSION_DEFINITIONS) == 3
 
         # Check each permission has required fields
         for perm in PERMISSION_DEFINITIONS:
@@ -60,6 +60,7 @@ class TestPermissionConstants:
         # Verify expected permissions are present
         assert 'create_users' in VALID_PERMISSIONS
         assert 'create_provisioning_key' in VALID_PERMISSIONS
+        assert 'manage_webhooks' in VALID_PERMISSIONS
 
     def test_permission_metadata_completeness(self):
         """Test that all permissions have meaningful descriptions and categories."""
