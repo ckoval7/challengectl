@@ -16,7 +16,173 @@ import gc  # For explicit USB handle cleanup after osmosdr enumeration
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable
 
+try:
+    import pyudev
+    PYUDEV_AVAILABLE = True
+except ImportError:
+    PYUDEV_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+# Known SDR vendor IDs (for USB device filtering)
+SDR_VENDOR_IDS = {
+    '1d50',  # Great Scott Gadgets (HackRF, AirSpy)
+    '2cf0',  # Nuand (BladeRF)
+    '0bda',  # Realtek (RTL-SDR dongles)
+    '2500',  # Ettus Research (USRP B-series)
+    '3923',  # Ettus Research (USRP X-series)
+    '16c0',  # Van Ooijen Technische Informatica (FUNcube Dongle)
+}
+
+# USB device classes to block (non-SDR devices)
+BLOCKED_USB_CLASSES = {
+    '01',  # Audio
+    '03',  # HID (keyboards, mice)
+    '05',  # Physical
+    '06',  # Image
+    '07',  # Printer
+    '08',  # Mass Storage
+    '09',  # Hub
+    '0a',  # CDC-Data
+    '0b',  # Smart Card
+    '0d',  # Content Security
+    '0e',  # Video
+}
+
+
+class USBEventMonitor:
+    """Monitors USB events and triggers device probing on SDR device changes.
+
+    Uses Linux udev to detect USB device add/remove events and filters
+    out non-SDR devices (HID, storage, etc.) to avoid unnecessary probing.
+    """
+
+    def __init__(self, probe_callback: Callable, debounce_interval: float = 1.0):
+        """Initialize USB event monitor.
+
+        Args:
+            probe_callback: Function to call when SDR device change detected
+            debounce_interval: Minimum seconds between probe triggers (default: 1.0)
+        """
+        if not PYUDEV_AVAILABLE:
+            raise ImportError("pyudev is not available - USB event monitoring requires pyudev")
+
+        self.probe_callback = probe_callback
+        self.debounce_interval = debounce_interval
+        self.last_probe_time = 0
+        self.debounce_lock = threading.Lock()
+
+        # Initialize pyudev
+        self.context = pyudev.Context()
+        self.monitor = pyudev.Monitor.from_netlink(self.context)
+        self.monitor.filter_by(subsystem='usb')
+
+        # Observer will call _on_usb_event in a separate thread
+        self.observer = pyudev.MonitorObserver(self.monitor, self._on_usb_event)
+
+        logger.info("USB event monitor initialized (debounce: %.1fs)", debounce_interval)
+
+    def start(self):
+        """Start monitoring USB events."""
+        self.observer.start()
+        logger.info("USB event monitoring started")
+
+    def stop(self):
+        """Stop monitoring USB events."""
+        self.observer.stop()
+        logger.info("USB event monitoring stopped")
+
+    def _on_usb_event(self, device):
+        """Handle USB device add/remove events.
+
+        Args:
+            device: pyudev.Device object
+        """
+        try:
+            action = device.action
+
+            # Only care about add/remove events
+            if action not in ('add', 'remove'):
+                return
+
+            # Filter out non-SDR devices
+            if not self._is_sdr_device(device):
+                return
+
+            # Get device info for logging
+            vendor_id = device.get('ID_VENDOR_ID', 'unknown')
+            product_id = device.get('ID_MODEL_ID', 'unknown')
+            serial = device.get('ID_SERIAL_SHORT', '')
+
+            logger.info(f"USB {action} event: vendor={vendor_id} product={product_id} serial={serial}")
+
+            # Trigger probe with debouncing
+            self._trigger_probe_debounced()
+
+        except Exception as e:
+            logger.error(f"Error handling USB event: {e}", exc_info=True)
+
+    def _is_sdr_device(self, device) -> bool:
+        """Check if USB device is likely an SDR device.
+
+        Args:
+            device: pyudev.Device object
+
+        Returns:
+            True if device should trigger probe, False otherwise
+        """
+        # Check vendor ID against known SDR vendors
+        vendor_id = device.get('ID_VENDOR_ID', '').lower()
+        if vendor_id in SDR_VENDOR_IDS:
+            logger.debug(f"USB device matched SDR vendor ID: {vendor_id}")
+            return True
+
+        # Check device class - block known non-SDR classes
+        device_class = device.get('ID_USB_CLASS_FROM_DATABASE', '').lower()
+        interfaces = device.get('ID_USB_INTERFACES', '').lower()
+
+        # Extract class codes from interfaces string (format: ":ffffff00:020200:")
+        for interface in interfaces.split(':'):
+            if len(interface) >= 2:
+                class_code = interface[:2]
+                if class_code in BLOCKED_USB_CLASSES:
+                    logger.debug(f"USB device blocked by class code: {class_code}")
+                    return False
+
+        # Check if it's a vendor-specific device (class 0xFF) or communication device (class 0x02)
+        # Many SDRs use vendor-specific class
+        if interfaces:
+            for interface in interfaces.split(':'):
+                if len(interface) >= 2:
+                    class_code = interface[:2]
+                    if class_code in ('ff', '02'):  # Vendor-specific or Communications
+                        logger.debug(f"USB device allowed by class code: {class_code}")
+                        return True
+
+        # If we can't determine, be conservative and allow it
+        # (Better to have a false positive than miss an SDR)
+        logger.debug(f"USB device allowed by default (vendor={vendor_id})")
+        return True
+
+    def _trigger_probe_debounced(self):
+        """Trigger probe callback with debouncing to prevent rapid successive probes."""
+        with self.debounce_lock:
+            now = time.time()
+            time_since_last = now - self.last_probe_time
+
+            if time_since_last < self.debounce_interval:
+                logger.debug(f"Probe debounced (last probe {time_since_last:.1f}s ago)")
+                return
+
+            self.last_probe_time = now
+
+        # Call probe callback
+        try:
+            logger.debug("Triggering immediate device probe from USB event")
+            self.probe_callback()
+        except Exception as e:
+            logger.error(f"Error in probe callback: {e}", exc_info=True)
 
 
 class DeviceManager:
@@ -65,9 +231,25 @@ class DeviceManager:
         self.device_failure_counts = {}  # Map of device_id -> consecutive failure count
         self.device_lock = threading.Lock()
 
-        # Probe thread
+        # Event-driven probing
+        self.probe_event = threading.Event()  # Event for triggering immediate probe
         self.probe_thread = None
         self.running = False
+
+        # USB event monitoring
+        self.usb_monitor = None
+        if PYUDEV_AVAILABLE:
+            try:
+                self.usb_monitor = USBEventMonitor(
+                    probe_callback=self._trigger_immediate_probe,
+                    debounce_interval=1.0
+                )
+                logger.info("USB event monitoring initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize USB event monitoring: {e}")
+                self.usb_monitor = None
+        else:
+            logger.warning("pyudev not available - USB event monitoring disabled")
 
     def _enrich_configured_devices(self, configured_devices: List[Dict]) -> List[Dict]:
         """Enrich configured devices with resolved serial numbers.
@@ -818,79 +1000,116 @@ class DeviceManager:
         # Default: assume available (subclass should override)
         return True
 
+    def _trigger_immediate_probe(self):
+        """Trigger immediate device probe (called by USB event monitor)."""
+        logger.debug("Immediate probe triggered by USB event")
+        self.probe_event.set()
+
     def device_probe_loop(self):
-        """Background thread for periodic device probing and auto-detection."""
-        logger.info("Device probe loop started")
+        """Background thread for event-driven device probing and auto-detection.
+
+        Waits for USB events and triggers immediate probing when SDR devices change.
+        No time-based polling - purely event-driven.
+        """
+        logger.info("Device probe loop started (event-driven, no polling)")
+
+        # Perform initial probe at startup
+        self._perform_probe_cycle()
 
         while self.running:
             try:
-                # Auto-detect new devices (if enabled)
-                if self.enable_auto_detection:
-                    now = time.time()
-                    if now - self.last_auto_detection >= self.device_probe_interval:
-                        newly_detected = self.auto_detect_devices()
+                # Wait for USB event (blocks until event is set)
+                # This is event-driven - no polling!
+                self.probe_event.wait()
 
-                        if newly_detected:
-                            with self.auto_detected_lock:
-                                self.auto_detected_devices.extend(newly_detected)
+                # Clear the event flag
+                self.probe_event.clear()
 
-                            for dev in newly_detected:
-                                logger.info(f"New device detected: {dev['model']} {dev.get('name', 'unknown')} "
-                                          f"(device_id={dev['device_id']}, enabled={dev['enabled']})")
-
-                        self.last_auto_detection = now
-
-                # Probe all known devices
-                all_devices = self.get_all_devices()
-                for device in all_devices:
-                    device_id = device.get('device_id')
-
-                    # Skip disabled devices (don't waste time probing)
-                    if not device.get('enabled', True):
-                        continue
-
-                    # Probe device
-                    is_available = self.probe_device(device)
-
-                    with self.device_lock:
-                        currently_offline = device_id in self.offline_devices
-
-                    # Update offline status based on probe result
-                    if is_available and currently_offline:
-                        # Device probe passed but was offline
-                        # Keep offline until successful operation (trust verification)
-                        logger.info(f"Device {device_id} probe successful, but keeping offline "
-                                  f"until successful operation")
-                    elif not is_available and not currently_offline:
-                        # Device probe failed and was online
-                        failure_count = self.record_device_failure(device_id)
-                        logger.warning(f"Device {device_id} probe failed (failure {failure_count}/3)")
-
-                        if failure_count >= 3:
-                            logger.error(f"Device {device_id} marked OFFLINE after 3 consecutive probe failures")
-
-                # Wait before next probe cycle
-                time.sleep(self.device_probe_interval)
+                # Perform probe cycle
+                self._perform_probe_cycle()
 
             except Exception as e:
                 logger.error(f"Error in device probe loop: {e}", exc_info=True)
-                time.sleep(self.device_probe_interval)
+                # Brief sleep to avoid tight loop on repeated errors
+                time.sleep(1)
+
+    def _perform_probe_cycle(self):
+        """Perform a single probe cycle (auto-detect + probe all devices)."""
+        # Auto-detect new devices (if enabled)
+        if self.enable_auto_detection:
+            newly_detected = self.auto_detect_devices()
+
+            if newly_detected:
+                with self.auto_detected_lock:
+                    self.auto_detected_devices.extend(newly_detected)
+
+                for dev in newly_detected:
+                    logger.info(f"New device detected: {dev['model']} {dev.get('name', 'unknown')} "
+                              f"(device_id={dev['device_id']}, enabled={dev['enabled']})")
+
+        # Probe all known devices
+        all_devices = self.get_all_devices()
+        for device in all_devices:
+            device_id = device.get('device_id')
+
+            # Skip disabled devices (don't waste time probing)
+            if not device.get('enabled', True):
+                continue
+
+            # Probe device
+            is_available = self.probe_device(device)
+
+            with self.device_lock:
+                currently_offline = device_id in self.offline_devices
+
+            # Update offline status based on probe result
+            if is_available and currently_offline:
+                # Device probe passed but was offline
+                # Keep offline until successful operation (trust verification)
+                logger.info(f"Device {device_id} probe successful, but keeping offline "
+                          f"until successful operation")
+            elif not is_available and not currently_offline:
+                # Device probe failed and was online
+                failure_count = self.record_device_failure(device_id)
+                logger.warning(f"Device {device_id} probe failed (failure {failure_count}/3)")
+
+                if failure_count >= 3:
+                    logger.error(f"Device {device_id} marked OFFLINE after 3 consecutive probe failures")
 
     def start_probe_loop(self):
-        """Start the device probe loop in a background thread."""
-        if self.device_probe_interval <= 0:
-            logger.info("Device probing disabled (interval = 0)")
-            return
-
+        """Start the device probe loop and USB event monitoring."""
         self.running = True
+
+        # Start probe thread
         self.probe_thread = threading.Thread(target=self.device_probe_loop, daemon=True)
         self.probe_thread.start()
-        logger.info(f"Device probe loop started (interval: {self.device_probe_interval}s, "
-                   f"auto-detect: {self.enable_auto_detection})")
+
+        # Start USB event monitoring
+        if self.usb_monitor:
+            try:
+                self.usb_monitor.start()
+                logger.info("Device probe loop and USB event monitoring started "
+                           f"(auto-detect: {self.enable_auto_detection})")
+            except Exception as e:
+                logger.error(f"Failed to start USB event monitoring: {e}")
+        else:
+            logger.warning("USB event monitoring not available - device changes won't be detected automatically")
 
     def stop_probe_loop(self):
-        """Stop the device probe loop."""
+        """Stop the device probe loop and USB event monitoring."""
         self.running = False
+
+        # Stop USB event monitoring
+        if self.usb_monitor:
+            try:
+                self.usb_monitor.stop()
+            except Exception as e:
+                logger.error(f"Error stopping USB event monitor: {e}")
+
+        # Signal the probe thread to wake up and exit
+        self.probe_event.set()
+
+        # Wait for probe thread to finish
         if self.probe_thread:
             self.probe_thread.join(timeout=2)
 

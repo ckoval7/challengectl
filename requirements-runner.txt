@@ -7,5 +7,9 @@ python-socketio>=5.10.0
 
 # Configuration
 PyYAML>=6.0
+
+# USB device monitoring (Linux only)
+pyudev>=0.24.0
+
 # All existing challengectl dependencies for SDR operations
 # (Assumes GNU Radio and gr-osmosdr already installed)

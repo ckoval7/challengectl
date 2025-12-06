@@ -335,5 +335,208 @@ class TestUSBHandleCleanup:
                     mock_gc.assert_called()
 
 
+class TestUSBEventMonitoring:
+    """Test USB event monitoring and device filtering."""
+
+    def test_usb_monitor_filters_hid_devices(self):
+        """Test that HID devices are filtered out."""
+        from device_manager import USBEventMonitor, PYUDEV_AVAILABLE
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        probe_called = []
+
+        def mock_probe():
+            probe_called.append(True)
+
+        monitor = USBEventMonitor(probe_callback=mock_probe)
+
+        # Mock HID device (keyboard)
+        mock_device = Mock()
+        mock_device.action = 'add'
+        mock_device.get = Mock(side_effect=lambda key, default='': {
+            'ID_VENDOR_ID': '046d',  # Logitech
+            'ID_MODEL_ID': 'c52b',
+            'ID_USB_INTERFACES': ':030101:',  # HID class (03)
+            'ID_SERIAL_SHORT': ''
+        }.get(key, default))
+
+        # Should not trigger probe (HID device blocked)
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 0
+
+    def test_usb_monitor_allows_sdr_vendor_ids(self):
+        """Test that known SDR vendor IDs trigger probes."""
+        from device_manager import USBEventMonitor, PYUDEV_AVAILABLE
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        probe_called = []
+
+        def mock_probe():
+            probe_called.append(True)
+
+        monitor = USBEventMonitor(probe_callback=mock_probe)
+
+        # Mock HackRF device (vendor ID 1d50)
+        mock_device = Mock()
+        mock_device.action = 'add'
+        mock_device.get = Mock(side_effect=lambda key, default='': {
+            'ID_VENDOR_ID': '1d50',  # Great Scott Gadgets (HackRF)
+            'ID_MODEL_ID': '6089',
+            'ID_USB_INTERFACES': ':ff0001:',  # Vendor-specific class
+            'ID_SERIAL_SHORT': 'a06063dc2f5b3f5f'
+        }.get(key, default))
+
+        # Should trigger probe (known SDR vendor)
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 1
+
+    def test_usb_monitor_allows_vendor_specific_class(self):
+        """Test that vendor-specific USB class (0xFF) devices are allowed."""
+        from device_manager import USBEventMonitor, PYUDEV_AVAILABLE
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        probe_called = []
+
+        def mock_probe():
+            probe_called.append(True)
+
+        monitor = USBEventMonitor(probe_callback=mock_probe)
+
+        # Mock device with vendor-specific class (unknown vendor ID)
+        mock_device = Mock()
+        mock_device.action = 'add'
+        mock_device.get = Mock(side_effect=lambda key, default='': {
+            'ID_VENDOR_ID': '9999',  # Unknown vendor
+            'ID_MODEL_ID': '0001',
+            'ID_USB_INTERFACES': ':ff0000:',  # Vendor-specific class (ff)
+            'ID_SERIAL_SHORT': 'test123'
+        }.get(key, default))
+
+        # Should trigger probe (vendor-specific class allowed)
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 1
+
+    def test_usb_monitor_debouncing(self):
+        """Test that rapid successive events are debounced."""
+        from device_manager import USBEventMonitor, PYUDEV_AVAILABLE
+        import time
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        probe_called = []
+
+        def mock_probe():
+            probe_called.append(True)
+
+        monitor = USBEventMonitor(probe_callback=mock_probe, debounce_interval=0.5)
+
+        # Mock SDR device
+        mock_device = Mock()
+        mock_device.action = 'add'
+        mock_device.get = Mock(side_effect=lambda key, default='': {
+            'ID_VENDOR_ID': '1d50',
+            'ID_MODEL_ID': '6089',
+            'ID_USB_INTERFACES': ':ff0001:',
+            'ID_SERIAL_SHORT': 'test'
+        }.get(key, default))
+
+        # First event should trigger probe
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 1
+
+        # Immediate second event should be debounced
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 1  # Still only 1
+
+        # Wait for debounce interval to expire
+        time.sleep(0.6)
+
+        # Third event should trigger probe
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 2
+
+    def test_usb_monitor_ignores_non_add_remove_events(self):
+        """Test that non-add/remove events are ignored."""
+        from device_manager import USBEventMonitor, PYUDEV_AVAILABLE
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        probe_called = []
+
+        def mock_probe():
+            probe_called.append(True)
+
+        monitor = USBEventMonitor(probe_callback=mock_probe)
+
+        # Mock device with 'change' action
+        mock_device = Mock()
+        mock_device.action = 'change'
+        mock_device.get = Mock(side_effect=lambda key, default='': {
+            'ID_VENDOR_ID': '1d50',
+            'ID_MODEL_ID': '6089',
+            'ID_USB_INTERFACES': ':ff0001:',
+            'ID_SERIAL_SHORT': 'test'
+        }.get(key, default))
+
+        # Should not trigger probe (not add/remove)
+        monitor._on_usb_event(mock_device)
+        assert len(probe_called) == 0
+
+    def test_device_manager_integrates_usb_monitor(self):
+        """Test that DeviceManager integrates USB event monitoring."""
+        from device_manager import PYUDEV_AVAILABLE
+
+        if not PYUDEV_AVAILABLE:
+            pytest.skip("pyudev not available")
+
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Should have usb_monitor initialized
+        assert dm.usb_monitor is not None
+
+        # Should have probe_event for event-driven probing
+        assert dm.probe_event is not None
+
+    def test_trigger_immediate_probe(self):
+        """Test that _trigger_immediate_probe sets the probe event."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=False)
+
+        # Event should not be set initially
+        assert not dm.probe_event.is_set()
+
+        # Trigger immediate probe
+        dm._trigger_immediate_probe()
+
+        # Event should now be set
+        assert dm.probe_event.is_set()
+
+        # Clear for next test
+        dm.probe_event.clear()
+
+    def test_usb_handle_cleanup_in_event_driven_mode(self):
+        """Test that USB handle cleanup happens in event-driven probe cycle."""
+        dm = DeviceManager([], device_probe_interval=0, enable_auto_detection=True)
+
+        # Mock osmosdr device
+        mock_device = Mock()
+        mock_device.to_string.return_value = "driver=rtlsdr,serial=00000001"
+
+        with patch('gc.collect') as mock_gc:
+            with patch('osmosdr.device.find', return_value=[mock_device]):
+                # Perform probe cycle
+                dm._perform_probe_cycle()
+
+                # Cleanup should be called
+                mock_gc.assert_called()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

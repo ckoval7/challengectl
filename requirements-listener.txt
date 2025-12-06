@@ -9,6 +9,9 @@ python-socketio>=5.10.0
 # Configuration
 PyYAML>=6.0
 
+# USB device monitoring (Linux only)
+pyudev>=0.24.0
+
 # Image generation and processing
 matplotlib>=3.7.0
 pillow>=12.0.0

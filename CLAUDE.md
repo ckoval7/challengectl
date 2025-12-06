@@ -171,6 +171,30 @@ Content-addressed storage using SHA-256:
 - Session cookies (24-hour expiry)
 - CSRF protection on state-changing operations
 
+### USB Event-Driven Device Monitoring (Linux)
+
+**Event-driven device detection** using Linux udev (no polling):
+- **USB event monitoring**: pyudev monitors USB add/remove events via udev netlink socket
+- **Smart filtering**: Automatically filters out non-SDR devices (HID, storage, etc.)
+- **Immediate detection**: Device plug/unplug detected in <2 seconds (vs legacy 30s polling)
+- **Zero CPU overhead**: No periodic polling - events trigger probing only when needed
+- **Debouncing**: Rapid successive USB events coalesced into single probe (1s debounce interval)
+
+**Device filtering rules:**
+- **Allowed**: Known SDR vendor IDs (HackRF, BladeRF, RTL-SDR, USRP, AirSpy, FUNcube)
+- **Allowed**: Vendor-specific USB class (0xFF) and Communications class (0x02)
+- **Blocked**: HID (0x03), Mass Storage (0x08), Audio (0x01), Hub (0x09), etc.
+
+**Implementation:**
+- `USBEventMonitor` class in `device_manager.py` wraps pyudev
+- `DeviceManager` probe loop waits on `threading.Event` (no time-based sleep)
+- Initial probe at startup, then event-driven only
+- USB handle cleanup (gc.collect()) preserved after each probe cycle
+
+**Requirements:**
+- Linux only (uses udev)
+- pyudev>=0.24.0 (in requirements-runner.txt, requirements-listener.txt)
+
 ### Real-Time Updates
 
 WebSocket events broadcast to all connected clients:
