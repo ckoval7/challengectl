@@ -1851,6 +1851,10 @@ class ChallengeCtlAPI:
             if not user:
                 return jsonify({'error': 'User not found'}), 404
 
+            # Don't allow granting permissions to yourself (prevents privilege escalation)
+            if username == request.admin_username:
+                return jsonify({'error': 'Cannot grant permissions to yourself'}), 400
+
             # Grant permission
             if not self.db.grant_permission(username, permission_name, request.admin_username):
                 return jsonify({'error': 'Failed to grant permission'}), 500
