@@ -143,6 +143,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
+import { validateSession } from '../auth'
 
 export default {
   name: 'UserSetup',
@@ -231,6 +232,9 @@ export default {
         await api.post('/auth/verify-setup', {
           totp_code: totpVerifyCode.value
         })
+
+        // Update auth state (clears setup_required flag)
+        await validateSession()
 
         ElMessage.success('Account setup complete! You can now access the system.')
         router.push('/admin')

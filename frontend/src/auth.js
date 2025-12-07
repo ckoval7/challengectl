@@ -28,11 +28,15 @@ const userPermissions = ref([])
  * Note: Actual session token is in httpOnly cookie, not localStorage
  * @param {boolean} initialSetup - Whether initial setup is required
  * @param {boolean} userSetup - Whether user setup is required (temporary users)
+ * @param {string} username - Username (optional)
  */
-export function login(initialSetup = false, userSetup = false) {
+export function login(initialSetup = false, userSetup = false, username = '') {
   isAuthenticatedFlag.value = true
   initialSetupRequired.value = initialSetup
   setupRequired.value = userSetup
+  if (username) {
+    currentUsername.value = username
+  }
 }
 
 /**

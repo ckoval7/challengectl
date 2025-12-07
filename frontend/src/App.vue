@@ -207,7 +207,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { House, Monitor, Connection, Notebook, User, Moon, Sunny, Flag, UserFilled, ArrowDown, EditPen, SwitchButton, Menu as MenuIcon, ChatLineSquare } from '@element-plus/icons-vue'
 import { api } from './api'
-import { logout, checkAuth, currentUsername, userPermissions, isAuthenticated } from './auth'
+import { logout, checkAuth, currentUsername, userPermissions, isAuthenticated, isSetupRequired, isInitialSetupRequired } from './auth'
 import { ElMessage } from 'element-plus'
 import { websocket } from './websocket'
 import ConferenceCountdown from './components/ConferenceCountdown.vue'
@@ -297,6 +297,13 @@ export default {
       if (webSocketSetupDone) {
         return
       }
+
+      // Skip WebSocket setup for users who need to complete initial setup or account setup
+      // These users don't have full access to admin API endpoints yet
+      if (isSetupRequired() || isInitialSetupRequired()) {
+        return
+      }
+
       loadPauseState()
       websocket.connect()
       websocket.on('system_control', handleSystemControl)

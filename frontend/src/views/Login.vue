@@ -172,9 +172,7 @@ export default {
         if (response.data.setup_required) {
           // Temporary user needs to complete setup
           // Session token is in httpOnly cookie
-          login(false, true)  // Pass setup_required flag
-          // Validate session to populate username and permissions
-          await validateSession()
+          login(false, true, response.data.username)  // Pass all flags and username
           ElMessage.info('Account setup required. Please change your password and set up 2FA.')
           router.push('/user-setup')
         }
