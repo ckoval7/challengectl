@@ -224,13 +224,12 @@ class ChallengeCtlRunner(AgentBase):
         logger.debug(f"No antenna on device {device.get('name')} supports frequency {frequency} Hz")
         return None
 
-    def enroll(self) -> bool:
-        """Enroll this runner with the server using an enrollment token.
+    def _prepare_devices_info(self) -> list:
+        """Prepare device information for server registration/enrollment.
 
-        This is used for initial enrollment with database-stored API keys.
-        After enrollment, the runner should be restarted without the enrollment_token in config.
+        Returns:
+            List of device info dictionaries with device_id, model, name, and antennas_config
         """
-        # Prepare device info for server
         devices_info = []
         for dev in self.devices:
             devices_info.append({
@@ -239,31 +238,18 @@ class ChallengeCtlRunner(AgentBase):
                 'name': dev['name'],
                 'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
             })
-
-        # Call parent class enroll method
-        return super().enroll(devices_info)
+        return devices_info
 
     def register(self) -> bool:
         """Register this runner with the server.
 
-        Note: This is now primarily for backwards compatibility.
-        New runners should use the enrollment process instead.
+        Gets device status and calls parent register method.
         """
-        # Prepare device info for server
-        devices_info = []
-        for dev in self.devices:
-            devices_info.append({
-                'device_id': dev['device_id'],
-                'model': dev['model'],
-                'name': dev['name'],
-                'antennas_config': dev['antennas_config']  # Send antenna configurations with frequency limits
-            })
-
         # Get device status from device manager (already probed during startup)
         device_status = self.device_manager.get_device_status_dict()
 
-        # Call parent class register method
-        return super().register(devices_info, device_status)
+        # Call parent class register method with device status
+        return super().register(device_status)
 
     def send_heartbeat(self):
         """Send periodic heartbeat to server with device status and auto-detected devices."""

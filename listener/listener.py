@@ -672,46 +672,33 @@ class ListenerAgent(AgentBase):
             logger.error(traceback.format_exc())
             return False
 
-    def enroll(self) -> bool:
-        """Enroll this listener with the server using enrollment token.
+    def _prepare_devices_info(self) -> list:
+        """Prepare device information for server registration/enrollment.
 
-        Uses the enrollment token from config to register with the server.
-        After enrollment, the listener should be restarted without the enrollment_token in config.
+        Returns:
+            List of device info dictionaries with device_id, name, model, gain, and frequency_limits
         """
-        # Prepare device info for server
         devices_info = []
         for dev in self.devices:
             devices_info.append({
+                'device_id': dev.get('device_id'),
                 'name': dev.get('name'),
                 'model': dev.get('model'),
                 'gain': dev.get('gain'),
                 'frequency_limits': dev.get('frequency_limits', [])
             })
+        return devices_info
 
-        # Call parent class enroll method
-        return super().enroll(devices_info)
+    def register(self) -> bool:
+        """Register this listener agent with the server.
 
-    def register_with_server(self) -> bool:
-        """Register this listener agent with the server via HTTP.
-
-        Note: This is now primarily for backwards compatibility.
-        New listeners should use the enrollment process instead.
+        Gets device status and calls parent register method.
         """
-        # Prepare device info for server
-        devices_info = []
-        for dev in self.devices:
-            devices_info.append({
-                'name': dev.get('name'),
-                'model': dev.get('model'),
-                'gain': dev.get('gain'),
-                'frequency_limits': dev.get('frequency_limits', [])
-            })
-
         # Get device status from device manager (already probed during startup)
         device_status = self.device_manager.get_device_status_dict()
 
-        # Call parent class register method (which adds agent_type for listeners)
-        return super().register(devices_info, device_status)
+        # Call parent class register method with device status
+        return super().register(device_status)
 
     def connect_websocket(self) -> bool:
         """Connect to server WebSocket for real-time assignments."""
@@ -847,7 +834,7 @@ class ListenerAgent(AgentBase):
 
         # Try to register first (works if already enrolled with valid API key)
         print("Registering with server...")
-        registered = self.register_with_server()
+        registered = self.register()
 
         if not registered:
             # Registration failed - check if we have an enrollment token to try

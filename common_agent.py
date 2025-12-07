@@ -14,6 +14,7 @@ import platform
 import requests
 import urllib3
 import yaml
+from abc import ABC, abstractmethod
 from typing import Optional, Dict
 from datetime import datetime
 
@@ -108,7 +109,7 @@ class ServerLogHandler(logging.Handler):
             pass
 
 
-class AgentBase:
+class AgentBase(ABC):
     """Base class for ChallengeCtl agents (runner and listener).
 
     Provides common functionality for:
@@ -117,6 +118,9 @@ class AgentBase:
     - TLS/SSL configuration
     - Server communication (enrollment, registration, heartbeat, signout, logging)
     - Host identification
+
+    Subclasses must implement:
+    - _prepare_devices_info(): Format device information for server registration
     """
 
     def __init__(self, config_path: str, agent_type: str):
@@ -204,7 +208,46 @@ class AgentBase:
 
         return session
 
-    def enroll(self, devices_info: list) -> bool:
+    @abstractmethod
+    def _prepare_devices_info(self) -> list:
+        """Prepare device information for server registration/enrollment.
+
+        This method must be implemented by subclasses to format device
+        information according to their specific requirements.
+
+        Returns:
+            List of device info dictionaries
+        """
+        pass
+
+    def enroll(self) -> bool:
+        """Enroll this agent with the server using enrollment token.
+
+        Calls _prepare_devices_info() to get device information, then
+        performs enrollment with the server.
+
+        Returns:
+            True if enrollment successful, False otherwise
+        """
+        devices_info = self._prepare_devices_info()
+        return self._enroll_impl(devices_info)
+
+    def register(self, device_status: Optional[Dict] = None) -> bool:
+        """Register this agent with the server.
+
+        Calls _prepare_devices_info() to get device information, then
+        performs registration with the server.
+
+        Args:
+            device_status: Optional device status dictionary
+
+        Returns:
+            True if registration successful, False otherwise
+        """
+        devices_info = self._prepare_devices_info()
+        return self._register_impl(devices_info, device_status)
+
+    def _enroll_impl(self, devices_info: list) -> bool:
         """Enroll this agent with the server using an enrollment token.
 
         Args:
@@ -286,8 +329,8 @@ class AgentBase:
             logger.error(f"Error during enrollment: {e}")
             return False
 
-    def register(self, devices_info: list, device_status: Optional[Dict] = None) -> bool:
-        """Register this agent with the server.
+    def _register_impl(self, devices_info: list, device_status: Optional[Dict] = None) -> bool:
+        """Register this agent with the server (implementation).
 
         Args:
             devices_info: List of device dictionaries to send to server
