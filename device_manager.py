@@ -105,8 +105,9 @@ class USBEventMonitor:
             if action not in ('add', 'remove'):
                 return
 
-            # Filter out non-SDR devices
-            if not self._is_sdr_device(device):
+            # For remove events, always trigger probe (device attributes may be incomplete during removal)
+            # For add events, filter out non-SDR devices to avoid unnecessary probing
+            if action == 'add' and not self._is_sdr_device(device):
                 return
 
             # Get device info for logging
@@ -171,14 +172,14 @@ class USBEventMonitor:
             time_since_last = now - self.last_probe_time
 
             if time_since_last < self.debounce_interval:
-                logger.debug(f"Probe debounced (last probe {time_since_last:.1f}s ago)")
+                logger.info(f"Probe debounced (last probe {time_since_last:.1f}s ago)")
                 return
 
             self.last_probe_time = now
 
         # Call probe callback
         try:
-            logger.debug("Triggering immediate device probe from USB event")
+            logger.info("Triggering immediate device probe from USB event")
             self.probe_callback()
         except Exception as e:
             logger.error(f"Error in probe callback: {e}", exc_info=True)
@@ -998,8 +999,9 @@ class DeviceManager:
 
     def _trigger_immediate_probe(self):
         """Trigger immediate device probe (called by USB event monitor)."""
-        logger.debug("Immediate probe triggered by USB event")
+        logger.info("Immediate probe triggered by USB event - setting probe_event")
         self.probe_event.set()
+        logger.info(f"probe_event is now set: {self.probe_event.is_set()}")
 
     def device_probe_loop(self):
         """Background thread for purely event-driven device probing.
@@ -1015,12 +1017,13 @@ class DeviceManager:
         while self.running:
             try:
                 # Wait for USB event (blocks until event is set)
+                logger.debug("Waiting for USB event...")
                 self.probe_event.wait()
 
                 # Clear the event flag
                 self.probe_event.clear()
 
-                logger.debug("Probe triggered by USB event")
+                logger.info("Probe triggered by USB event - starting probe cycle")
                 self._perform_probe_cycle()
 
             except Exception as e:

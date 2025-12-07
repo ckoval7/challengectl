@@ -263,12 +263,12 @@ export default {
             totp_code: totpVerifyCode.value
           })
 
-          login(false) // Initial setup is complete
+          login(false, false) // Initial setup is complete
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         } else {
           // Shouldn't happen, but handle it
-          login(false) // Initial setup is complete
+          login(false, false) // Initial setup is complete
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         }

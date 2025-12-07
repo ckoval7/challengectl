@@ -172,9 +172,8 @@ export default {
         if (response.data.setup_required) {
           // Temporary user needs to complete setup
           // Session token is in httpOnly cookie
-          login(false)
-          // Validate session to populate setup_required flag and username
-          // (Backend now allows temporary users to authenticate with setup_required: true)
+          login(false, true)  // Pass setup_required flag
+          // Validate session to populate username and permissions
           await validateSession()
           ElMessage.info('Account setup required. Please change your password and set up 2FA.')
           router.push('/user-setup')
@@ -187,7 +186,7 @@ export default {
         } else {
           // No TOTP required - user logged in directly
           // Session token is in httpOnly cookie (managed by browser)
-          login(response.data.initial_setup_required)
+          login(response.data.initial_setup_required, false)
           // Validate session to populate username and permissions
           await validateSession()
 
@@ -231,7 +230,7 @@ export default {
         })
 
         // Mark user as authenticated (session token in httpOnly cookie)
-        login()
+        login(false, false)
         // Validate session to populate username and permissions
         await validateSession()
 
