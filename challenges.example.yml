@@ -1,0 +1,108 @@
+# Challenge Configuration
+# Challenges are configured through the Web UI at /challenge-config
+# Navigate to "Configure Challenges" in the web interface to:
+#   - Create challenges with a guided form
+#   - Import challenges from YAML files with file uploads
+#   - Edit and delete existing challenges
+#
+# You can also configure challenges in this file if preferred.
+# See https://github.com/ckoval7/challengectl/wiki/Challenge-Management for details.
+#
+# Example challenge configuration:
+challenges:
+  # NBFM Example with specific frequency
+  - name: NBFM_FLAG_1
+    frequency: 146550000  # Hz (146.550 MHz)
+    modulation: nbfm
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    record_iq: true  # Enable IQ recording for signal analysis (optional, default: false)
+    enabled: true
+
+  # NBFM Example with named frequency range (random frequency selected from range)
+  - name: NBFM_FLAG_2
+    frequency_ranges:  # Use one or more named ranges
+      - ham_144
+      - ham_220
+    modulation: nbfm
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # CW (Morse Code) Example
+  - name: CW_MORSE_1
+    frequency: 146450000  # Hz (146.450 MHz)
+    modulation: cw
+    flag: 'CQ CQ CQ DE RFCTF K'
+    speed: 15  # WPM
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # SSB (Single Sideband) Example
+  - name: SSB_FLAG_1
+    frequency: 146600000  # Hz (146.600 MHz)
+    modulation: ssb
+    mode: usb  # or 'lsb'
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # ASK (Amplitude Shift Keying) Example
+  - name: ASK_FLAG_1
+    frequency: 146700000
+    modulation: ask
+    flag: 'flag{this_is_ask_data}'
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # POCSAG Pager Example
+  - name: POCSAG_FLAG_1
+    frequency: 146800000
+    modulation: pocsag
+    flag: 'POCSAG message with flag'
+    capcode: 123456
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # FHSS (Frequency Hopping) Example
+  - name: FHSS_FLAG_1
+    frequency: 146550000  # Base frequency
+    modulation: fhss
+    flag: challenges/examples/example_voice.wav
+    channel_spacing: 10000  # Hz
+    hop_rate: 10  # hops per second
+    hop_time: 60  # seconds
+    seed: RFHS
+    wav_samplerate: 48000
+    min_delay: 120
+    max_delay: 180
+    enabled: true
+
+  # LRS Pager Example
+  - name: LRS_FLAG_1
+    frequency: 146900000
+    modulation: lrs
+    flag: '-s 10 -p 976 -pf 1'  # -s=systemid(0-255), -p=pagerid(0-1023), -pf=function
+    min_delay: 60
+    max_delay: 90
+    enabled: true
+
+  # FreeDV Digital Voice Example
+  - name: FREEDV_FLAG_1
+    frequency: 147100000
+    modulation: freedv
+    mode: usb
+    flag: challenges/examples/example_voice.wav
+    wav_samplerate: 48000
+    min_delay: 60
+    max_delay: 90
+    enabled: true
