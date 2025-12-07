@@ -281,7 +281,7 @@ class WebhookDispatcher:
         ]
 
         return {
-            "title": f"{status_emoji} Agent {status.capitalize()}",
+            "title": f"{status_emoji} {agent_type.capitalize()} {agent_id} {status.capitalize()}",
             "description": f"{agent_type.capitalize()} {agent_id} is now {status}",
             "color": color,
             "fields": fields,
