@@ -35,11 +35,11 @@ If you've used the original standalone version of ChallengeCtl, you'll immediate
 
 ChallengeCtl includes fire functions and GNU Radio flowgraphs for a wide variety of RF challenge types:
 
-- **NBFM (Narrowband FM)**: Classic frequency modulation for audio flags
+- **NBFM (Narrowband FM)**: Frequency modulation for audio based flags
 - **SSB (Single Sideband)**: Upper and lower sideband audio transmission
 - **FreeDV**: Open-source digital voice mode for codec challenges
 - **POCSAG**: Paging protocol messages using gr-mixalot
-- **LRS**: Custom paging signal format
+- **LRS**: Restaurant Pagers
 - **CW (Morse Code)**: Classic radiotelegraphy at configurable speeds
 - **ASK (Amplitude Shift Keying)**: Simple on-off keying for binary data
 - **FHSS (Frequency Hopping)**: Challenges that hop between frequencies
