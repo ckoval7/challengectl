@@ -26,9 +26,11 @@ If you've used the original standalone version of ChallengeCtl, you'll immediate
 
 **Real-Time Web Dashboard with Live Updates**: The Vue.js web interface uses WebSocket connections to deliver instant updates across all connected browsers. Watch challenge assignments, transmission completions, and agent status changes happen in real-time without ever refreshing the page.
 
-**Intelligent Spectrum Recording**: Listener agents capture RF transmissions and generate waterfall images using priority-based scheduling. The system automatically decides which transmissions to record based on challenge priority, transmission history, and time elapsed since last capture, ensuring comprehensive coverage without wasting resources.
+**Intelligent Spectrum Recording**: Listener agents capture RF transmissions and generate waterfall images using priority-based scheduling. The system automatically decides which transmissions to record based on challenge priority, transmission history, and time elapsed since last capture, ensuring comprehensive coverage without wasting resources. Optionally capture raw IQ data for post-event signal analysis.
 
 **Content-Addressed File Synchronization**: All challenge files use SHA-256 hashing for identification and verification. Runners automatically download and cache files on demand, with hash verification ensuring integrity. Multiple challenges can reference the same file without duplication.
+
+**Discord Webhook Integration**: Configure Discord webhooks to receive real-time event notifications for system events, agent status changes, transmission failures, security events, and more. Category-based subscriptions allow fine-grained control over which events trigger notifications.
 
 
 ## Supported Modulations
@@ -66,7 +68,7 @@ ChallengeCtl consists of four main components that work together to deliver dist
 
 **Runner**: A Python client that polls the server for challenge assignments, executes transmissions using GNU Radio flowgraphs, and reports completion status. Runners cache challenge files locally using content-addressed storage and automatically select appropriate antennas based on frequency requirements.
 
-**Listener**: A spectrum recording agent that connects via WebSocket to receive recording assignments, captures RF transmissions using GNU Radio, generates waterfall images from FFT data, and uploads results to the server for visualization in the web interface.
+**Listener**: A spectrum recording agent that connects via WebSocket to receive recording assignments, captures RF transmissions using GNU Radio, generates waterfall images from FFT data, and uploads results to the server for visualization in the web interface. Can optionally capture raw IQ data for challenges where enabled.
 
 **Frontend**: A Vue.js single-page application with real-time updates via WebSocket, comprehensive agent and challenge management interfaces, live log streaming with filtering, and a dashboard showing system status and transmission statistics.
 
@@ -91,6 +93,7 @@ Comprehensive documentation is available in the `docs/` directory:
 - [Challenge Development](docs/wiki/Challenge-Development.md) - Create custom RF challenges
 - [Challenge Management](docs/wiki/Challenge-Management.md) - Use the web UI to manage challenges
 - [Web Interface Guide](docs/wiki/Web-Interface-Guide.md) - Navigate the dashboard and admin pages
+- [Webhook Management](docs/wiki/Web-Interface-Webhooks.md) - Configure Discord notifications
 - [Configuration Reference](docs/wiki/Configuration-Reference.md) - Complete YAML configuration options
 - [API Reference](docs/wiki/API-Reference.md) - REST API documentation for automation
 - [Troubleshooting](docs/wiki/Troubleshooting.md) - Common issues and solutions

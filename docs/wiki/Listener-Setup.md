@@ -29,7 +29,8 @@ Listener agents provide automatic spectrum capture and visualization for Challen
    - Wait for expected transmission start time
    - Capture RF signal with pre-roll buffer (5s before)
    - Generate waterfall image with matplotlib
-   - Upload image to server
+   - Optionally capture raw IQ data (if `record_iq: true` enabled for the challenge)
+   - Upload image and IQ file to server
    - Report completion
 
 ### Use Cases
@@ -38,6 +39,7 @@ Listener agents provide automatic spectrum capture and visualization for Challen
 - **Signal Quality**: Analyze signal strength and spectral characteristics
 - **Documentation**: Archive visual records of all transmissions
 - **Debugging**: Troubleshoot transmission issues with spectrum analysis
+- **Post-Event Analysis**: Capture raw IQ samples for detailed signal analysis and demodulation testing
 
 ## Requirements
 
@@ -53,10 +55,10 @@ Listener agents provide automatic spectrum capture and visualization for Challen
 ### Software Requirements
 
 ```bash
-# Python 3.8 or higher
+# Python 3.9 or higher (Python 3.12 recommended)
 python3 --version
 
-# GNU Radio 3.8 or higher
+# GNU Radio 3.9 or higher
 gnuradio-config-info --version
 
 # gr-osmosdr for SDR support
@@ -270,12 +272,13 @@ logging:
 
 ### Multi-Device Configuration
 
-**NEW**: Listeners now support multiple SDR receiver devices, allowing you to:
+Listeners support configuring multiple SDR receiver devices with automatic device selection based on frequency, allowing you to:
 
-- **Monitor Multiple Bands**: Use different receivers for VHF and UHF simultaneously
 - **Optimize Antennas**: Dedicate specific receivers to optimized antennas for each band
+- **Increase Coverage**: Configure devices for different frequency ranges
 - **Provide Redundancy**: Configure backup receivers in case of hardware failure
-- **Increase Coverage**: Capture transmissions across a wider frequency range
+
+**LIMITATION**: A single listener instance can only record from one device at a time. For simultaneous recordings across multiple bands, run multiple listener instances with separate configurations.
 
 **Example Multi-Device Setup**:
 ```yaml
@@ -305,8 +308,9 @@ radios:
 
 **Device Selection**: The listener will automatically select the appropriate device based on:
 1. Frequency limits match the transmission frequency
-2. Device availability (not currently recording)
-3. First available device if multiple match
+2. First matching device in the configuration
+
+**Note**: Device busy tracking is not currently functional in the listener implementation. Multiple simultaneous recordings require running multiple listener instances.
 
 ## Running the Listener
 
@@ -559,14 +563,15 @@ The simulated mode generates realistic spectrum data with noise and simulated si
 
 Now that your listener is operational:
 
-- [View Recordings](Web-Interface-Guide) in the web interface
+- [View Recordings](Web-Interface-Recordings) in the web interface
 - [Understand the Architecture](Architecture) for how listeners coordinate with runners
 - [Configure Recording Priority](Architecture#recording-priority-algorithm) to optimize resource usage
-- [Monitor Listener Status](Web-Interface-Runners) in real-time
+- [Monitor Listener Status](Web-Interface-Runners#listener-list) in real-time via the Agents page
 
 ## Related Documentation
 
 - [Architecture Overview](Architecture) - Understanding listener coordination
-- [Web Interface Guide](Web-Interface-Guide) - Viewing recordings
+- [Recordings Web Interface](Web-Interface-Recordings) - Viewing and managing spectrum recordings
+- [Agents Management](Web-Interface-Runners) - Managing listener agents via the web UI
 - [API Reference](API-Reference) - Listener API endpoints
 - [Troubleshooting](Troubleshooting) - Common issues and solutions

@@ -43,10 +43,12 @@ ChallengeCtl consists of four main components:
 - **Automatic Failover**: Detects failed runners and automatically reassigns their tasks
 - **Spectrum Recording**: Listener agents capture RF transmissions and generate waterfall images
 - **Priority-Based Recording**: Intelligent recording selection to conserve resources
+- **Discord Webhooks**: Real-time event notifications to Discord channels with 10 event categories
 - **File Synchronization**: Content-addressed file distribution with SHA-256 verification
 - **Real-Time Monitoring**: WebSocket-based live updates for challenge status and logs
 - **Multi-Modulation Support**: Supports CW, ASK, NBFM, SSB, FHSS, POCSAG, LRS, FreeDV, and Paint modulations
-- **Security**: API key authentication for agents and TOTP 2FA for admin users
+- **Security**: API key authentication for agents, TOTP 2FA for admin users, and role-based permissions
+- **USB Event Detection**: Immediate SDR device detection on Linux (<2 seconds) using udev monitoring
 
 ## Quick Links
 

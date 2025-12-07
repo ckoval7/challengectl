@@ -1067,6 +1067,102 @@ See [Configuration Reference](Configuration-Reference#transmission-timeout) for 
    LimeUtil --update
    ```
 
+### USB Device Not Detected (Linux)
+
+**Symptoms**: SDR device not showing up in runner logs after plugging in
+
+**Possible Causes and Solutions**:
+
+1. **pyudev library not installed**
+   **Check**:
+   ```bash
+   pip list | grep pyudev
+   ```
+   Should show `pyudev (0.24.0)` or higher.
+
+   **Solution**: Install pyudev:
+   ```bash
+   pip install pyudev
+   ```
+
+2. **udev permissions not configured**
+   **Check**: Verify udev rules exist:
+   ```bash
+   ls -l /etc/udev/rules.d/52-sdr.rules
+   ```
+
+   **Solution**: Configure udev permissions (see [Runner Setup - Set USB Permissions](Runner-Setup#set-usb-permissions-linux))
+
+3. **USB device not visible to system**
+   **Check**: Verify device appears in lsusb:
+   ```bash
+   lsusb
+   ```
+   Look for your SDR device in the output.
+
+   **Solution**: If device doesn't appear:
+   - Try a different USB port
+   - Try a different USB cable
+   - Check device has power (LED indicators)
+   - Test device on another computer
+
+4. **Runner logs don't show USB events**
+   **Check**: Look for USB event messages in runner logs:
+   ```bash
+   grep "USB event" runner.log
+   grep "Probing devices" runner.log
+   ```
+
+   **Solution**:
+   - Increase logging verbosity: Run runner with `--verbose` flag
+   - Check runner is running on Linux (USB monitoring is Linux-only)
+   - Verify runner process has access to udev socket
+
+5. **Non-SDR device filtered out**
+   **Check**: Review runner debug logs for filtering messages
+
+   **Solution**: Verify your device is a supported SDR:
+   - HackRF (vendor ID 1d50)
+   - BladeRF (vendor ID 2cf0)
+   - RTL-SDR (vendor ID 0bda)
+   - USRP (vendor ID 2500, fffe)
+   - AirSpy (vendor ID 1d50)
+   - FUNcube Dongle (vendor ID 04d8)
+
+   If your device has a different vendor ID, it may be filtered out. Check USB class code - SDR devices typically use vendor-specific class (0xFF) or communications class (0x02).
+
+6. **USB hub causing issues**
+   **Check**: Is device connected through a USB hub?
+
+   **Solution**: Connect SDR directly to computer USB port, not through hub. USB hubs can cause detection delays or prevent proper enumeration.
+
+7. **Manual trigger test**
+   **Check**: Force device detection by unplugging and replugging device
+
+   **Expected behavior**: Runner should log "USB event: device added" within 2 seconds of plugging in device
+
+   **If no event appears**:
+   - udev monitoring may not be working
+   - Device may not be triggering udev events (driver issue)
+   - Runner may have fallen back to polling mode (30s interval)
+
+**Workaround for non-Linux systems**:
+USB event monitoring is Linux-only. On macOS and Windows, the runner uses periodic polling (30-second interval) for device detection. Wait 30 seconds after plugging in device before expecting detection.
+
+**Debugging Tips**:
+
+Check udev events directly:
+```bash
+sudo udevadm monitor --environment --udev
+```
+Plug/unplug device and observe events. You should see ADD/REMOVE events when device is plugged/unplugged.
+
+Check device enumeration:
+```bash
+lsusb -v -d 1d50:604b
+```
+Replace vendor:product IDs with your device. This shows detailed USB device information.
+
 ## Performance Issues
 
 ### High CPU Usage

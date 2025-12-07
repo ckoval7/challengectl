@@ -198,6 +198,18 @@ The challenge content section changes based on the selected modulation type.
 - Default: 0 (normal priority)
 - Use for time-sensitive or important challenges
 
+**Duration** (optional):
+- Explicit transmission duration in seconds
+- If not specified, duration is **automatically calculated** based on modulation type:
+  - **Audio modulations** (NBFM, SSB, FreeDV, FHSS): Read from WAV file duration
+  - **CW (Morse)**: Calculated from message length and WPM (words per minute)
+  - **Spectrum Paint**: Calculated from image file size
+  - **POCSAG/LRS Pagers**: Estimated from message length and baud rate
+  - **ASK**: Estimated from message length
+- Minimum duration: 1.0 second
+- You can override auto-calculation by explicitly setting this field
+- Used for transmission timeout calculation and dashboard display
+
 ### Modulation-Specific Settings
 
 #### FHSS (Frequency Hopping Spread Spectrum)

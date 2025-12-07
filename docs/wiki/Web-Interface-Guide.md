@@ -12,25 +12,40 @@ The web interface delivers real-time monitoring through live updates via WebSock
 
 ## Documentation Sections
 
-This guide is organized into several sections for easier navigation, divided into getting started materials, core features, and advanced topics.
+This guide is organized to match the web interface navigation structure, making it easy to find documentation for each section of the UI.
 
 ### Getting Started
 
 The Web Interface Overview section covers the fundamentals of the web interface, including how to access and log in, session management, user menu options, navigation, and security best practices. This section serves as your starting point for understanding the interface.
 
-### Core Features
+### Main Navigation Pages
 
-The Dashboard section explains the statistics panel, recent transmissions feed, and conference settings card. This is your primary monitoring interface for overall system health.
+**Dashboard** - The statistics panel, recent transmissions feed, and conference settings card. This is your primary monitoring interface for overall system health.
 
-The Runners Management section covers the runner list and status display, available runner actions including enable, disable, and kick operations, guidance on when to disable versus kick runners, real-time updates, and troubleshooting procedures for runner issues.
+**Agents** - Unified agent management with three tabs:
+- **Runners Tab**: Runner (transmitter) agent list and status, enable/disable/kick operations, device capabilities, and real-time updates
+- **Listeners Tab**: Listener (recorder) agent list and status, WebSocket connection monitoring, recording statistics, and device configuration
+- **Provisioning Tab**: Enrollment token generation, API key management, agent type selection, and secure onboarding workflows
 
-The Challenge Management section details the Live Status tab for monitoring and control, the Create Challenge tab for form-based creation, the Import from YAML tab for batch import operations, the Manage Challenges tab for editing and deleting challenges, API automation capabilities, best practices for challenge management, and typical workflows.
+**Challenges** - Complete challenge lifecycle management with four tabs:
+- **Live Status Tab**: Real-time monitoring and control, enable/disable toggles, manual trigger functionality, and inline recording galleries
+- **Create Challenge Tab**: Form-based challenge creation with validation and preview
+- **Import from YAML Tab**: Batch import operations with conflict resolution
+- **Manage Challenges Tab**: Edit and delete existing challenges
 
-The User Management section explains the user list and available operations, procedures for adding users, different user account types, permission management, password and TOTP management, built-in security features, and common workflows for user administration.
+**Recordings** - Dedicated recording history viewer (accessible from challenges), waterfall image galleries, recording metadata, filtering and search capabilities, and per-challenge recording views.
 
-The System Controls section covers the differences between pause and disable operations, configuration reload functionality, and comprehensive conference settings including conference name and countdown, daily operating hours, auto-pause functionality, configuration workflows, and best practices.
+**Logs** - Real-time log streaming with color coding, filtering by source (server/runner) and level, auto-scroll and search capabilities, and export functionality.
 
-The Logs Viewer section describes log display and color coding, filtering options by source and level, auto-scroll, search, and export capabilities, common log patterns to recognize, and techniques for troubleshooting with logs.
+**Users** - Admin account management including user list, add/edit/delete operations, permission assignment, password management, and TOTP two-factor authentication setup.
+
+**Webhooks** - Discord webhook integration for real-time notifications, event subscriptions, delivery statistics, and testing functionality.
+
+**System Controls** - Global system controls accessible from the header:
+- **Pause/Resume Button**: System-wide pause control with auto-pause scheduling support
+- **Conference Settings**: Conference name, countdown timers, daily operating hours configuration
+
+**Public Dashboard** - Read-only public-facing view for spectators and participants.
 
 ### Advanced Topics
 
@@ -38,12 +53,61 @@ The Advanced Topics section explores real-time updates via WebSocket, tips and b
 
 ## Quick Navigation
 
-For common tasks, this guide provides direct links to the most relevant sections. To monitor system health, refer to the Dashboard section. For adding a new challenge, see the Create Challenge section. To import multiple challenges at once, consult the Import from YAML section. Enabling or disabling a challenge is covered in the Live Status section. Testing a challenge using the Trigger Now function is also documented in the Live Status section. Managing runners is covered in the Runners Management section. Adding a new admin user is explained in the Add User section. Pausing the system is detailed in the System Controls section. Setting up conference hours is covered in the Conference Settings section. Viewing logs is explained in the Logs Viewer section. Finally, troubleshooting issues is addressed in the Advanced Topics section under Troubleshooting.
+For common tasks, this guide provides direct links to the most relevant sections:
+
+**System Monitoring:**
+- Monitor system health → [Dashboard](#dashboard) section
+- View real-time logs → [Logs](#logs-viewer) section
+- View recordings → [Recordings](#recordings) section
+
+**Agent Management:**
+- Set up a new runner → [Agents → Provisioning Tab](#agents-provisioning-tab) section
+- Set up a new listener → [Agents → Provisioning Tab](#agents-provisioning-tab) section
+- Monitor runner status → [Agents → Runners Tab](#agents-runners-tab) section
+- Monitor listener status → [Agents → Listeners Tab](#agents-listeners-tab) section
+
+**Challenge Management:**
+- Add a new challenge → [Challenges → Create Challenge Tab](#challenges-create-challenge-tab) section
+- Import multiple challenges → [Challenges → Import from YAML Tab](#challenges-import-from-yaml-tab) section
+- Enable/disable a challenge → [Challenges → Live Status Tab](#challenges-live-status-tab) section
+- Test a challenge (Trigger Now) → [Challenges → Live Status Tab](#challenges-live-status-tab) section
+- Edit/delete challenges → [Challenges → Manage Challenges Tab](#challenges-manage-challenges-tab) section
+
+**System Administration:**
+- Add admin user → [Users](#users) section
+- Set up Discord webhooks → [Webhooks](#webhooks) section
+- Pause/resume system → [System Controls](#system-controls) section
+- Configure conference settings → [System Controls](#system-controls) section
+
+**Troubleshooting:**
+- Diagnose issues → [Advanced Topics](#advanced-topics) section
 
 ## Getting Help
 
-If you need additional information beyond this guide, several other resources are available. The Challenge Management Guide provides detailed challenge configuration information. The API Reference explains programmatic access to the system. The Architecture Overview helps you understand how the UI interacts with the backend. The Troubleshooting Guide addresses common issues and their solutions. Finally, the Configuration Reference covers advanced setup options for more complex deployments.
+If you need additional information beyond this guide, several other resources are available:
+
+- **[Challenge Management Guide](Challenge-Management)** - Detailed challenge configuration information
+- **[Runner Setup Guide](Runner-Setup)** - Runner agent installation and configuration
+- **[Listener Setup Guide](Listener-Setup)** - Listener agent installation and configuration
+- **[API Reference](API-Reference)** - Programmatic access to the system
+- **[Architecture Overview](Architecture)** - How the UI interacts with the backend
+- **[Troubleshooting Guide](Troubleshooting)** - Common issues and solutions
+- **[Configuration Reference](Configuration-Reference)** - Advanced setup options
 
 ## Next Steps
 
-If you are using the interface for the first time, start with the Web Interface Overview to familiarize yourself with the basics. If you are setting up for an event, review the Challenge Management and System Controls sections to prepare your configuration. When you need to troubleshoot issues, check the Logs Viewer and Advanced Topics sections for diagnostic techniques. For managing users and permissions, see the User Management section.
+**First-time users:**
+- Start with the [Web Interface Overview](#web-interface-overview) to familiarize yourself with navigation and authentication
+- Review the [Agents](#agents) section to understand runner and listener provisioning
+- Explore the [Challenges](#challenges) section to learn about challenge lifecycle management
+
+**Event preparation:**
+- Configure [System Controls](#system-controls) including conference name and operating hours
+- Set up [Webhooks](#webhooks) for Discord notifications
+- Create [Users](#users) for your team members
+- Import challenges via [Challenges → Import from YAML](#challenges-import-from-yaml-tab)
+
+**Troubleshooting:**
+- Check [Logs](#logs-viewer) for error messages and diagnostic information
+- Review [Advanced Topics](#advanced-topics) for performance tuning and common issues
+- Consult the [Troubleshooting Guide](Troubleshooting) for detailed solutions

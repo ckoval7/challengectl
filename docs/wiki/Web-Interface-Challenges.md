@@ -171,4 +171,4 @@ When a challenge refuses to transmit, start by checking the Manage Challenges Li
 
 ## Related Guides
 
-For detailed challenge configuration information beyond the web interface, consult the Challenge Management Guide. For ensuring runners can execute challenges, see the Runners Management guide. To monitor transmission activity, refer to the Dashboard guide. For debugging challenge issues through log analysis, see the Logs guide.
+For detailed challenge configuration information beyond the web interface, consult the [Challenge Management](Challenge-Management) guide. For ensuring runners can execute challenges, see the [Agents Management](Web-Interface-Runners) guide. To view spectrum recordings and waterfall images, refer to the [Recordings Web Interface](Web-Interface-Recordings) guide. To monitor transmission activity, refer to the [Dashboard](Web-Interface-Dashboard) guide. For debugging challenge issues through log analysis, see the [Logs](Web-Interface-Logs) guide.

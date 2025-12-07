@@ -19,7 +19,7 @@ This comprehensive guide covers setting up and configuring ChallengeCtl runners.
 ### System Requirements
 
 - **Operating System**: Linux (recommended for SDR support), macOS, or Windows
-- **Python**: Version 3.8 or higher
+- **Python**: Version 3.9 or higher (Python 3.12 recommended)
 - **Memory**: Minimum 512 MB RAM (1 GB recommended)
 - **Storage**: 500 MB for application and cache
 - **Network**: Outbound connectivity to the ChallengeCtl server
@@ -29,12 +29,14 @@ This comprehensive guide covers setting up and configuring ChallengeCtl runners.
 
 The runner requires additional software for SDR operations:
 
-- **GNU Radio**: Version 3.8 or higher (for signal generation and transmission)
-- **gr-rfhs**: Contains modules needed for CW, ASK, and LRS
-- **gr-osmosdr**: For SDR hardware interface
+- **GNU Radio**: Version 3.9 or higher (for signal generation and transmission)
+- **gr-osmosdr**: For SDR hardware interface (required for all runners)
+- **SoapySDR**: Universal SDR hardware abstraction layer (recommended)
+
+**Modulation-specific modules:**
+- **gr-rfhs**: Contains modules needed for CW, ASK, and LRS challenges (must be compiled from source)
 - **gr-paint**: For spectrum painting challenges (must be compiled from source)
 - **gr-mixalot**: For POCSAG paging challenges (must be compiled from source)
-- **SoapySDR**: Universal SDR hardware abstraction layer (recommended)
 
 ### Supported SDR Devices
 
@@ -243,6 +245,69 @@ sudo udevadm trigger
 
 Reconnect your SDR device.
 
+### USB Device Monitoring (Linux)
+
+ChallengeCtl uses event-driven USB device detection on Linux for immediate SDR device recognition. This feature provides real-time device detection without polling overhead.
+
+**How it works**:
+- Uses Linux udev via the pyudev library for real-time USB event monitoring
+- Detects device plug/unplug events in <2 seconds (vs legacy 30-second polling)
+- Automatically filters non-SDR devices (HID, storage, audio, etc.)
+- Debounces rapid USB events (1-second coalesce interval)
+- Zero CPU overhead when no USB events occur
+
+**Supported SDR vendors**:
+The runner automatically recognizes these SDR device vendors:
+- **HackRF** (vendor ID 1d50)
+- **BladeRF** (vendor ID 2cf0)
+- **RTL-SDR** (vendor ID 0bda)
+- **USRP** (vendor ID 2500, fffe)
+- **AirSpy** (vendor ID 1d50)
+- **FUNcube Dongle** (vendor ID 04d8)
+
+**Requirements**:
+- Linux operating system
+- pyudev library (installed via `requirements-runner.txt`)
+- udev permissions configured (see [Set USB Permissions](#set-usb-permissions-linux) above)
+
+**Device filtering**:
+The runner automatically filters out non-SDR devices to prevent false detections:
+
+**Allowed**:
+- Known SDR vendor IDs listed above
+- Vendor-specific USB class (0xFF)
+- Communications class (0x02)
+
+**Blocked**:
+- HID class (0x03) - keyboards, mice, game controllers
+- Mass Storage class (0x08) - USB drives, external hard drives
+- Audio class (0x01) - sound cards, audio interfaces
+- Hub class (0x09) - USB hubs
+- Other non-SDR device classes
+
+**Monitoring behavior**:
+1. **Initial probe**: At startup, discovers all connected SDR devices
+2. **Event-driven probing**: When USB devices are added or removed, immediately probes for SDR devices
+3. **Real-time updates**: Device list automatically updates and is sent to server in the next heartbeat
+4. **Automatic cleanup**: USB handles are garbage collected after each probe to prevent resource leaks
+
+**Performance**:
+- Device detection: <2 seconds (vs 30-second polling in legacy systems)
+- CPU usage when idle: 0% (event-driven, no polling loop)
+- Memory overhead: Minimal (pyudev library is lightweight)
+
+**Logging**:
+The runner logs USB events for debugging:
+```
+INFO - USB event: device added (vendor=1d50, product=604b)
+INFO - Probing devices...
+INFO - Found 1 SDR device(s)
+DEBUG - HackRF detected on /dev/bus/usb/001/004
+```
+
+**Workaround for non-Linux systems**:
+USB event monitoring is Linux-only. On macOS and Windows, the runner uses periodic polling (30-second interval) for device detection.
+
 ### Test SDR Transmission
 
 Before configuring the runner, verify your SDR can transmit:
@@ -305,12 +370,14 @@ For automated deployments or CI/CD environments:
 - MAC address (primary network interface)
 - Machine ID (from `/etc/machine-id` or system-specific identifier)
 
-If the runner is actively online (heartbeat within last 90 seconds), authentication attempts from a different machine will be rejected unless at least ONE of these identifiers matches:
-- IP address + hostname (together)
-- MAC address
-- Machine ID
+If the runner is actively online (heartbeat within last 90 seconds), authentication attempts from a different machine will be rejected unless at least **TWO** of these identifiers match:
+- IP address + hostname (counted together as ONE factor)
+- MAC address (ONE factor)
+- Machine ID (ONE factor)
 
-This prevents credential reuse attacks if your config file is copied to another machine. To move a runner to a different host, use the **Re-enrollment** feature in the Web UI.
+**Note**: On first authentication, if MAC address or machine ID were not captured during enrollment, the system will automatically upgrade the runner record with these values, but only if at least two factors match overall.
+
+This multi-factor validation prevents credential reuse attacks if your config file is copied to another machine. To move a runner to a different host, use the **Re-enrollment** feature in the Web UI.
 
 #### Step 2: Configure Your Runner
 

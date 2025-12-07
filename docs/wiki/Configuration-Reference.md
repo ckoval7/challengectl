@@ -778,6 +778,8 @@ These parameters apply to all challenges regardless of modulation type.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `duration` | float | auto-calculated | Explicit transmission duration in seconds. If not specified, duration is automatically calculated based on modulation type: **Audio modulations** (NBFM, SSB, FreeDV, FHSS): Read from WAV file duration. **CW (Morse)**: Calculated from message length and WPM. **Spectrum Paint**: Calculated from image file size. **POCSAG/LRS Pagers**: Estimated from message length and baud rate. **ASK**: Estimated from message length. Minimum duration: 1.0 second. You can override auto-calculation by explicitly setting this field. |
+| `record_iq` | boolean | `false` | Enable IQ data recording for this challenge. When enabled, listeners will capture raw IQ samples in addition to waterfall images. Useful for signal analysis and post-event review. IQ files can be retrieved via `/api/recordings/<id>/iq`. |
 | `public_view` | object | see below | Control visibility on public dashboard. |
 | `public_view.show_frequency` | boolean | `true` | Show frequency on public pages. |
 | `public_view.show_last_tx_time` | boolean | `false` | Show last transmission time publicly. |
@@ -894,6 +896,8 @@ Transmits audio files using narrowband frequency modulation.
 
 **Flag format**: Path to WAV audio file.
 
+**Duration calculation**: If `duration` is not specified, it will be automatically calculated by reading the WAV file duration.
+
 ### SSB (Single Sideband)
 
 Transmits audio files using single sideband modulation.
@@ -918,6 +922,8 @@ Transmits audio files using single sideband modulation.
 | `wav_samplerate` | integer | `48000` | Sample rate of the WAV file in Hz. |
 
 **Flag format**: Path to WAV audio file.
+
+**Duration calculation**: If `duration` is not specified, it will be automatically calculated by reading the WAV file duration.
 
 ### ASK (Amplitude Shift Keying)
 
@@ -991,6 +997,8 @@ Transmits data using frequency hopping.
 
 **Flag format**: Path to WAV audio file.
 
+**Duration calculation**: If `duration` is not specified, it will be automatically calculated by reading the WAV file duration.
+
 ### LRS Pager
 
 Transmits using LRS pager spread spectrum modulation.
@@ -1051,6 +1059,8 @@ Transmits digital voice using FreeDV.
 | `wav_samplerate` | integer | `48000` | Sample rate of the WAV file in Hz. |
 
 **Flag format**: Path to WAV audio file.
+
+**Duration calculation**: If `duration` is not specified, it will be automatically calculated by reading the WAV file duration.
 
 ### Paint (Spectrum Waterfall)
 

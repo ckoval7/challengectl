@@ -1,10 +1,10 @@
-# Listener Web UI
+# Recordings Web Interface
 
-This guide covers the web interface features for viewing and managing spectrum listener recordings and waterfall images.
+This guide covers the web interface features for viewing spectrum recordings and waterfall images captured by listener agents.
 
 ## Overview
 
-The Listener Web UI provides comprehensive visualization of spectrum recordings captured by listener agents during challenge transmissions. Listeners automatically record RF transmissions based on priority calculations, generating waterfall images that provide visual verification of signal quality, frequency accuracy, and transmission characteristics.
+The Recordings interface provides comprehensive visualization of spectrum recordings captured by listener agents during challenge transmissions. Listeners automatically record RF transmissions based on priority calculations, generating waterfall images that provide visual verification of signal quality, frequency accuracy, and transmission characteristics.
 
 The interface delivers several key capabilities. Waterfall visualization displays high-quality spectrum waterfall images for each recording. Recording history maintains a complete history of all recordings per challenge. Inline preview provides quick access to recent recordings directly from the Challenges page without navigation. Detailed metadata shows frequency, duration, timestamps, and listener information for each recording. Status tracking monitors recording success, failures, and in-progress captures. A modal viewer provides full-screen waterfall image viewing with detailed metadata overlay.
 

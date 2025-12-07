@@ -144,6 +144,51 @@ The server runs periodic background tasks for system maintenance:
 
 These tasks ensure system reliability by automatically detecting and recovering from failures without manual intervention.
 
+#### 6. Webhook Dispatcher
+
+Real-time event notifications to Discord webhooks for operational monitoring and alerting:
+
+**Architecture**:
+- Asynchronous delivery with thread-safe event queue (1000-event capacity)
+- Background worker thread processes queued events
+- Automatic retry with exponential backoff (max 3 retries: 5s, 10s, 20s delays)
+- Category-based subscription filtering per webhook
+- Discord-specific embed formatting with color coding
+- Delivery tracking and failure statistics
+
+**Event categories**:
+- `error_logs` - System and runner error messages
+- `server_lifecycle` - Server start, stop, restart events
+- `agent_status` - Runner/listener online/offline/enabled/disabled
+- `device_changes` - SDR device detection and removal
+- `challenge_failures` - Failed transmissions and errors
+- `recording_complete` - Listener recording completions
+- `security_events` - Authentication failures, enrollment, credential issues
+- `user_management` - User creation, deletion, password resets
+- `system_control` - Pause/resume, auto-pause events
+- `daily_schedule` - Daily start/end events
+
+**Delivery flow**:
+1. System event occurs (transmission complete, runner offline, etc.)
+2. Event queued in WebhookDispatcher with category tag
+3. Background worker thread dequeues events FIFO
+4. Filter webhooks subscribed to event category
+5. Format Discord embed (color, title, fields based on category)
+6. HTTP POST to Discord webhook URL
+7. Retry on failure (5s → 10s → 20s exponential backoff)
+8. Track delivery statistics (total deliveries, failed deliveries, last triggered timestamp)
+
+**Database schema**:
+- `webhooks` table: Stores webhook URL, description, enabled status, subscribed event categories
+- `webhook_deliveries` table: Delivery history and statistics for monitoring
+
+**Failure handling**:
+- Failed deliveries increment failed_deliveries counter
+- Webhooks remain enabled after delivery failures (manual intervention required to disable)
+- Delivery errors logged for troubleshooting
+
+See [Web Interface - Webhook Management](Web-Interface-Webhooks) for webhook configuration and [API Reference](API-Reference#webhook-management) for programmatic webhook management.
+
 ### Runner Components
 
 Each runner is a long-running Python process that:
@@ -180,6 +225,38 @@ Each runner is a long-running Python process that:
                                   │ Sign Out │
                                   └──────────┘
 ```
+
+#### Device Detection and Management (Linux)
+
+Runners use event-driven USB monitoring for immediate SDR device detection:
+
+**USB Event Monitor** (`device_manager.py`):
+- **pyudev integration**: Real-time udev netlink socket monitoring for USB add/remove events
+- **Smart filtering**: Only probes known SDR vendors (HackRF, BladeRF, RTL-SDR, USRP, AirSpy, FUNcube) and USB classes (vendor-specific 0xFF, communications 0x02)
+- **Automatic blacklisting**: Filters out HID (0x03), Mass Storage (0x08), Audio (0x01), Hub (0x09), etc.
+- **Debouncing**: Coalesces rapid events into single probe (1-second interval) to handle complex USB device initialization
+- **Zero CPU overhead**: Monitor waits on `threading.Event` - no polling loop when idle
+
+**Detection flow**:
+1. **Initial probe** at startup discovers all connected SDR devices using SoapySDR
+2. **Monitor waits** on threading.Event (no CPU usage)
+3. **USB event triggers** immediate device probe when device added/removed
+4. **Device list updated** and included in next heartbeat to server
+5. **Monitor returns** to waiting state (zero CPU usage)
+6. **Garbage collection** of USB handles after each probe cycle
+
+**Performance benefits**:
+- <2 second detection time vs legacy 30-second polling
+- Zero CPU overhead when no USB events occur
+- Automatic cleanup prevents USB handle leaks
+- Graceful fallback to polling on non-Linux systems
+
+**Requirements**:
+- Linux operating system
+- pyudev library (>=0.24.0)
+- udev permissions configured for SDR devices
+
+See [Runner Setup - USB Device Monitoring](Runner-Setup#usb-device-monitoring-linux) for configuration details.
 
 ### Frontend Components
 

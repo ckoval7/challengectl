@@ -591,6 +591,7 @@ X-CSRF-Token: csrf_token_value
 **Valid permissions:**
 - `create_users`: Allows user to create other users and manage permissions
 - `create_provisioning_key`: Allows user to create and manage provisioning API keys
+- `manage_webhooks`: Allows user to create, edit, and delete webhooks for event notifications
 
 **Response:**
 ```json
@@ -624,6 +625,217 @@ X-CSRF-Token: csrf_token_value
 **Security Notes:**
 - Cannot revoke your own permissions
 - Permission system is designed to be extended with additional permissions in the future
+
+---
+
+### Webhook Management
+
+Manage Discord webhooks for real-time event notifications.
+
+**Permissions required**: `manage_webhooks`
+
+#### GET /api/webhooks
+
+List all configured webhooks.
+
+**Request:**
+```http
+GET /api/webhooks HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "webhooks": [
+    {
+      "id": 1,
+      "name": "Production Discord Alerts",
+      "url": "https://discord.com/api/webhooks/123456789/abcdef...",
+      "description": "Main alerts channel for production events",
+      "enabled": true,
+      "subscribed_events": ["error_logs", "challenge_failures", "security_events"],
+      "total_deliveries": 152,
+      "failed_deliveries": 3,
+      "last_triggered_at": "2025-04-05T14:32:15Z",
+      "created_at": "2025-04-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+#### POST /api/webhooks
+
+Create a new webhook.
+
+**Request:**
+```http
+POST /api/webhooks HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+X-CSRF-Token: csrf_token_value
+
+{
+  "name": "Production Discord Alerts",
+  "url": "https://discord.com/api/webhooks/123456789/abcdef...",
+  "description": "Main alerts channel for production events",
+  "enabled": true,
+  "subscribed_events": ["error_logs", "challenge_failures", "security_events"]
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Webhook display name |
+| `url` | string | yes | Discord webhook URL |
+| `description` | string | no | Optional description of webhook purpose |
+| `enabled` | boolean | no | Enable/disable webhook (default: true) |
+| `subscribed_events` | array | yes | Event categories to subscribe to (see below) |
+
+**Valid event categories:**
+- `error_logs` - System and runner error messages
+- `server_lifecycle` - Server start, stop, restart events
+- `agent_status` - Runner/listener online/offline/enabled/disabled
+- `device_changes` - SDR device detection and removal
+- `challenge_failures` - Failed transmissions and errors
+- `recording_complete` - Listener recording completions
+- `security_events` - Authentication failures, enrollment, credential issues
+- `user_management` - User creation, deletion, password resets
+- `system_control` - Pause/resume, auto-pause events
+- `daily_schedule` - Daily start/end events
+
+**Response:**
+```json
+{
+  "status": "created",
+  "webhook": {
+    "id": 1,
+    "name": "Production Discord Alerts",
+    "url": "https://discord.com/api/webhooks/123456789/abcdef...",
+    "description": "Main alerts channel for production events",
+    "enabled": true,
+    "subscribed_events": ["error_logs", "challenge_failures", "security_events"],
+    "total_deliveries": 0,
+    "failed_deliveries": 0,
+    "last_triggered_at": null,
+    "created_at": "2025-04-05T14:35:00Z"
+  }
+}
+```
+
+#### PUT /api/webhooks/\<webhook_id\>
+
+Update an existing webhook.
+
+**Request:**
+```http
+PUT /api/webhooks/1 HTTP/1.1
+Cookie: session=...
+Content-Type: application/json
+X-CSRF-Token: csrf_token_value
+
+{
+  "name": "Updated Webhook Name",
+  "url": "https://discord.com/api/webhooks/123456789/newtoken...",
+  "description": "Updated description",
+  "enabled": false,
+  "subscribed_events": ["error_logs", "security_events"]
+}
+```
+
+**Parameters:** Same as POST /api/webhooks (all fields optional for updates)
+
+**Response:**
+```json
+{
+  "status": "updated",
+  "webhook": {
+    "id": 1,
+    "name": "Updated Webhook Name",
+    ...
+  }
+}
+```
+
+#### DELETE /api/webhooks/\<webhook_id\>
+
+Delete a webhook.
+
+**Request:**
+```http
+DELETE /api/webhooks/1 HTTP/1.1
+Cookie: session=...
+X-CSRF-Token: csrf_token_value
+```
+
+**Response:**
+```json
+{
+  "status": "deleted"
+}
+```
+
+#### POST /api/webhooks/\<webhook_id\>/test
+
+Send a test message to a webhook to verify configuration.
+
+**Request:**
+```http
+POST /api/webhooks/1/test HTTP/1.1
+Cookie: session=...
+X-CSRF-Token: csrf_token_value
+```
+
+**Response:**
+```json
+{
+  "status": "test_sent",
+  "message": "Test message delivered successfully"
+}
+```
+
+**Error Response (if delivery fails):**
+```json
+{
+  "status": "error",
+  "error": "Failed to deliver webhook: HTTP 404 Not Found"
+}
+```
+
+#### GET /api/webhook-event-categories
+
+Get list of available event categories for webhook subscriptions.
+
+**Request:**
+```http
+GET /api/webhook-event-categories HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+```json
+{
+  "categories": [
+    {
+      "name": "error_logs",
+      "description": "System and runner error messages",
+      "color": "#E74C3C"
+    },
+    {
+      "name": "server_lifecycle",
+      "description": "Server start, stop, restart events",
+      "color": "#3498DB"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Webhooks automatically retry failed deliveries up to 3 times with exponential backoff
+- Delivery statistics (total_deliveries, failed_deliveries) update in real-time
+- See [Web Interface - Webhook Management](Web-Interface-Webhooks) for UI-based webhook configuration
 
 ---
 
@@ -1048,6 +1260,25 @@ Cookie: session=...
 
 **Response:**
 PNG image file with appropriate `Content-Type: image/png` header.
+
+#### GET /api/recordings/\<recording_id\>/iq
+
+Retrieve IQ data file for a recording (if IQ recording was enabled for the challenge).
+
+**Request:**
+```http
+GET /api/recordings/42/iq HTTP/1.1
+Cookie: session=...
+```
+
+**Response:**
+Binary IQ data file with appropriate `Content-Type: application/octet-stream` header.
+
+**Notes:**
+- IQ files are only available if the challenge had `record_iq: true` enabled
+- Returns HTTP 404 if recording has no IQ file
+- IQ files contain raw I/Q samples useful for post-event signal analysis
+- File format depends on SDR hardware and capture settings
 
 ---
 
