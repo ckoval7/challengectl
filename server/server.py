@@ -333,11 +333,12 @@ class ChallengeCtlServer:
         logger.info("For TLS/HTTPS, use nginx reverse proxy (see DEPLOYMENT.md)")
         logger.info("="*60)
 
-        # Ensure system is not paused on startup
-        # Pausing is an operational control, not a persistent state
-        if self.db.get_system_state('paused', 'false') == 'true':
-            logger.info("System was paused - resuming on startup")
-            self.db.set_system_state('paused', 'false')
+        # Start system in paused state by default
+        # This allows administrators to review configuration before transmissions begin
+        logger.debug("System starting in paused state (default)")
+        self.db.set_system_state('paused', 'true')
+        # Clear auto_paused flag to indicate this is the initial state
+        self.db.set_system_state('auto_paused', 'false')
 
         # Reset any stale challenge states on startup
         # Challenges in 'assigned' or 'waiting' state should be requeued
