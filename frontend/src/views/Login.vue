@@ -26,7 +26,6 @@
             v-model="form.username"
             placeholder="Enter your username"
             size="large"
-            @keyup.enter="handleLogin"
           />
         </el-form-item>
 
@@ -43,7 +42,6 @@
             placeholder="Enter your password"
             show-password
             size="large"
-            @keyup.enter="handleLogin"
           />
         </el-form-item>
 
@@ -91,7 +89,6 @@
             placeholder="000000"
             maxlength="6"
             size="large"
-            @keyup.enter="handleVerifyTotp"
           />
         </el-form-item>
 
