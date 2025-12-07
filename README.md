@@ -4,11 +4,9 @@
 
 # ChallengeCtlv2
 
-**Distributed RF CTF Challenge Management That Just Works**
+**Distributed RF CTF Challenge Management System**
 
 ChallengeCtl is a modern, distributed system for managing Software-Defined Radio (SDR) challenges in Capture The Flag (CTF) competitions. Gone are the days of manually editing CSV files, copying flags between machines, and hoping your challenges don't interfere with each other. ChallengeCtl brings significant coordination, real-time monitoring, and intelligent spectrum recording to RF CTF operations, making it effortless to run professional radio frequency competitions at scale.
-
-## What Makes ChallengeCtl v2 Exciting
 
 If you've used the original standalone version of ChallengeCtl, you'll immediately appreciate the transformation. The new distributed architecture means you can coordinate multiple SDR devices across different locations from a single web interface, watching transmissions happen in real-time with live status updates. Challenge files synchronize automatically using content-addressed storage, so there's no more manual copying or worrying about version mismatches. The intelligent spectrum recording system captures waterfall visualizations of your transmissions with priority-based scheduling. Setup is simpler, operations are more reliable, and scaling from one SDR to dozens requires no architectural changes.
 
