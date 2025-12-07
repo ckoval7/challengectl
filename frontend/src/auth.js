@@ -14,6 +14,9 @@ let sessionChecked = false
 // Track if initial setup is required (first-time admin login)
 const initialSetupRequired = ref(false)
 
+// Track if user setup is required (temporary users)
+const setupRequired = ref(false)
+
 // Track current username
 const currentUsername = ref('')
 
@@ -23,11 +26,11 @@ const userPermissions = ref([])
 /**
  * Mark user as authenticated (called after successful login)
  * Note: Actual session token is in httpOnly cookie, not localStorage
- * @param {boolean} setupRequired - Whether initial setup is required
+ * @param {boolean} initialSetup - Whether initial setup is required
  */
-export function login(setupRequired = false) {
+export function login(initialSetup = false) {
   isAuthenticatedFlag.value = true
-  initialSetupRequired.value = setupRequired
+  initialSetupRequired.value = initialSetup
 }
 
 /**
@@ -37,6 +40,7 @@ export function login(setupRequired = false) {
 export function logout() {
   isAuthenticatedFlag.value = false
   initialSetupRequired.value = false
+  setupRequired.value = false
   currentUsername.value = ''
   userPermissions.value = []
 
@@ -55,6 +59,7 @@ export async function validateSession() {
     if (response.data.authenticated) {
       isAuthenticatedFlag.value = true
       initialSetupRequired.value = response.data.initial_setup_required || false
+      setupRequired.value = response.data.setup_required || false
       currentUsername.value = response.data.username || ''
       userPermissions.value = response.data.permissions || []
       sessionChecked = true
@@ -64,6 +69,7 @@ export async function validateSession() {
     // Session is invalid or expired
     isAuthenticatedFlag.value = false
     initialSetupRequired.value = false
+    setupRequired.value = false
     currentUsername.value = ''
     userPermissions.value = []
     sessionChecked = true
@@ -94,6 +100,14 @@ export function isSessionChecked() {
  */
 export function isInitialSetupRequired() {
   return initialSetupRequired.value
+}
+
+/**
+ * Check if user setup is required (temporary users)
+ * @returns {boolean}
+ */
+export function isSetupRequired() {
+  return setupRequired.value
 }
 
 /**

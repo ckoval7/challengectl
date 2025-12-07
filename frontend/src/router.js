@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired, hasPermission } from './auth'
+import { checkAuth, validateSession, isSessionChecked, isInitialSetupRequired, isSetupRequired, hasPermission } from './auth'
 import { ElMessage } from 'element-plus'
 
 // Lazy load all route components for better code splitting
@@ -124,6 +124,15 @@ router.beforeEach(async (to, from, next) => {
       }
     }
 
+    // Check if user setup is required (temporary users)
+    if (isSetupRequired()) {
+      // Temporary users must complete setup before accessing other routes
+      if (to.path !== '/user-setup' && to.path !== '/login') {
+        next('/user-setup')
+        return
+      }
+    }
+
     // Check if route requires specific permission
     const requiredPermission = to.meta.requiresPermission
     if (requiredPermission && !hasPermission(requiredPermission)) {
@@ -136,6 +145,8 @@ router.beforeEach(async (to, from, next) => {
       // Already logged in, redirect appropriately
       if (isInitialSetupRequired()) {
         next('/initial-setup')
+      } else if (isSetupRequired()) {
+        next('/user-setup')
       } else {
         next('/admin')
       }
@@ -160,6 +171,15 @@ router.beforeEach(async (to, from, next) => {
         }
       }
 
+      // Check if user setup is required (temporary users)
+      if (isSetupRequired()) {
+        // Temporary users must complete setup before accessing other routes
+        if (to.path !== '/user-setup' && to.path !== '/login') {
+          next('/user-setup')
+          return
+        }
+      }
+
       // Check if route requires specific permission
       const requiredPermission = to.meta.requiresPermission
       if (requiredPermission && !hasPermission(requiredPermission)) {
@@ -172,6 +192,8 @@ router.beforeEach(async (to, from, next) => {
       if (to.path === '/login') {
         if (isInitialSetupRequired()) {
           next('/initial-setup')
+        } else if (isSetupRequired()) {
+          next('/user-setup')
         } else {
           next('/admin')
         }

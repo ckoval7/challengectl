@@ -48,6 +48,7 @@
         <el-form-item>
           <el-button
             type="primary"
+            native-type="submit"
             size="large"
             class="w-full"
             :loading="loading"
@@ -95,6 +96,7 @@
         <el-form-item>
           <el-button
             type="primary"
+            native-type="submit"
             size="large"
             class="w-full"
             :loading="loading"
@@ -171,9 +173,9 @@ export default {
           // Temporary user needs to complete setup
           // Session token is in httpOnly cookie
           login(false)
-          // NOTE: Don't call validateSession() here - the session is intentionally limited
-          // (totp_verified=False) until setup is complete. Calling validateSession() would
-          // fail and clear authentication, preventing navigation to /user-setup.
+          // Validate session to populate setup_required flag and username
+          // (Backend now allows temporary users to authenticate with setup_required: true)
+          await validateSession()
           ElMessage.info('Account setup required. Please change your password and set up 2FA.')
           router.push('/user-setup')
         }

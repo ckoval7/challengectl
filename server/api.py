@@ -1274,20 +1274,34 @@ class ChallengeCtlAPI:
                 self.db.delete_session(session_token)
                 return jsonify({'authenticated': False, 'error': 'Session expired'}), 401
 
-            # Check if TOTP was verified (required for full authentication)
-            if not session.get('totp_verified', False):
-                return jsonify({'authenticated': False, 'error': 'TOTP verification required'}), 401
-
             # SECURITY: Sliding session - renew expiry on session check
             # This is called on page refresh and navigation
             self.renew_session(session_token)
 
-            # Session is valid
+            # Session is valid - get user info
             username = session['username']
             user = self.db.get_user(username)
 
             if not user or not user.get('enabled'):
                 return jsonify({'authenticated': False, 'error': 'Account disabled'}), 401
+
+            # Check if user is temporary (needs to complete setup)
+            is_temporary = user.get('is_temporary', False)
+
+            # Check if TOTP was verified
+            # Temporary users are allowed without TOTP verification (they need to access /user-setup)
+            if not session.get('totp_verified', False):
+                if is_temporary:
+                    # Allow temporary users to authenticate but flag that setup is required
+                    return jsonify({
+                        'authenticated': True,
+                        'username': username,
+                        'setup_required': True,
+                        'permissions': []
+                    }), 200
+                else:
+                    # Non-temporary users must have TOTP verified
+                    return jsonify({'authenticated': False, 'error': 'TOTP verification required'}), 401
 
             # Check if initial setup is required
             initial_setup_required = self.db.get_system_state('initial_setup_required', 'false') == 'true'
