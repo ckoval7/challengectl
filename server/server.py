@@ -436,21 +436,26 @@ class ChallengeCtlServer:
         print("="*60, flush=True)
         logger.info("Shutting down server...")
 
+        # Flush webhook queue to ensure shutdown webhooks are sent
+        print("Step 1/4: Flushing webhook queue...", flush=True)
+        self.api.webhook_dispatcher.flush(timeout=10)
+        print("  ✓ Webhook queue flushed", flush=True)
+
         # Shutdown scheduler if it's running
         if self.scheduler.running:
-            print("Step 1/3: Stopping background scheduler (waiting for jobs to complete)...", flush=True)
+            print("Step 2/4: Stopping background scheduler (waiting for jobs to complete)...", flush=True)
             self.scheduler.shutdown(wait=True)
             print("  ✓ Background scheduler stopped", flush=True)
             logger.info("Background scheduler stopped")
         else:
-            print("Step 1/3: Background scheduler already stopped", flush=True)
+            print("Step 2/4: Background scheduler already stopped", flush=True)
 
         # Stop SocketIO server
-        print("Step 2/3: Stopping SocketIO server...", flush=True)
+        print("Step 3/4: Stopping SocketIO server...", flush=True)
         self.api.stop()
         print("  ✓ SocketIO server stopped", flush=True)
 
-        print("Step 3/3: Cleanup complete", flush=True)
+        print("Step 4/4: Cleanup complete", flush=True)
         print("="*60, flush=True)
         print("SERVER STOPPED", flush=True)
         print("="*60, flush=True)

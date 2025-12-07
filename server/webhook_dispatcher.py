@@ -72,6 +72,25 @@ class WebhookDispatcher:
         except queue.Full:
             logger.warning(f"Webhook event queue full, dropping event: {category}/{event_type}")
 
+    def flush(self, timeout=10):
+        """Wait for all queued webhook events to be delivered.
+
+        Args:
+            timeout: Maximum time to wait in seconds (default: 10)
+        """
+        logger.info("Flushing webhook queue...")
+        start_time = time.time()
+
+        while not self.event_queue.empty():
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                remaining = self.event_queue.qsize()
+                logger.warning(f"Webhook flush timeout - {remaining} events not delivered")
+                break
+            time.sleep(0.1)
+
+        logger.info("Webhook queue flushed")
+
     def _worker(self):
         """Background worker thread to process webhook deliveries."""
         logger.info("Webhook dispatcher worker started")
