@@ -48,6 +48,10 @@ class WebhookDispatcher:
         # Thread-safe queue for webhook events
         self.event_queue = queue.Queue(maxsize=1000)
 
+        # Track if worker is currently processing an event
+        self._processing = False
+        self._processing_lock = threading.Lock()
+
         # Start background worker thread
         self.worker_thread = threading.Thread(target=self._worker, daemon=True, name="WebhookDispatcher")
         self.worker_thread.start()
@@ -75,18 +79,34 @@ class WebhookDispatcher:
     def flush(self, timeout=10):
         """Wait for all queued webhook events to be delivered.
 
+        This method waits for both:
+        1. The queue to be empty (all events dequeued)
+        2. The worker to finish processing the current event
+
         Args:
             timeout: Maximum time to wait in seconds (default: 10)
         """
         logger.info("Flushing webhook queue...")
         start_time = time.time()
 
-        while not self.event_queue.empty():
+        while True:
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 remaining = self.event_queue.qsize()
-                logger.warning(f"Webhook flush timeout - {remaining} events not delivered")
+                with self._processing_lock:
+                    processing = self._processing
+                if remaining > 0 or processing:
+                    logger.warning(f"Webhook flush timeout - {remaining} events queued, processing={processing}")
                 break
+
+            # Check if queue is empty AND worker is not processing
+            queue_empty = self.event_queue.empty()
+            with self._processing_lock:
+                processing = self._processing
+
+            if queue_empty and not processing:
+                break
+
             time.sleep(0.1)
 
         logger.info("Webhook queue flushed")
@@ -97,11 +117,25 @@ class WebhookDispatcher:
         while True:
             try:
                 event = self.event_queue.get(timeout=1)
-                self._process_event(event)
+
+                # Mark as processing
+                with self._processing_lock:
+                    self._processing = True
+
+                try:
+                    self._process_event(event)
+                finally:
+                    # Mark as done processing
+                    with self._processing_lock:
+                        self._processing = False
+
             except queue.Empty:
                 continue
             except Exception as e:
                 logger.error(f"Error in webhook worker: {e}", exc_info=True)
+                # Ensure processing flag is cleared even on error
+                with self._processing_lock:
+                    self._processing = False
 
     def _process_event(self, event: Dict[str, Any]):
         """Process a single event and deliver to subscribed webhooks.
