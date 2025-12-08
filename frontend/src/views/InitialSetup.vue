@@ -164,7 +164,7 @@
 <script>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '../auth'
+import { login, validateSession } from '../auth'
 import { api } from '../api'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
@@ -259,16 +259,20 @@ export default {
 
         // Verify TOTP (should be required for new account)
         if (loginResponse.data.totp_required) {
-          await api.post('/auth/verify-totp', {
+          const verifyResponse = await api.post('/auth/verify-totp', {
             totp_code: totpVerifyCode.value
           })
 
-          login(false, false) // Initial setup is complete
+          login(false, false, verifyResponse.data.username) // Initial setup is complete
+          // Validate session to populate permissions
+          await validateSession()
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         } else {
           // Shouldn't happen, but handle it
-          login(false, false) // Initial setup is complete
+          login(false, false, loginResponse.data.username) // Initial setup is complete
+          // Validate session to populate permissions
+          await validateSession()
           ElMessage.success('Setup complete! Welcome to ChallengeCtl.')
           router.push('/admin')
         }
