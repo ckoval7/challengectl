@@ -18,7 +18,7 @@ Before you begin, ensure you have the following:
 Begin by cloning the repository and installing the required Python packages. The installation process differs depending on whether you're setting up a server, runner, or both.
 
 ```bash
-git clone https://github.com/ckoval7/challengectl.git
+git clone https://github.com/ckoval7/challengectlv2.git
 cd challengectl
 
 # For server deployments
