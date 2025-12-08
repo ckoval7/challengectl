@@ -99,7 +99,7 @@ npm --version
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/ckoval7/challengectl.git
+git clone https://github.com/ckoval7/challengectlv2.git
 cd challengectl
 ```
 
